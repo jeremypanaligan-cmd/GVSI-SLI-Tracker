@@ -15,8 +15,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 // Register service worker for offline caching
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {
-      // SW registration failed silently
-    })
+    navigator.serviceWorker.register('/GVSI-SLI-Tracker/sw.js', { scope: '/GVSI-SLI-Tracker/' }).catch(() => {})
   })
 }
