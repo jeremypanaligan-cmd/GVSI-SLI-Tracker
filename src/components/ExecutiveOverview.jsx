@@ -26,21 +26,21 @@ export default function ExecutiveOverview({ metrics, onGoToDetail }) {
         {/* To Go */}
         <KPICard
           label="To Go"
-          value={formatKPINumber(metrics.toGo)}
+          value={formatKPI(metrics.toGo)}
           sublabel="remaining quota"
           accent="cyan"
         />
         {/* Completed Total */}
         <KPICard
           label="Completed Total"
-          value={formatKPINumber(metrics.completedTotal)}
+          value={formatKPI(metrics.completedTotal)}
           sublabel={`${metrics.completedFromTotal || 0} tot + ${metrics.completedFromRJO || 0} rjo`}
           accent="emerald"
         />
         {/* Active Gross Load */}
         <KPICard
           label="Active Gross Load"
-          value={formatKPINumber(metrics.total)}
+          value={formatKPI(metrics.total)}
           sublabel={`BF ${metrics.bf || 0} + INC ${metrics.inc || 0}`}
           accent="slate"
         />
@@ -58,9 +58,9 @@ export default function ExecutiveOverview({ metrics, onGoToDetail }) {
           <div className="mb-5">
             <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Workload</p>
             <div className="grid grid-cols-3 gap-3">
-              <MetricBox label="BF" value={metrics.bf} />
-              <MetricBox label="INC" value={metrics.inc} />
-              <MetricBox label="TOTAL" value={metrics.total} bold />
+              <MetricBox label="BF" value={formatKPI(metrics.bf)} />
+              <MetricBox label="INC" value={formatKPI(metrics.inc)} />
+              <MetricBox label="TOTAL" value={formatKPI(metrics.total)} bold />
             </div>
           </div>
 
@@ -68,9 +68,9 @@ export default function ExecutiveOverview({ metrics, onGoToDetail }) {
           <div className="mb-5">
             <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Output</p>
             <div className="grid grid-cols-3 gap-3">
-              <MetricBox label="Completed" value={metrics.completedTotal} accent="emerald" />
-              <MetricBox label="RJO" value={metrics.rjo} />
-              <MetricBox label="Carry Over" value={metrics.carryOver} />
+              <MetricBox label="Completed" value={formatKPI(metrics.completedTotal)} accent="emerald" />
+              <MetricBox label="RJO" value={formatKPI(metrics.rjo)} />
+              <MetricBox label="Carry Over" value={formatKPI(metrics.carryOver)} />
             </div>
           </div>
 
@@ -78,8 +78,8 @@ export default function ExecutiveOverview({ metrics, onGoToDetail }) {
           <div>
             <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Monthly Progress</p>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              <MetricBox label="MTD" value={metrics.mtd} bold accent="cyan" />
-              <MetricBox label="Target" value={metrics.target} />
+              <MetricBox label="MTD" value={formatKPI(metrics.mtd)} bold accent="cyan" />
+              <MetricBox label="Target" value={formatKPI(metrics.target)} />
               <div className="rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3 text-center">
                 <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase mb-1">%</p>
                 {badge ? (
@@ -91,8 +91,8 @@ export default function ExecutiveOverview({ metrics, onGoToDetail }) {
                   <p className="text-lg font-bold text-slate-900 dark:text-white">—</p>
                 )}
               </div>
-              <MetricBox label="Variance" value={metrics.variance} />
-              <MetricBox label="To Go" value={metrics.toGo} bold accent="cyan" />
+              <MetricBox label="Variance" value={formatKPI(metrics.variance)} />
+              <MetricBox label="To Go" value={formatKPI(metrics.toGo)} bold accent="cyan" />
             </div>
           </div>
         </div>
@@ -105,7 +105,7 @@ export default function ExecutiveOverview({ metrics, onGoToDetail }) {
             MTD Progress vs Target
           </h2>
           <span className="text-xs text-slate-500 dark:text-slate-400">
-            {formatKPINumber(metrics.mtd)} / {formatKPINumber(metrics.target)}
+            {formatKPI(metrics.mtd)} / {formatKPI(metrics.target)}
           </span>
         </div>
         <div className="w-full h-4 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
@@ -177,14 +177,14 @@ function MetricBox({ label, value, bold, accent }) {
     <div className="rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3 text-center">
       <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase mb-1">{label}</p>
       <p className={`${bold ? 'text-xl font-black' : 'text-lg font-bold'} ${accent ? accentColors[accent] : 'text-slate-900 dark:text-white'}`}>
-        {formatKPINumber(value)}
+        {value}
       </p>
     </div>
   )
 }
 
-function formatKPINumber(n) {
+/** Use formatNumber from dataProcessor for consistency */
+function formatKPI(n) {
   if (n === null || n === undefined || isNaN(n)) return '—'
-  if (Math.abs(n) >= 1000) return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
-  return String(n)
+  return formatNumber(String(n), 'MTD')
 }

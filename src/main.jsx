@@ -15,6 +15,22 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 // Register service worker for offline caching
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/GVSI-SLI-Tracker/sw.js', { scope: '/GVSI-SLI-Tracker/' }).catch(() => {})
+    navigator.serviceWorker
+      .register('/GVSI-SLI-Tracker/sw.js', { scope: '/GVSI-SLI-Tracker/' })
+      .then((reg) => {
+        // Check for SW updates periodically
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'activated') {
+                // New SW activated — could show a toast here
+                console.log('New service worker activated')
+              }
+            })
+          }
+        })
+      })
+      .catch(() => {})
   })
 }

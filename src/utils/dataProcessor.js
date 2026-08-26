@@ -57,13 +57,6 @@ export function formatNumber(val, colKey) {
 }
 
 /**
- * Get the numeric value for a cell (for comparison logic)
- */
-function getNum(row, colKey) {
-  return cleanNumber(row[colKey])
-}
-
-/**
  * Process rows: classify each as cluster-header, area-data, cluster-subtotal, or overall-total
  */
 export function processRows(rawData) {

@@ -18,7 +18,7 @@ export default function App() {
 
   const loadData = useCallback(async (showSyncing = false) => {
     if (showSyncing) setIsSyncing(true)
-    setLoading(true)
+    if (!rawData) setLoading(true) // only show full skeleton on first load
     setError(null)
 
     try {
@@ -42,11 +42,11 @@ export default function App() {
       setLoading(false)
       setIsSyncing(false)
     }
-  }, [])
+  }, [rawData])
 
   useEffect(() => {
     loadData()
-  }, [loadData])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const goOnline = () => setIsOnline(true)
@@ -64,6 +64,16 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
+      {/* Sync overlay */}
+      {isSyncing && rawData && (
+        <div className="fixed inset-0 z-[60] bg-black/20 dark:bg-black/40 flex items-center justify-center pointer-events-none">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center gap-3 pointer-events-none">
+            <SyncIcon spinning />
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Syncing data…</span>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-700/50">
         <div className="max-w-[1600px] mx-auto px-3 sm:px-6 py-3 flex items-center justify-between gap-3">
