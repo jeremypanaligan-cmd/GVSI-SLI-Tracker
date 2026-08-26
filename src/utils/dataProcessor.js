@@ -81,9 +81,19 @@ export function processRows(rawData) {
     if (!cluster && !area && !total) continue
 
     // Check if this is an overall TOTAL row
-    if (/^GRAND\s*TOTAL$/i.test(cluster) || /^GRAND\s*TOTAL$/i.test(area)) {
+    // Matches: "GRAND TOTAL", "OVER ALL TOTAL", "OVERALL TOTAL", or empty CLUSTER+AREA with data
+    const isTotalLabel = /grand\s*total|over\s*all\s*total|overall\s*total/i
+    if (isTotalLabel.test(cluster) || isTotalLabel.test(area)) {
       rows.push({ type: 'overall-total', row, cluster: 'OVERALL TOTAL' })
       continue
+    }
+    // Detect grand total row: empty CLUSTER + empty AREA but has MTD/TARGET data
+    if (!cluster && !area) {
+      const hasData = row['MTD'] || row['TARGET'] || row['TOTAL'] || row['%']
+      if (hasData) {
+        rows.push({ type: 'overall-total', row, cluster: 'OVERALL TOTAL' })
+        continue
+      }
     }
 
     // Check if this is a cluster subtotal row (area says "TOTAL" and no cluster name)
@@ -127,6 +137,43 @@ export function processRows(rawData) {
   }
 
   return rows
+}
+
+/**
+ * Extract overall total metrics from processed rows for the Executive Overview
+ */
+export function extractOverallMetrics(processedRows) {
+  const overall = processedRows.find(r => r.type === 'overall-total')
+  if (!overall) return null
+
+  const r = overall.row
+  const pctVal = cleanNumber(String(r['%']))
+  const completedFromTotal = cleanNumber(String(r['COMPLETED FROM TOTAL']))
+  const completedFromRJO = cleanNumber(String(r['COMPLETED FROM RJO']))
+  const completedTotal = cleanNumber(String(r['COMPLETED TOTAL']))
+
+  return {
+    // Workload
+    bf: cleanNumber(String(r['BF'])),
+    inc: cleanNumber(String(r['INC'])),
+    total: cleanNumber(String(r['TOTAL'])),
+    // Output
+    completedFromTotal,
+    completedFromRJO,
+    completedTotal: isNaN(completedTotal)
+      ? (isNaN(completedFromTotal) ? 0 : completedFromTotal) + (isNaN(completedFromRJO) ? 0 : completedFromRJO)
+      : completedTotal,
+    rjo: cleanNumber(String(r['RJO'])),
+    carryOver: cleanNumber(String(r['CARRY OVER'])),
+    // Monthly progress
+    mtd: cleanNumber(String(r['MTD'])),
+    target: cleanNumber(String(r['TARGET'])),
+    pct: isNaN(pctVal) ? null : pctVal,
+    variance: cleanNumber(String(r['VARIANCE'])),
+    toGo: cleanNumber(String(r['TO GO'])),
+    // Raw for display
+    raw: r,
+  }
 }
 
 /**

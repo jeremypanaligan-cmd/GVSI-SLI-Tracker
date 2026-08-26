@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { fetchSLIData, getCachedData } from './utils/dataFetcher'
-import { processRows, COLUMNS } from './utils/dataProcessor'
+import { processRows, COLUMNS, extractOverallMetrics } from './utils/dataProcessor'
 import SLITable from './components/SLITable'
+import ExecutiveOverview from './components/ExecutiveOverview'
 import SyncIcon from './components/SyncIcon'
 import ThemeToggle from './components/ThemeToggle'
 
@@ -13,6 +14,7 @@ export default function App() {
   const [lastSync, setLastSync] = useState(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [view, setView] = useState('executive') // 'executive' | 'detail'
 
   const loadData = useCallback(async (showSyncing = false) => {
     if (showSyncing) setIsSyncing(true)
@@ -30,7 +32,6 @@ export default function App() {
       }
     } catch (err) {
       setError(err.message)
-      // Try cache as fallback
       const cached = getCachedData()
       if (cached.data) {
         setRawData(cached.data)
@@ -47,7 +48,6 @@ export default function App() {
     loadData()
   }, [loadData])
 
-  // Online/offline detection
   useEffect(() => {
     const goOnline = () => setIsOnline(true)
     const goOffline = () => setIsOnline(false)
@@ -60,7 +60,7 @@ export default function App() {
   }, [])
 
   const processedRows = rawData ? processRows(rawData) : []
-  const overallTotal = processedRows.find(r => r.type === 'overall-total')
+  const overallMetrics = extractOverallMetrics(processedRows)
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
@@ -76,7 +76,10 @@ export default function App() {
                 GVSI SLI Tracker
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
-                Service Line Installation Daily Tracking
+                {view === 'executive'
+                  ? 'Service Line Installation Daily Tracking'
+                  : 'Provincial Breakdown'
+                }
               </p>
             </div>
           </div>
@@ -139,19 +142,28 @@ export default function App() {
               Try Again
             </button>
           </div>
+        ) : view === 'executive' ? (
+          <ExecutiveOverview
+            metrics={overallMetrics}
+            onGoToDetail={() => setView('detail')}
+          />
         ) : (
           <div className="h-full">
-            {/* Info bar */}
-            <div className="max-w-[1600px] mx-auto px-3 sm:px-6 py-2 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
-              <span>
+            {/* Back button + info bar */}
+            <div className="max-w-[1600px] mx-auto px-3 sm:px-6 py-2 flex items-center justify-between gap-3">
+              <button
+                onClick={() => setView('executive')}
+                className="flex items-center gap-1.5 text-xs font-medium text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300 transition"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+                Back to Executive Summary
+              </button>
+              <span className="text-xs text-slate-400 dark:text-slate-500">
                 {processedRows.length} rows
                 {lastSync && ` · Last sync: ${lastSync.toLocaleTimeString()}`}
               </span>
-              {overallTotal && (
-                <span className="text-cyan-600 dark:text-cyan-400 font-medium">
-                  Grand Total: {overallTotal.row['TOTAL'] || overallTotal.row['MTD'] || '—'}
-                </span>
-              )}
             </div>
             <SLITable rows={processedRows} columns={COLUMNS} />
           </div>
@@ -163,18 +175,17 @@ export default function App() {
 
 function LoadingSkeleton() {
   return (
-    <div className="max-w-[1600px] mx-auto px-3 sm:px-6 py-8">
-      <div className="space-y-3">
-        {[...Array(8)].map((_, i) => (
-          <div key={i} className="flex gap-3">
-            <div className="skeleton h-10 rounded-lg flex-1" style={{ animationDelay: `${i * 0.1}s` }} />
-            <div className="skeleton h-10 rounded-lg w-20" style={{ animationDelay: `${i * 0.1 + 0.05}s` }} />
-            <div className="skeleton h-10 rounded-lg w-16" style={{ animationDelay: `${i * 0.1 + 0.1}s` }} />
-            <div className="skeleton h-10 rounded-lg w-16" style={{ animationDelay: `${i * 0.1 + 0.15}s` }} />
-            <div className="skeleton h-10 rounded-lg w-20" style={{ animationDelay: `${i * 0.1 + 0.2}s` }} />
-          </div>
+    <div className="max-w-[1200px] mx-auto px-3 sm:px-6 py-8">
+      {/* KPI cards skeleton */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="skeleton h-24 rounded-2xl" style={{ animationDelay: `${i * 0.1}s` }} />
         ))}
       </div>
+      {/* Summary card skeleton */}
+      <div className="skeleton h-48 rounded-2xl mb-6" />
+      {/* Button skeleton */}
+      <div className="skeleton h-12 rounded-xl" />
     </div>
   )
 }
