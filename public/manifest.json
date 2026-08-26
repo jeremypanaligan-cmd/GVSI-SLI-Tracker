@@ -2,14 +2,25 @@
   "name": "GVSI SLI Tracker",
   "short_name": "SLI Tracker",
   "description": "Service Line Installation Daily Tracking Dashboard",
-  "start_url": "/",
+  "start_url": "/GVSI-SLI-Tracker/",
+  "scope": "/GVSI-SLI-Tracker/",
   "display": "standalone",
   "background_color": "#020617",
   "theme_color": "#0f172a",
   "orientation": "any",
   "icons": [
     {
-      "src": "/favicon.svg",
+      "src": "/GVSI-SLI-Tracker/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/GVSI-SLI-Tracker/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/GVSI-SLI-Tracker/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml"
     }
