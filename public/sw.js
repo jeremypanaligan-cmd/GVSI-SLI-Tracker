@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gvsi-sli-v3'
+const CACHE_NAME = 'gvsi-sli-v4'
 const BASE = '/GVSI-SLI-Tracker'
 
 const SHELL_ASSETS = [
