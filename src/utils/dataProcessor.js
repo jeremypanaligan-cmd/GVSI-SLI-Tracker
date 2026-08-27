@@ -1,7 +1,9 @@
 /**
  * Process raw CSV rows into grouped structure by Cluster and Area.
- * The Google Sheet layout has cluster headers, area rows, subtotal rows,
- * and an overall total row at the bottom.
+ * The Google Sheet layout has:
+ *   - Area rows with a numeric CLUSTER value (1, 2, 3, 4)
+ *   - Cluster subtotal rows (blank CLUSTER & AREA, but has VARIANCE/TO GO data)
+ *   - Overall total row ("OVER ALL TOTAL" in AREA column)
  */
 
 // Columns as they appear in the sheet
@@ -57,7 +59,8 @@ export function formatNumber(val, colKey) {
 }
 
 /**
- * Process rows: classify each as cluster-header, area-data, cluster-subtotal, or overall-total
+ * Process rows: classify each as cluster-header, area-data, cluster-subtotal, or overall-total.
+ * Auto-generates cluster-header rows when a new cluster number is encountered.
  */
 export function processRows(rawData) {
   if (!rawData || rawData.length === 0) return []
@@ -65,67 +68,51 @@ export function processRows(rawData) {
   const rows = []
   let currentCluster = ''
 
+  // Helper: check if a row has any numeric data in key columns
+  function hasNumericData(r) {
+    return r['MTD'] || r['TARGET'] || r['TOTAL'] || r['VARIANCE'] || r['TO GO'] || r['BF']
+  }
+
   for (const row of rawData) {
     const cluster = (row['CLUSTER'] || '').trim()
     const area = (row['AREA'] || '').trim()
-    const total = row['TOTAL']
 
-    // Skip completely empty rows
-    if (!cluster && !area && !total) continue
+    // Skip header row
+    if (cluster === 'CLUSTER' || area === 'AREA') continue
 
     // Check if this is an overall TOTAL row
-    // Matches: "GRAND TOTAL", "OVER ALL TOTAL", "OVERALL TOTAL", or empty CLUSTER+AREA with data
     const isTotalLabel = /grand\s*total|over\s*all\s*total|overall\s*total/i
     if (isTotalLabel.test(cluster) || isTotalLabel.test(area)) {
-      rows.push({ type: 'overall-total', row, cluster: 'OVERALL TOTAL' })
+      rows.push({ type: 'overall-total', row, cluster: 'OVER ALL TOTAL' })
       continue
     }
-    // Detect grand total row: empty CLUSTER + empty AREA but has MTD/TARGET data
-    if (!cluster && !area) {
-      const hasData = row['MTD'] || row['TARGET'] || row['TOTAL'] || row['%']
-      if (hasData) {
-        rows.push({ type: 'overall-total', row, cluster: 'OVERALL TOTAL' })
-        continue
+
+    // Detect numeric cluster value (1, 2, 3, 4)
+    const clusterNum = cluster.match(/^\d+$/) ? cluster : null
+
+    if (clusterNum) {
+      // If this is a new cluster, auto-insert a cluster-header row first
+      if (clusterNum !== currentCluster) {
+        currentCluster = clusterNum
+        rows.push({ type: 'cluster-header', row: {}, cluster: currentCluster })
       }
+      if (area) {
+        rows.push({ type: 'area', row, cluster: currentCluster, area })
+      } else if (hasNumericData(row)) {
+        rows.push({ type: 'cluster-header', row, cluster: currentCluster })
+      }
+      continue
     }
 
-    // Check if this is a cluster subtotal row (area says "TOTAL" and no cluster name)
-    if (/^TOTAL$/i.test(area) && !cluster) {
+    // Blank CLUSTER but has data — cluster subtotal
+    if (!cluster && !area && hasNumericData(row)) {
       rows.push({ type: 'cluster-subtotal', row, cluster: currentCluster })
       continue
     }
 
-    // Check if this is a cluster header (has a cluster name like "CLUSTER 1", "CLUSTER 2", etc.)
-    const clusterMatch = cluster.match(/CLUSTER\s*(\d+)/i)
-    if (clusterMatch) {
-      currentCluster = `CLUSTER ${clusterMatch[1]}`
-      // If the row also has data (not just a header), it might be both
-      if (area && area !== cluster) {
-        rows.push({ type: 'area', row, cluster: currentCluster, area })
-      } else if (!total && area) {
-        // Pure cluster header
-        rows.push({ type: 'cluster-header', row, cluster: currentCluster })
-        continue
-      } else {
-        // Could be cluster header with some data
-        rows.push({ type: 'cluster-header', row, cluster: currentCluster })
-        continue
-      }
-    }
-
-    // It's an area row
-    if (area && cluster) {
-      currentCluster = cluster
-    }
-    if (!currentCluster && cluster) {
-      currentCluster = cluster
-    }
-
+    // Area row without explicit cluster number (inherits current cluster)
     if (area) {
       rows.push({ type: 'area', row, cluster: currentCluster, area })
-    } else if (cluster) {
-      currentCluster = cluster
-      rows.push({ type: 'cluster-header', row, cluster: currentCluster })
     }
   }
 
@@ -167,6 +154,64 @@ export function extractOverallMetrics(processedRows) {
     // Raw for display
     raw: r,
   }
+}
+
+/**
+ * Build flat table rows with rowspan info for cluster grouping.
+ * Returns an array of row objects, each with a `rowspan` on the CLUSTER cell
+ * and a `type` field for rendering logic.
+ */
+export function buildTableRows(rawData) {
+  const processed = processRows(rawData)
+  if (processed.length === 0) return []
+
+  // Group consecutive area + subtotal rows by cluster
+  const groups = []
+  let currentGroup = null
+
+  for (const entry of processed) {
+    if (entry.type === 'cluster-header') {
+      // Start a new group
+      currentGroup = { cluster: entry.cluster, areas: [], subtotal: null }
+      groups.push(currentGroup)
+    } else if (entry.type === 'area' && currentGroup) {
+      currentGroup.areas.push(entry)
+    } else if (entry.type === 'cluster-subtotal' && currentGroup) {
+      currentGroup.subtotal = entry
+    } else if (entry.type === 'overall-total') {
+      groups.push({ type: 'overall-total', entry })
+    }
+  }
+
+  // Build flat rows for rendering
+  const tableRows = []
+  for (const group of groups) {
+    if (group.type === 'overall-total') {
+      tableRows.push({ ...group.entry, rowspan: 1, isFirstOfCluster: false })
+      continue
+    }
+
+    const clusterRows = group.areas.length + (group.subtotal ? 1 : 0)
+    if (clusterRows === 0) continue
+
+    group.areas.forEach((area, idx) => {
+      tableRows.push({
+        ...area,
+        rowspan: idx === 0 ? clusterRows : 0,
+        isFirstOfCluster: idx === 0,
+      })
+    })
+
+    if (group.subtotal) {
+      tableRows.push({
+        ...group.subtotal,
+        rowspan: 0,
+        isFirstOfCluster: false,
+      })
+    }
+  }
+
+  return tableRows
 }
 
 /**
