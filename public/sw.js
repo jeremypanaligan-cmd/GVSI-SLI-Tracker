@@ -59,7 +59,8 @@ self.addEventListener('fetch', (event) => {
   }
 
   // App shell — cache-first with network update (stale-while-revalidate)
-  if (event.request.method === 'GET') {
+  // Skip non-http(s) requests (e.g. chrome-extension://)
+  if (event.request.method === 'GET' && (url.protocol === 'http:' || url.protocol === 'https:')) {
     event.respondWith(
       caches.open(CACHE_NAME).then((cache) => {
         return cache.match(event.request).then((cached) => {
