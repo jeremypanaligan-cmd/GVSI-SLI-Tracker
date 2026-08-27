@@ -14,8 +14,12 @@
     @apply antialiased;
     min-height: 100dvh;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    @apply bg-[#0B0F17] text-slate-200;
+    @apply bg-slate-50 text-slate-900;
     font-variant-numeric: tabular-nums;
+  }
+  .dark body,
+  html.dark body {
+    @apply bg-[#0B0F17] text-slate-100;
   }
 }
 
@@ -25,13 +29,21 @@
   height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #0B0F17;
+  @apply bg-slate-100;
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 999px;
+  @apply bg-slate-300 rounded-full;
 }
 ::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-400;
+}
+.dark ::-webkit-scrollbar-track {
+  background: #0B0F17;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
 
@@ -50,10 +62,14 @@
   100% { background-position: 200% 0; }
 }
 .skeleton {
-  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
   border-radius: 0.75rem;
+}
+.dark .skeleton {
+  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+  background-size: 200% 100%;
 }
 
 /* ── Transition for theme switch ── */
