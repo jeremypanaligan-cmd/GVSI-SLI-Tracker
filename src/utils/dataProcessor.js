@@ -1,226 +1,271 @@
 /**
- * Process raw CSV rows into grouped structure by Cluster and Area.
- * The Google Sheet layout has:
- *   - Area rows with a numeric CLUSTER value (1, 2, 3, 4)
- *   - Cluster subtotal rows (blank CLUSTER & AREA, but has VARIANCE/TO GO data)
- *   - Overall total row ("OVER ALL TOTAL" in AREA column)
+ * GVSI SLI Tracker — Data Processing Utilities
+ *
+ * Supports two data sources:
+ *   1. MTD Sheet   → Executive Overview metrics
+ *   2. RAW DATA    → Daily Status (with date picker)
  */
 
-// Columns as they appear in the sheet
-export const COLUMNS = [
-  { key: 'CLUSTER', label: 'CLUSTER', sticky: true },
-  { key: 'AREA', label: 'AREA', sticky: true },
-  { key: 'BF', label: 'BF', align: 'right' },
-  { key: 'INC', label: 'INC', align: 'right' },
-  { key: 'TOTAL', label: 'TOTAL', align: 'right', bold: true },
-  { key: 'COMPLETED FROM TOTAL', label: 'CMP-TOT', align: 'right' },
-  { key: 'COMPLETED FROM RJO', label: 'CMP-RJO', align: 'right' },
-  { key: 'COMPLETED TOTAL', label: 'CMP', align: 'right', bold: true },
-  { key: 'RJO', label: 'RJO', align: 'right' },
-  { key: 'CARRY OVER', label: 'CO', align: 'right' },
-  { key: 'MTD', label: 'MTD', align: 'right', bold: true },
-  { key: 'TARGET', label: 'TARGET', align: 'right' },
-  { key: '%', label: '%', align: 'center', highlight: true },
-  { key: 'VARIANCE', label: 'VARI', align: 'right' },
-  { key: 'TO GO', label: 'TO GO', align: 'right', prominent: true },
-]
+// ==================== NUMBER UTILITIES ====================
 
-/**
- * Clean numeric string — strip commas, spaces, % signs, parens for negatives
- */
 function cleanNumber(val) {
-  if (!val || typeof val !== 'string') return NaN
-  let s = val.replace(/[,\s]/g, '')
-  // Handle parenthesized negatives: (123) → -123
+  if (val === null || val === undefined || val === '') return NaN
+  if (typeof val === 'number') return val
+  let s = String(val).replace(/[,]/g, '')
   const neg = s.startsWith('(') && s.endsWith(')')
   if (neg) s = s.slice(1, -1)
   if (s.endsWith('%')) s = s.slice(0, -1)
-  const n = parseFloat(s)
+  const n = parseFloat(s.trim())
   if (isNaN(n)) return NaN
   return neg ? -n : n
 }
 
-/**
- * Format number for display
- */
 export function formatNumber(val, colKey) {
   if (val === null || val === undefined || val === '') return '—'
   if (colKey === '%') {
     const n = cleanNumber(String(val))
     if (isNaN(n)) return val
-    return n.toFixed(1) + '%'
+    return n.toFixed(2) + '%'
   }
   const n = cleanNumber(String(val))
-  if (isNaN(n)) return val
-  if (Math.abs(n) >= 1000) {
-    return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
-  }
-  return n % 1 !== 0 ? n.toFixed(1) : String(n)
+  if (isNaN(n)) return String(val)
+  return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
-/**
- * Process rows: classify each as cluster-header, area-data, cluster-subtotal, or overall-total.
- * Auto-generates cluster-header rows when a new cluster number is encountered.
- */
-export function processRows(rawData) {
-  if (!rawData || rawData.length === 0) return []
-
-  const rows = []
-  let currentCluster = ''
-
-  // Helper: check if a row has any numeric data in key columns
-  function hasNumericData(r) {
-    return r['MTD'] || r['TARGET'] || r['TOTAL'] || r['VARIANCE'] || r['TO GO'] || r['BF']
-  }
-
-  for (const row of rawData) {
-    const cluster = (row['CLUSTER'] || '').trim()
-    const area = (row['AREA'] || '').trim()
-
-    // Skip header row
-    if (cluster === 'CLUSTER' || area === 'AREA') continue
-
-    // Check if this is an overall TOTAL row
-    const isTotalLabel = /grand\s*total|over\s*all\s*total|overall\s*total/i
-    if (isTotalLabel.test(cluster) || isTotalLabel.test(area)) {
-      rows.push({ type: 'overall-total', row, cluster: 'OVER ALL TOTAL' })
-      continue
-    }
-
-    // Detect numeric cluster value (1, 2, 3, 4)
-    const clusterNum = cluster.match(/^\d+$/) ? cluster : null
-
-    if (clusterNum) {
-      // If this is a new cluster, auto-insert a cluster-header row first
-      if (clusterNum !== currentCluster) {
-        currentCluster = clusterNum
-        rows.push({ type: 'cluster-header', row: {}, cluster: currentCluster })
-      }
-      if (area) {
-        rows.push({ type: 'area', row, cluster: currentCluster, area })
-      } else if (hasNumericData(row)) {
-        rows.push({ type: 'cluster-header', row, cluster: currentCluster })
-      }
-      continue
-    }
-
-    // Blank CLUSTER but has data — cluster subtotal
-    if (!cluster && !area && hasNumericData(row)) {
-      rows.push({ type: 'cluster-subtotal', row, cluster: currentCluster })
-      continue
-    }
-
-    // Area row without explicit cluster number (inherits current cluster)
-    if (area) {
-      rows.push({ type: 'area', row, cluster: currentCluster, area })
-    }
-  }
-
-  return rows
-}
-
-/**
- * Extract overall total metrics from processed rows for the Executive Overview
- */
-export function extractOverallMetrics(processedRows) {
-  const overall = processedRows.find(r => r.type === 'overall-total')
-  if (!overall) return null
-
-  const r = overall.row
-  const pctVal = cleanNumber(String(r['%']))
-  const completedFromTotal = cleanNumber(String(r['COMPLETED FROM TOTAL']))
-  const completedFromRJO = cleanNumber(String(r['COMPLETED FROM RJO']))
-  const completedTotal = cleanNumber(String(r['COMPLETED TOTAL']))
-
-  return {
-    // Workload
-    bf: cleanNumber(String(r['BF'])),
-    inc: cleanNumber(String(r['INC'])),
-    total: cleanNumber(String(r['TOTAL'])),
-    // Output
-    completedFromTotal,
-    completedFromRJO,
-    completedTotal: isNaN(completedTotal)
-      ? (isNaN(completedFromTotal) ? 0 : completedFromTotal) + (isNaN(completedFromRJO) ? 0 : completedFromRJO)
-      : completedTotal,
-    rjo: cleanNumber(String(r['RJO'])),
-    carryOver: cleanNumber(String(r['CARRY OVER'])),
-    // Monthly progress
-    mtd: cleanNumber(String(r['MTD'])),
-    target: cleanNumber(String(r['TARGET'])),
-    pct: isNaN(pctVal) ? null : pctVal,
-    variance: cleanNumber(String(r['VARIANCE'])),
-    toGo: cleanNumber(String(r['TO GO'])),
-    // Raw for display
-    raw: r,
-  }
-}
-
-/**
- * Build flat table rows with rowspan info for cluster grouping.
- * Returns an array of row objects, each with a `rowspan` on the CLUSTER cell
- * and a `type` field for rendering logic.
- */
-export function buildTableRows(rawData) {
-  const processed = processRows(rawData)
-  if (processed.length === 0) return []
-
-  // Group consecutive area + subtotal rows by cluster
-  const groups = []
-  let currentGroup = null
-
-  for (const entry of processed) {
-    if (entry.type === 'cluster-header') {
-      // Start a new group
-      currentGroup = { cluster: entry.cluster, areas: [], subtotal: null }
-      groups.push(currentGroup)
-    } else if (entry.type === 'area' && currentGroup) {
-      currentGroup.areas.push(entry)
-    } else if (entry.type === 'cluster-subtotal' && currentGroup) {
-      currentGroup.subtotal = entry
-    } else if (entry.type === 'overall-total') {
-      groups.push({ type: 'overall-total', entry })
-    }
-  }
-
-  // Build flat rows for rendering
-  const tableRows = []
-  for (const group of groups) {
-    if (group.type === 'overall-total') {
-      tableRows.push({ ...group.entry, rowspan: 1, isFirstOfCluster: false })
-      continue
-    }
-
-    const clusterRows = group.areas.length + (group.subtotal ? 1 : 0)
-    if (clusterRows === 0) continue
-
-    group.areas.forEach((area, idx) => {
-      tableRows.push({
-        ...area,
-        rowspan: idx === 0 ? clusterRows : 0,
-        isFirstOfCluster: idx === 0,
-      })
-    })
-
-    if (group.subtotal) {
-      tableRows.push({
-        ...group.subtotal,
-        rowspan: 0,
-        isFirstOfCluster: false,
-      })
-    }
-  }
-
-  return tableRows
-}
-
-/**
- * Get achievement badge styling for a % value
- */
 export function getBadgeStyle(pctValue) {
   const n = cleanNumber(String(pctValue))
-  if (isNaN(n)) return { color: 'text-slate-400 dark:text-slate-400', bg: 'bg-slate-100 dark:bg-slate-800', label: '—' }
+  if (isNaN(n)) return { color: 'text-slate-400', bg: 'bg-slate-100 dark:bg-slate-800', label: '—' }
   if (n >= 100) return { color: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-100 dark:bg-emerald-900/60', border: 'border-emerald-400 dark:border-emerald-500/40', label: 'HIT', pulse: true }
   if (n >= 80) return { color: 'text-amber-700 dark:text-amber-300', bg: 'bg-amber-100 dark:bg-amber-900/60', border: 'border-amber-400 dark:border-amber-500/40', label: 'LAG' }
   return { color: 'text-red-700 dark:text-red-300', bg: 'bg-red-100 dark:bg-red-900/60', border: 'border-red-400 dark:border-red-500/40', label: 'MISS' }
+}
+
+// ==================== MTD PARSING ====================
+
+const AREAS = [
+  'Benguet', 'Ilocos Sur', 'Ilocos Norte', 'Nueva Vizcaya',
+  'Isabela', 'Quirino', 'Cagayan', 'Kalinga', 'Abra',
+  'Ifugao', 'Apayao', 'Mountain Province'
+]
+
+/**
+ * Parse MTD sheet CSV rows into structured data for Executive Overview.
+ * MTD format: AREA, TOTAL BF, TOTAL INC, TOTAL JO, TOTAL COMPLETED, TOTAL RJO, LAST CARRY OVER, LAST MTD, TARGET, LAST %
+ */
+export function parseMTDData(mtdRows) {
+  if (!mtdRows || mtdRows.length === 0) return null
+
+  // Find the data rows (skip title/header rows)
+  let areas = []
+  let overallTotal = null
+
+  for (const row of mtdRows) {
+    const area = String(row['AREA'] || '').trim()
+    if (!area || area === 'AREA' || area.includes('SLI MTD') || area.includes('August') || area.includes('July') || area.includes('September') || area.includes('October') || area.includes('November') || area.includes('December') || area.includes('January') || area.includes('February') || area.includes('March') || area.includes('April') || area.includes('May') || area.includes('June')) continue
+
+    const entry = {
+      area,
+      totalBf: cleanNumber(row['TOTAL BF']),
+      totalInc: cleanNumber(row['TOTAL INC']),
+      totalJo: cleanNumber(row['TOTAL JO']),
+      totalCompleted: cleanNumber(row['TOTAL COMPLETED']),
+      totalRjo: cleanNumber(row['TOTAL RJO']),
+      lastCarryOver: cleanNumber(row['LAST CARRY OVER']),
+      lastMtd: cleanNumber(row['LAST MTD']),
+      target: cleanNumber(row['TARGET']),
+      lastPct: cleanNumber(row['LAST %']),
+    }
+
+    if (area === 'OVER ALL TOTAL') {
+      overallTotal = entry
+    } else {
+      areas.push(entry)
+    }
+  }
+
+  return { areas, overallTotal }
+}
+
+/**
+ * Extract executive KPI metrics from parsed MTD data.
+ */
+export function extractExecutiveMetrics(mtdData) {
+  if (!mtdData || !mtdData.overallTotal) return null
+  const ot = mtdData.overallTotal
+
+  return {
+    bf: ot.totalBf,
+    inc: ot.totalInc,
+    total: ot.totalJo,
+    completedTotal: ot.totalCompleted,
+    completedFromTotal: 0,
+    completedFromRJO: ot.totalRjo,
+    rjo: ot.totalRjo,
+    carryOver: ot.lastCarryOver,
+    mtd: ot.lastMtd,
+    target: ot.target,
+    pct: ot.lastPct,
+    toGo: Math.max(0, ot.target - ot.lastMtd),
+    variance: ot.lastMtd - ot.target,
+    raw: ot,
+  }
+}
+
+// ==================== RAW DATA (DAILY) PARSING ====================
+
+/**
+ * Parse RAW DATA CSV into date-keyed blocks.
+ * RAW DATA format (old block format):
+ *   "SLI DAILY TRACKING REPORT as of __Aug. 1, 2026__"  ← title row
+ *   FIBERX                                                 ← sub-header
+ *   AREA, BF, INC, TOTAL, COMPLETED, ..., RJO, CARRY OVER, MTD, TARGET, %
+ *   ,,,,FROM TOTAL,FROM RJO,TOTAL,,,,,,,
+ *   Benguet,38,34,72,19,15,34,20,33,34,509,6.68%,,      ← data rows
+ *   OVER ALL TOTAL,...
+ *
+ * OR new continuous format:
+ *   Date, AREA, BF, INC, Total Jo, COMPLETED FROM TOTAL, COMPLETED FROM RJO, TOTAL COMPLETED, RJO, Carry Over, MTD, TARGET, %
+ *   Aug 1 2026, Benguet, 38, ...
+ */
+export function parseRawDailyData(rawRows) {
+  if (!rawRows || rawRows.length === 0) return { dates: [], blocks: {} }
+
+  const blocks = {}
+  const dates = []
+
+  // Check if this is the new continuous format (has 'Date' column)
+  const hasDateCol = rawRows[0] && rawRows[0]['Date'] !== undefined
+
+  if (hasDateCol) {
+    // New continuous format — each row has a Date column
+    for (const row of rawRows) {
+      const dateStr = String(row['Date'] || '').trim()
+      if (!dateStr) continue
+
+      const area = String(row['AREA'] || '').trim()
+      if (!area || area === 'AREA') continue
+
+      if (!blocks[dateStr]) {
+        blocks[dateStr] = { areas: [], overallTotal: null }
+        dates.push(dateStr)
+      }
+
+      const entry = {
+        area,
+        bf: cleanNumber(row['BF']),
+        inc: cleanNumber(row['INC']),
+        totalJo: cleanNumber(row['Total Jo'] || row['TOTAL']),
+        completedFromTotal: cleanNumber(row['COMPLETED FROM TOTAL']),
+        completedFromRjo: cleanNumber(row['COMPLETED FROM RJO']),
+        totalCompleted: cleanNumber(row['TOTAL COMPLETED']),
+        rjo: cleanNumber(row['RJO']),
+        carryOver: cleanNumber(row['Carry Over'] || row['CARRY OVER']),
+        mtd: cleanNumber(row['MTD']),
+        target: cleanNumber(row['TARGET']),
+        pct: cleanNumber(row['%']),
+      }
+
+      if (area === 'OVER ALL TOTAL') {
+        blocks[dateStr].overallTotal = entry
+      } else {
+        blocks[dateStr].areas.push(entry)
+      }
+    }
+  } else {
+    // Old block format — date in title rows
+    let currentDate = null
+
+    for (const row of rawRows) {
+      const first = String(row['CLUSTER'] || row[Object.keys(row)[0]] || '').trim()
+
+      // Detect title row
+      if (first.includes('SLI DAILY TRACKING REPORT as of')) {
+        let dateMatch = first.match(/__(.+?)__/)
+        if (!dateMatch) dateMatch = first.match(/as of\s+(.+?)$/)
+        if (dateMatch) {
+          const d = dateMatch[1].trim().replace(/\./g, '').replace(/,/g, '').replace(/__/g, '').trim()
+          currentDate = d
+          if (!blocks[currentDate]) {
+            blocks[currentDate] = { areas: [], overallTotal: null }
+            dates.push(currentDate)
+          }
+        }
+        continue
+      }
+
+      // Skip sub-headers
+      if (first === 'FIBERX' || first === '' || first === 'AREA' || first.includes('FROM TOTAL') || first === 'BF') continue
+      if (!currentDate) continue
+
+      // Data row — extract AREA from first meaningful column
+      const areaVal = String(row['AREA'] || '').trim() || first
+      if (!areaVal || areaVal === 'AREA') continue
+
+      const entry = {
+        area: areaVal,
+        bf: cleanNumber(row['BF']),
+        inc: cleanNumber(row['INC']),
+        totalJo: cleanNumber(row['TOTAL'] || row['Total Jo']),
+        completedFromTotal: cleanNumber(row['FROM TOTAL'] || row['COMPLETED FROM TOTAL']),
+        completedFromRjo: cleanNumber(row['FROM RJO'] || row['COMPLETED FROM RJO']),
+        totalCompleted: cleanNumber(row['TOTAL'] || row['COMPLETED'] || row['TOTAL COMPLETED']),
+        rjo: cleanNumber(row['RJO']),
+        carryOver: cleanNumber(row['CARRY OVER'] || row['Carry Over']),
+        mtd: cleanNumber(row['MTD']),
+        target: cleanNumber(row['TARGET']),
+        pct: cleanNumber(row['%']),
+      }
+
+      if (areaVal === 'OVER ALL TOTAL') {
+        blocks[currentDate].overallTotal = entry
+      } else if (AREAS.some(a => areaVal.includes(a))) {
+        blocks[currentDate].areas.push(entry)
+      }
+    }
+  }
+
+  return { dates, blocks }
+}
+
+/**
+ * Get today's date string in "Aug 30 2026" format for matching RAW DATA dates.
+ */
+export function getTodayStr() {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const now = new Date()
+  return `${months[now.getMonth()]} ${now.getDate()} ${now.getFullYear()}`
+}
+
+/**
+ * Find the closest available date to today (or today itself).
+ */
+export function findClosestDate(dates, targetDateStr) {
+  if (!dates || dates.length === 0) return null
+  if (dates.includes(targetDateStr)) return targetDateStr
+
+  // Try to parse and find closest
+  const parseShort = (s) => {
+    const m = s.match(/(\w+)\s+(\d+)\s+(\d{4})/)
+    if (!m) return null
+    const months = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 }
+    return new Date(parseInt(m[3]), months[m[1]], parseInt(m[2]))
+  }
+
+  const target = parseShort(targetDateStr)
+  if (!target) return dates[dates.length - 1] // fallback to latest
+
+  let closest = dates[0]
+  let minDiff = Infinity
+
+  for (const d of dates) {
+    const dt = parseShort(d)
+    if (!dt) continue
+    const diff = Math.abs(dt.getTime() - target.getTime())
+    if (diff < minDiff) {
+      minDiff = diff
+      closest = d
+    }
+  }
+
+  return closest
 }

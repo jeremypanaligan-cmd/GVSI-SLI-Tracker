@@ -1,6 +1,6 @@
 /**
  * Parse a CSV string into an array of objects.
- * Handles quoted fields and various line endings.
+ * Handles quoted fields, various line endings, and title/header rows.
  */
 export function parseCSV(csvText) {
   const lines = []
@@ -55,10 +55,23 @@ export function parseCSV(csvText) {
     return cells
   }
 
-  const headers = parseRow(lines[0])
+  // Find the header row: first line with at least 3 non-empty cells
+  // (skips title rows like "SLI MTD TRACKING REPORT,,,,,,,,")
+  let headerIndex = 0
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].trim()) continue
+    const cells = parseRow(lines[i])
+    const nonEmpty = cells.filter(c => c !== '')
+    if (nonEmpty.length >= 3) {
+      headerIndex = i
+      break
+    }
+  }
+
+  const headers = parseRow(lines[headerIndex])
   const data = []
 
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = headerIndex + 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue
     const values = parseRow(lines[i])
     const row = {}

@@ -1,41 +1,58 @@
 import { useState, useEffect, useCallback } from 'react'
-import { fetchSLIData, getCachedData } from './utils/dataFetcher'
-import { buildTableRows, extractOverallMetrics } from './utils/dataProcessor'
-import SLITable from './components/SLITable'
+import { fetchAllData, getCachedData } from './utils/dataFetcher'
+import {
+  parseMTDData, extractExecutiveMetrics,
+  parseRawDailyData, getTodayStr, findClosestDate,
+} from './utils/dataProcessor'
 import ExecutiveOverview from './components/ExecutiveOverview'
+import DailyTable from './components/DailyTable'
+import DatePicker from './components/DatePicker'
 import SyncIcon from './components/SyncIcon'
 import ThemeToggle from './components/ThemeToggle'
 
 export default function App() {
-  const [rawData, setRawData] = useState(null)
+  const [mtdData, setMtdData] = useState(null)
+  const [rawDaily, setRawDaily] = useState(null) // { dates, blocks }
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [source, setSource] = useState('none')
   const [lastSync, setLastSync] = useState(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
-  const [view, setView] = useState('executive') // 'executive' | 'detail'
+  const [view, setView] = useState('executive') // 'executive' | 'daily'
+  const [selectedDate, setSelectedDate] = useState('')
   const [showVariance, setShowVariance] = useState(false)
 
   const loadData = useCallback(async (showSyncing = false) => {
     if (showSyncing) setIsSyncing(true)
-    if (!rawData) setLoading(true)
+    if (!mtdData) setLoading(true)
     setError(null)
 
     try {
-      const result = await fetchSLIData()
-      if (result.data && result.data.length > 0) {
-        setRawData(result.data)
-        setSource(result.source)
-        setLastSync(result.timestamp)
-      } else {
-        setError('No data received from the Google Sheet. Check if the sheet is publicly accessible.')
+      const result = await fetchAllData()
+
+      // Parse MTD data
+      const parsed = parseMTDData(result.mtd)
+      setMtdData(parsed)
+
+      // Parse RAW DATA daily blocks
+      const daily = parseRawDailyData(result.raw)
+      setRawDaily(daily)
+
+      setSource(result.source)
+      setLastSync(result.timestamp)
+
+      // Auto-select closest date to today
+      if (daily.dates.length > 0 && !selectedDate) {
+        const today = getTodayStr()
+        setSelectedDate(findClosestDate(daily.dates, today))
       }
     } catch (err) {
       setError(err.message)
       const cached = getCachedData()
-      if (cached.data) {
-        setRawData(cached.data)
+      if (cached.mtd) {
+        setMtdData(parseMTDData(cached.mtd))
+        setRawDaily(parseRawDailyData(cached.raw))
         setSource(cached.source)
         setLastSync(cached.timestamp)
       }
@@ -43,7 +60,7 @@ export default function App() {
       setLoading(false)
       setIsSyncing(false)
     }
-  }, [rawData])
+  }, [mtdData, selectedDate])
 
   useEffect(() => {
     loadData()
@@ -60,13 +77,15 @@ export default function App() {
     }
   }, [])
 
-  const tableRows = rawData ? buildTableRows(rawData) : []
-  const overallMetrics = extractOverallMetrics(tableRows)
+  // Derived data
+  const executiveMetrics = extractExecutiveMetrics(mtdData)
+  const dailyBlock = rawDaily?.blocks?.[selectedDate] || null
+  const availableDates = rawDaily?.dates || []
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F17] flex flex-col font-sans">
       {/* Sync overlay */}
-      {isSyncing && rawData && (
+      {isSyncing && mtdData && (
         <div className="fixed inset-0 z-[60] bg-black/20 dark:bg-black/40 backdrop-blur-sm flex items-center justify-center pointer-events-none">
           <div className="bg-white dark:bg-slate-900/90 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700/50 px-6 py-4 flex items-center gap-3 pointer-events-none">
             <SyncIcon spinning />
@@ -87,10 +106,7 @@ export default function App() {
                 GVSI SLI Tracker
               </h1>
               <p className="text-xs text-slate-500 hidden sm:block">
-                {view === 'executive'
-                  ? 'Service Line Installation Daily Tracking'
-                  : 'Provincial Breakdown'
-                }
+                {view === 'executive' ? 'Executive Overview — MTD Data' : `Daily Status — ${selectedDate || 'Loading…'}`}
               </p>
             </div>
           </div>
@@ -130,9 +146,9 @@ export default function App() {
 
       {/* Content */}
       <main className="flex-1 overflow-hidden">
-        {loading && !rawData ? (
+        {loading && !mtdData ? (
           <LoadingSkeleton />
-        ) : error && !rawData ? (
+        ) : error && !mtdData ? (
           <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
             <div className="w-16 h-16 rounded-2xl bg-rose-100 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 flex items-center justify-center mb-4">
               <svg className="w-8 h-8 text-rose-500 dark:text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -150,13 +166,13 @@ export default function App() {
           </div>
         ) : view === 'executive' ? (
           <ExecutiveOverview
-            metrics={overallMetrics}
-            onGoToDetail={() => setView('detail')}
+            metrics={executiveMetrics}
+            onGoToDetail={() => setView('daily')}
           />
         ) : (
           <div className="h-full flex flex-col">
             {/* Control bar */}
-            <div className="w-full px-4 sm:px-6 py-2 flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800/40">
+            <div className="w-full px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800/40">
               <button
                 onClick={() => setView('executive')}
                 className="flex items-center gap-1.5 text-xs font-medium text-teal-600 dark:text-teal-400 hover:text-teal-500 dark:hover:text-teal-300 transition"
@@ -168,34 +184,20 @@ export default function App() {
               </button>
 
               <div className="flex items-center gap-3">
-                {/* Global variance toggle */}
-                <button
-                  onClick={() => setShowVariance(v => !v)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
-                    showVariance
-                      ? 'bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300 border border-teal-300 dark:border-teal-500/30'
-                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-500 border border-slate-200 dark:border-slate-700/50 hover:border-slate-300 dark:hover:border-slate-600'
-                  }`}
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d={showVariance ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'} />
-                  </svg>
-                  {showVariance ? 'Hide Cluster Variances' : 'Show Cluster Variances'}
-                </button>
-
+                <DatePicker
+                  dates={availableDates}
+                  selectedDate={selectedDate}
+                  onSelect={setSelectedDate}
+                />
                 <span className="text-[11px] text-slate-400 dark:text-slate-600">
                   {lastSync && `Last sync: ${lastSync.toLocaleTimeString()}`}
                 </span>
               </div>
             </div>
 
-            {/* Table */}
-            <div className="flex-1 overflow-hidden">
-              <SLITable
-                rows={tableRows}
-                showVariance={showVariance}
-                onToggleVariance={() => setShowVariance(v => !v)}
-              />
+            {/* Daily table */}
+            <div className="flex-1 overflow-auto">
+              <DailyTable dateData={dailyBlock} />
             </div>
           </div>
         )}

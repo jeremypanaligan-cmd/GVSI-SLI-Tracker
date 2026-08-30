@@ -37,7 +37,8 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
 
   // Google Sheets data — cache-first with network update (for offline)
-  if (url.hostname === 'docs.google.com' && url.pathname.includes('/export')) {
+  // Skip non-http(s) requests (e.g. chrome-extension://)
+  if (event.request.method === 'GET' && (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname === 'docs.google.com' && url.pathname.includes('/export')) {
     event.respondWith(
       caches.open(DATA_CACHE).then((cache) => {
         return cache.match(event.request).then((cached) => {
