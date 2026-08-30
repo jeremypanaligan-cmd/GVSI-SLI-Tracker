@@ -1,10 +1,11 @@
 /**
- * GVSI SLI Tracker - Automated Database Management v6
+ * GVSI SLI Tracker - Automated Database Management v7
  * 
  * RAW DATA format (continuous table):
  *   Date | AREA | BF | INC | Total Jo | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED | RJO | Carry Over | MTD | TARGET | %
  * 
- * MTD format: AREA, TOTAL BF, TOTAL INC, TOTAL JO, TOTAL COMPLETED, TOTAL RJO, LAST CARRY OVER, LAST MTD, TARGET, LAST %
+ * MTD format (new):
+ *   AREA | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED | TOTAL RJO | LAST MTD | TARGET | LAST %
  */
 
 const FIBERX_SHEET_NAME = 'FIBERX NEW REPORT';
@@ -21,6 +22,11 @@ const RAW_HEADER = [
   'Date', 'AREA', 'BF', 'INC', 'Total Jo',
   'COMPLETED FROM TOTAL', 'COMPLETED FROM RJO', 'TOTAL COMPLETED',
   'RJO', 'Carry Over', 'MTD', 'TARGET', '%'
+];
+
+const MTD_HEADER = [
+  'AREA', 'COMPLETED FROM TOTAL', 'COMPLETED FROM RJO',
+  'TOTAL COMPLETED', 'TOTAL RJO', 'LAST MTD', 'TARGET', 'LAST %'
 ];
 
 // ==================== IMPORT ====================
@@ -51,9 +57,8 @@ function importFiberxToRawData() {
     var row = fiberxData[i];
     var firstCell = String(row[0]).trim();
     
-    // Detect block header: "SLI DAILY TRACKING REPORT as of __Aug. 1, 2026__"
+    // Detect block header
     if (firstCell.includes('SLI DAILY TRACKING REPORT as of')) {
-      // Extract date from format "as of __Aug. 1, 2026__" or "as of Aug. 1, 2026"
       var dateMatch = firstCell.match(/__(.+?)__/);
       if (!dateMatch) dateMatch = firstCell.match(/as of\s+(.+?)$/);
       if (dateMatch) {
@@ -67,10 +72,8 @@ function importFiberxToRawData() {
     if (firstCell.includes('FROM TOTAL') || firstCell === 'BF') continue;
     if (firstCell.startsWith(',,,,')) continue;
     
-    // Must have a valid date and area name
     if (!currentDate) continue;
     
-    // FIBERX columns: AREA(0), BF(1), INC(2), TOTAL(3), FROM_TOTAL(4), FROM_RJO(5), COMPLETED_TOTAL(6), RJO(7), CARRY_OVER(8), MTD(9), TARGET(10), %(11)
     var bf = row[1] || 0;
     var inc = row[2] || 0;
     var total = row[3] || 0;
@@ -100,19 +103,15 @@ function importFiberxToRawData() {
     rawSheet.getRange(2, 1, allRows.length, RAW_HEADER.length).setValues(allRows);
   }
   
-  // Apply number formatting
+  // Apply formatting
   applyRawDataFormat(rawSheet);
+  applyOverAllTotalFormatting(rawSheet);
   
   try { SpreadsheetApp.getUi().alert('Import Complete!\n\nImported ' + allRows.length + ' data rows.'); } catch(e) {}
 }
 
-/**
- * Convert "Aug. 1, 2026" or "Aug 1 2026" to "Aug 1 2026"
- */
 function formatExportDate(dateStr) {
-  // Remove extra punctuation but keep the format readable
   var cleaned = dateStr.replace(/\./g, '').replace(/,/g, '').replace(/__/g, '').trim();
-  // Clean up double spaces
   cleaned = cleaned.replace(/\s+/g, ' ');
   return cleaned;
 }
@@ -120,12 +119,32 @@ function formatExportDate(dateStr) {
 function applyRawDataFormat(sheet) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return;
-  var dataRows = lastRow - 1; // minus header
-  // B-M (columns 2-13): for numbers
+  var dataRows = lastRow - 1;
   // C-L (cols 3-12): numbers with comma
   sheet.getRange(2, 3, dataRows, 10).setNumberFormat('#,##0');
   // M (col 13): percentage
   sheet.getRange(2, 13, dataRows, 1).setNumberFormat('0.00%');
+}
+
+/**
+ * Format OVER ALL TOTAL rows with black background and white bold text
+ */
+function applyOverAllTotalFormatting(sheet) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  
+  var data = sheet.getRange(2, 1, lastRow - 1, RAW_HEADER.length).getValues();
+  
+  for (var i = 0; i < data.length; i++) {
+    var areaCell = String(data[i][1]).trim(); // Column B = AREA
+    if (areaCell === 'OVER ALL TOTAL') {
+      var rowNum = i + 2; // +2 because: 1-indexed + header row
+      var rowRange = sheet.getRange(rowNum, 1, 1, RAW_HEADER.length);
+      rowRange.setBackground('#000000'); // Black background
+      rowRange.setFontColor('#FFFFFF');  // White text
+      rowRange.setFontWeight('bold');    // Bold
+    }
+  }
 }
 
 // ==================== MTD REPORT ====================
@@ -170,9 +189,9 @@ function generateMTDReport() {
     mtdSheet.getRange(currentRow, 1).setFontWeight(true).setFontSize(12);
     currentRow++;
     
-    var mtdHeaders = ['AREA', 'TOTAL BF', 'TOTAL INC', 'TOTAL JO', 'TOTAL COMPLETED', 'TOTAL RJO', 'LAST CARRY OVER', 'LAST MTD', 'TARGET', 'LAST %'];
-    mtdSheet.getRange(currentRow, 1, 1, mtdHeaders.length).setValues([mtdHeaders]);
-    mtdSheet.getRange(currentRow, 1, 1, mtdHeaders.length).setFontWeight(true);
+    // New MTD header format
+    mtdSheet.getRange(currentRow, 1, 1, MTD_HEADER.length).setValues([MTD_HEADER]);
+    mtdSheet.getRange(currentRow, 1, 1, MTD_HEADER.length).setFontWeight(true);
     currentRow++;
     
     var lastDay = monthData[monthData.length - 1];
@@ -182,34 +201,34 @@ function generateMTDReport() {
       var areaData = lastDay.areas[area];
       if (!areaData) continue;
       
-      var totalBf = 0, totalInc = 0, totalJo = 0, totalComp = 0, totalRjo = 0;
+      // Sum completed from total and completed from RJO across all days
+      var totalCompFromTotal = 0, totalCompFromRjo = 0, totalComp = 0, totalRjo = 0;
       for (var d = 0; d < monthData.length; d++) {
         var ad = monthData[d].areas[area];
         if (ad) {
-          totalBf += ad.bf || 0;
-          totalInc += ad.inc || 0;
-          totalJo += ad.totalJo || 0;
+          totalCompFromTotal += ad.compFromTotal || 0;
+          totalCompFromRjo += ad.compFromRjo || 0;
           totalComp += ad.totalCompleted || 0;
           totalRjo += ad.rjo || 0;
         }
       }
       
-      mtdSheet.getRange(currentRow, 1, 1, 10).setValues([[
-        area, totalBf, totalInc, totalJo, totalComp, totalRjo,
-        areaData.carryOver, areaData.mtd, areaData.target, areaData.pct
+      mtdSheet.getRange(currentRow, 1, 1, MTD_HEADER.length).setValues([[
+        area, totalCompFromTotal, totalCompFromRjo, totalComp, totalRjo,
+        areaData.mtd, areaData.target, areaData.pct
       ]]);
       currentRow++;
     }
     
-    var tbf = 0, tinc = 0, tjo = 0, tcomp = 0, trjo = 0;
+    // OVER ALL TOTAL
+    var tCompFromTotal = 0, tCompFromRjo = 0, tComp = 0, tRjo = 0;
     for (var d = 0; d < monthData.length; d++) {
       var da = Object.values(monthData[d].areas);
       for (var aa = 0; aa < da.length; aa++) {
-        tbf += da[aa].bf || 0;
-        tinc += da[aa].inc || 0;
-        tjo += da[aa].totalJo || 0;
-        tcomp += da[aa].totalCompleted || 0;
-        trjo += da[aa].rjo || 0;
+        tCompFromTotal += da[aa].compFromTotal || 0;
+        tCompFromRjo += da[aa].compFromRjo || 0;
+        tComp += da[aa].totalCompleted || 0;
+        tRjo += da[aa].rjo || 0;
       }
     }
     
@@ -218,9 +237,9 @@ function generateMTDReport() {
     var ltarget = lt ? lt.target : 0;
     var lpct = ltarget > 0 ? (lm / ltarget) : 0;
     
-    mtdSheet.getRange(currentRow, 1, 1, 10).setValues([[
-      'OVER ALL TOTAL', tbf, tinc, tjo, tcomp, trjo,
-      lt ? lt.carryOver : 0, lm, ltarget, lpct
+    mtdSheet.getRange(currentRow, 1, 1, MTD_HEADER.length).setValues([[
+      'OVER ALL TOTAL', tCompFromTotal, tCompFromRjo, tComp, tRjo,
+      lm, ltarget, lpct
     ]]);
     mtdSheet.getRange(currentRow, 1).setFontWeight(true);
     currentRow += 3;
@@ -229,12 +248,24 @@ function generateMTDReport() {
   // Apply MTD formatting
   var lastDataRow = currentRow - 4;
   if (lastDataRow > 4) {
-    mtdSheet.getRange(5, 2, lastDataRow - 4, 8).setNumberFormat('#,##0');
-    mtdSheet.getRange(5, 9, lastDataRow - 4, 1).setNumberFormat('#,##0');
-    mtdSheet.getRange(5, 10, lastDataRow - 4, 1).setNumberFormat('0.00%');
+    // B-F (cols 2-6): numbers with comma
+    mtdSheet.getRange(5, 2, lastDataRow - 4, 5).setNumberFormat('#,##0');
+    // G (col 7): LAST MTD
+    mtdSheet.getRange(5, 7, lastDataRow - 4, 1).setNumberFormat('#,##0');
+    // H (col 8): TARGET
+    mtdSheet.getRange(5, 8, lastDataRow - 4, 1).setNumberFormat('#,##0');
+    // I (col 9): LAST % — wait, let me recount
+    // MTD_HEADER: AREA(0), COMP FROM TOTAL(1), COMP FROM RJO(2), TOTAL COMP(3), TOTAL RJO(4), LAST MTD(5), TARGET(6), LAST %(7)
+    // Columns: A=1, B=2, C=3, D=4, E=5, F=6, G=7, H=8
+    // B-F = cols 2-6 = COMP FROM TOTAL, COMP FROM RJO, TOTAL COMP, TOTAL RJO, LAST MTD → #,##0
+    // G = col 7 = TARGET → #,##0
+    // H = col 8 = LAST % → 0.00%
+    mtdSheet.getRange(5, 2, lastDataRow - 4, 5).setNumberFormat('#,##0');
+    mtdSheet.getRange(5, 7, lastDataRow - 4, 1).setNumberFormat('#,##0');
+    mtdSheet.getRange(5, 8, lastDataRow - 4, 1).setNumberFormat('0.00%');
   }
   
-  for (var c = 1; c <= 10; c++) mtdSheet.autoResizeColumn(c);
+  for (var c = 1; c <= MTD_HEADER.length; c++) mtdSheet.autoResizeColumn(c);
   
   try { SpreadsheetApp.getUi().alert('MTD Report Generated!'); } catch(e) {}
 }
@@ -245,15 +276,13 @@ function parseRawData(rawData) {
   var dailyData = [];
   var currentBlock = null;
   
-  for (var i = 1; i < rawData.length; i++) { // skip header row
+  for (var i = 1; i < rawData.length; i++) {
     var row = rawData[i];
     var dateStr = String(row[0]).trim();  // Column A = Date
     var areaStr = String(row[1]).trim();  // Column B = AREA
     
-    // Skip empty rows
     if (!dateStr && !areaStr) continue;
     
-    // If we encounter a new date, start a new block
     if (dateStr && (!currentBlock || currentBlock.dateStr !== dateStr)) {
       if (currentBlock) dailyData.push(currentBlock);
       currentBlock = { date: parseExportDate(dateStr), dateStr: dateStr, areas: {}, overallTotal: null };
@@ -261,7 +290,7 @@ function parseRawData(rawData) {
     
     if (!currentBlock) continue;
     
-    // New continuous format: Date(0), AREA(1), BF(2), INC(3), TotalJo(4), CompFromTotal(5), CompFromRjo(6), TotalCompleted(7), RJO(8), CarryOver(9), MTD(10), TARGET(11), %(12)
+    // RAW DATA: Date(0), AREA(1), BF(2), INC(3), TotalJo(4), CompFromTotal(5), CompFromRjo(6), TotalCompleted(7), RJO(8), CarryOver(9), MTD(10), TARGET(11), %(12)
     var entry = {
       bf: cleanNum(row[2]), inc: cleanNum(row[3]), totalJo: cleanNum(row[4]),
       compFromTotal: cleanNum(row[5]), compFromRjo: cleanNum(row[6]), totalCompleted: cleanNum(row[7]),

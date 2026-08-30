@@ -40,37 +40,59 @@ export function getBadgeStyle(pctValue) {
   return { color: 'text-red-700 dark:text-red-300', bg: 'bg-red-100 dark:bg-red-900/60', border: 'border-red-400 dark:border-red-500/40', label: 'MISS' }
 }
 
-// ==================== MTD PARSING ====================
+// ==================== MONTH DETECTION ====================
 
-const AREAS = [
-  'Benguet', 'Ilocos Sur', 'Ilocos Norte', 'Nueva Vizcaya',
-  'Isabela', 'Quirino', 'Cagayan', 'Kalinga', 'Abra',
-  'Ifugao', 'Apayao', 'Mountain Province'
-]
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December']
 
 /**
- * Parse MTD sheet CSV rows into structured data for Executive Overview.
- * MTD format: AREA, TOTAL BF, TOTAL INC, TOTAL JO, TOTAL COMPLETED, TOTAL RJO, LAST CARRY OVER, LAST MTD, TARGET, LAST %
+ * Get current month and year as a string like "August 2026"
  */
-export function parseMTDData(mtdRows) {
-  if (!mtdRows || mtdRows.length === 0) return null
+export function getCurrentMonthYear() {
+  const now = new Date()
+  return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`
+}
 
-  // Find the data rows (skip title/header rows)
+// ==================== MTD PARSING ====================
+
+/**
+ * Parse MTD sheet CSV into structured data for Executive Overview.
+ * @param {Object} mtdData - { headers, rows, objects } from parseCSV
+ */
+export function parseMTDData(mtdData) {
+  if (!mtdData) return null
+  const mtdRows = mtdData.objects || []
+  if (mtdRows.length === 0) return null
+
+  const currentMonthYear = getCurrentMonthYear()
+  let foundCurrentMonth = false
   let areas = []
   let overallTotal = null
 
   for (const row of mtdRows) {
     const area = String(row['AREA'] || '').trim()
-    if (!area || area === 'AREA' || area.includes('SLI MTD') || area.includes('August') || area.includes('July') || area.includes('September') || area.includes('October') || area.includes('November') || area.includes('December') || area.includes('January') || area.includes('February') || area.includes('March') || area.includes('April') || area.includes('May') || area.includes('June')) continue
+
+    if (area === 'AREA') continue
+
+    // Detect month section headers
+    const isMonthHeader = MONTH_NAMES.some(m => area.includes(m)) && /\d{4}/.test(area)
+    if (isMonthHeader) {
+      foundCurrentMonth = area === currentMonthYear
+      if (!foundCurrentMonth && areas.length > 0) break
+      areas = []
+      overallTotal = null
+      continue
+    }
+
+    if (!area || area.includes('SLI MTD')) continue
+    if (!foundCurrentMonth) continue
 
     const entry = {
       area,
-      totalBf: cleanNumber(row['TOTAL BF']),
-      totalInc: cleanNumber(row['TOTAL INC']),
-      totalJo: cleanNumber(row['TOTAL JO']),
+      compFromTotal: cleanNumber(row['COMPLETED FROM TOTAL']),
+      compFromRjo: cleanNumber(row['COMPLETED FROM RJO']),
       totalCompleted: cleanNumber(row['TOTAL COMPLETED']),
       totalRjo: cleanNumber(row['TOTAL RJO']),
-      lastCarryOver: cleanNumber(row['LAST CARRY OVER']),
       lastMtd: cleanNumber(row['LAST MTD']),
       target: cleanNumber(row['TARGET']),
       lastPct: cleanNumber(row['LAST %']),
@@ -83,66 +105,181 @@ export function parseMTDData(mtdRows) {
     }
   }
 
+  // Fallback: if current month not found, use last complete section
+  if (!overallTotal && areas.length === 0) {
+    return parseMTDDataFallback(mtdRows)
+  }
+
+  return { areas, overallTotal }
+}
+
+function parseMTDDataFallback(mtdRows) {
+  if (!mtdRows || mtdRows.length === 0) return null
+
+  let areas = []
+  let overallTotal = null
+  let tempAreas = []
+
+  for (const row of mtdRows) {
+    const area = String(row['AREA'] || '').trim()
+    if (area === 'AREA') continue
+
+    const isMonthHeader = MONTH_NAMES.some(m => area.includes(m)) && /\d{4}/.test(area)
+    if (isMonthHeader) {
+      if (overallTotal) break
+      tempAreas = []
+      continue
+    }
+
+    if (!area || area.includes('SLI MTD')) continue
+
+    const entry = {
+      area,
+      compFromTotal: cleanNumber(row['COMPLETED FROM TOTAL']),
+      compFromRjo: cleanNumber(row['COMPLETED FROM RJO']),
+      totalCompleted: cleanNumber(row['TOTAL COMPLETED']),
+      totalRjo: cleanNumber(row['TOTAL RJO']),
+      lastMtd: cleanNumber(row['LAST MTD']),
+      target: cleanNumber(row['TARGET']),
+      lastPct: cleanNumber(row['LAST %']),
+    }
+
+    if (area === 'OVER ALL TOTAL') {
+      overallTotal = entry
+      areas = [...tempAreas]
+      tempAreas = []
+    } else {
+      tempAreas.push(entry)
+    }
+  }
+
   return { areas, overallTotal }
 }
 
 /**
- * Extract executive KPI metrics from parsed MTD data.
+ * Extract executive KPI metrics from parsed MTD data + daily block.
  */
-export function extractExecutiveMetrics(mtdData) {
+export function extractExecutiveMetrics(mtdData, dailyBlock) {
   if (!mtdData || !mtdData.overallTotal) return null
   const ot = mtdData.overallTotal
 
-  return {
-    bf: ot.totalBf,
-    inc: ot.totalInc,
-    total: ot.totalJo,
-    completedTotal: ot.totalCompleted,
-    completedFromTotal: 0,
-    completedFromRJO: ot.totalRjo,
-    rjo: ot.totalRjo,
-    carryOver: ot.lastCarryOver,
-    mtd: ot.lastMtd,
-    target: ot.target,
+  const mtd = {
     pct: ot.lastPct,
-    toGo: Math.max(0, ot.target - ot.lastMtd),
-    variance: ot.lastMtd - ot.target,
-    raw: ot,
+    totalCompleted: ot.totalCompleted,
+    target: ot.target,
+    mtd: ot.lastMtd,
+    toGo: Math.max(0, (ot.target || 0) - (ot.lastMtd || 0)),
+    variance: (ot.lastMtd || 0) - (ot.target || 0),
   }
+
+  const daily = dailyBlock?.overallTotal
+    ? {
+        bf: dailyBlock.overallTotal.bf || 0,
+        inc: dailyBlock.overallTotal.inc || 0,
+        completedFromRjo: dailyBlock.overallTotal.completedFromRjo || 0,
+        totalCompleted: dailyBlock.overallTotal.totalCompleted || 0,
+        carryOver: dailyBlock.overallTotal.carryOver || 0,
+      }
+    : null
+
+  return { mtd, daily, raw: ot }
 }
 
 // ==================== RAW DATA (DAILY) PARSING ====================
 
+const AREAS = [
+  'Benguet', 'Ilocos Sur', 'Ilocos Norte', 'Nueva Vizcaya',
+  'Isabela', 'Quirino', 'Cagayan', 'Kalinga', 'Abra',
+  'Ifugao', 'Apayao', 'Mountain Province'
+]
+
+/**
+ * Map a raw CSV row array to an entry object using column indices.
+ * RAW DATA columns: AREA(0) BF(1) INC(2) TOTAL(3) COMP_FROM_TOTAL(4) COMP_FROM_RJO(5) TOTAL_COMP(6) RJO(7) CARRY_OVER(8) MTD(9) TARGET(10) %(11)
+ */
+function mapRowByIndex(vals) {
+  return {
+    bf: cleanNumber(vals[1]),
+    inc: cleanNumber(vals[2]),
+    totalJo: cleanNumber(vals[3]),
+    completedFromTotal: cleanNumber(vals[4]),
+    completedFromRjo: cleanNumber(vals[5]),
+    totalCompleted: cleanNumber(vals[6]),
+    rjo: cleanNumber(vals[7]),
+    carryOver: cleanNumber(vals[8]),
+    mtd: cleanNumber(vals[9]),
+    target: cleanNumber(vals[10]),
+    pct: cleanNumber(vals[11]),
+  }
+}
+
+/**
+ * Extract date from RAW DATA title row.
+ */
+function extractDateFromTitle(title) {
+  let m = title.match(/__(\w+\.?\s*\d+),?\s*(\d{4})__/)
+  if (m) return formatDisplayDate(m[1].trim(), m[2])
+
+  m = title.match(/as of\s+__(\w+\.?\s*\d+),?\s*(\d{4})__/)
+  if (m) return formatDisplayDate(m[1].trim(), m[2])
+
+  m = title.match(/(\w+\.?\s*\d+),?\s*(\d{4})/)
+  if (m) return formatDisplayDate(m[1].trim(), m[2])
+
+  return null
+}
+
+/**
+ * Format "Aug.1" + "2026" → "August 1, 2026"
+ */
+function formatDisplayDate(monthDay, year) {
+  // Parse 'Aug.1' or 'Aug 1' or 'Sept. 01' → month + day
+  const m = monthDay.match(/(\w+)[.\s]+(\d+)/)
+  if (!m) return monthDay + ', ' + year
+
+  const rawAbbr = m[1].toLowerCase()
+  const day = parseInt(m[2])
+
+  // Match abbreviated or full month names
+  const monthMap = {
+    jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2,
+    apr: 3, april: 3, may: 4, jun: 5, june: 5,
+    jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8, september: 8,
+    oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11
+  }
+
+  const monthIdx = monthMap[rawAbbr]
+  if (monthIdx === undefined) return monthDay + ', ' + year
+
+  return `${MONTH_NAMES[monthIdx]} ${day}, ${year}`
+}
+
 /**
  * Parse RAW DATA CSV into date-keyed blocks.
- * RAW DATA format (old block format):
- *   "SLI DAILY TRACKING REPORT as of __Aug. 1, 2026__"  ← title row
- *   FIBERX                                                 ← sub-header
- *   AREA, BF, INC, TOTAL, COMPLETED, ..., RJO, CARRY OVER, MTD, TARGET, %
- *   ,,,,FROM TOTAL,FROM RJO,TOTAL,,,,,,,
- *   Benguet,38,34,72,19,15,34,20,33,34,509,6.68%,,      ← data rows
- *   OVER ALL TOTAL,...
- *
- * OR new continuous format:
- *   Date, AREA, BF, INC, Total Jo, COMPLETED FROM TOTAL, COMPLETED FROM RJO, TOTAL COMPLETED, RJO, Carry Over, MTD, TARGET, %
- *   Aug 1 2026, Benguet, 38, ...
+ * @param {Object} rawData - { headers, rows, objects } from parseCSV
  */
-export function parseRawDailyData(rawRows) {
-  if (!rawRows || rawRows.length === 0) return { dates: [], blocks: {} }
+export function parseRawDailyData(rawData) {
+  if (!rawData) return { dates: [], blocks: {} }
+  const rawObjects = rawData.objects || []
+  const rawArrays = rawData.rows || []
+  if (rawObjects.length === 0) return { dates: [], blocks: {} }
 
   const blocks = {}
   const dates = []
 
-  // Check if this is the new continuous format (has 'Date' column)
-  const hasDateCol = rawRows[0] && rawRows[0]['Date'] !== undefined
+  // Check for new continuous format (has 'Date' column in headers)
+  const hasDateCol = rawData.headers && rawData.headers[0] === 'Date'
 
   if (hasDateCol) {
     // New continuous format — each row has a Date column
-    for (const row of rawRows) {
-      const dateStr = String(row['Date'] || '').trim()
+    for (let i = 0; i < rawObjects.length; i++) {
+      const row = rawObjects[i]
+      const arr = rawArrays[i] || []
+
+      const dateStr = String(arr[0] || row['Date'] || '').trim()
       if (!dateStr) continue
 
-      const area = String(row['AREA'] || '').trim()
+      const area = String(arr[1] || row['AREA'] || '').trim()
       if (!area || area === 'AREA') continue
 
       if (!blocks[dateStr]) {
@@ -150,19 +287,20 @@ export function parseRawDailyData(rawRows) {
         dates.push(dateStr)
       }
 
+      // For continuous format, offset by 1 (Date is col 0)
       const entry = {
         area,
-        bf: cleanNumber(row['BF']),
-        inc: cleanNumber(row['INC']),
-        totalJo: cleanNumber(row['Total Jo'] || row['TOTAL']),
-        completedFromTotal: cleanNumber(row['COMPLETED FROM TOTAL']),
-        completedFromRjo: cleanNumber(row['COMPLETED FROM RJO']),
-        totalCompleted: cleanNumber(row['TOTAL COMPLETED']),
-        rjo: cleanNumber(row['RJO']),
-        carryOver: cleanNumber(row['Carry Over'] || row['CARRY OVER']),
-        mtd: cleanNumber(row['MTD']),
-        target: cleanNumber(row['TARGET']),
-        pct: cleanNumber(row['%']),
+        bf: cleanNumber(arr[2]),
+        inc: cleanNumber(arr[3]),
+        totalJo: cleanNumber(arr[4]),
+        completedFromTotal: cleanNumber(arr[5]),
+        completedFromRjo: cleanNumber(arr[6]),
+        totalCompleted: cleanNumber(arr[7]),
+        rjo: cleanNumber(arr[8]),
+        carryOver: cleanNumber(arr[9]),
+        mtd: cleanNumber(arr[10]),
+        target: cleanNumber(arr[11]),
+        pct: cleanNumber(arr[12]),
       }
 
       if (area === 'OVER ALL TOTAL') {
@@ -175,16 +313,15 @@ export function parseRawDailyData(rawRows) {
     // Old block format — date in title rows
     let currentDate = null
 
-    for (const row of rawRows) {
-      const first = String(row['CLUSTER'] || row[Object.keys(row)[0]] || '').trim()
+    for (let i = 0; i < rawArrays.length; i++) {
+      const arr = rawArrays[i]
+      const first = String(arr[0] || '').trim()
 
-      // Detect title row
-      if (first.includes('SLI DAILY TRACKING REPORT as of')) {
-        let dateMatch = first.match(/__(.+?)__/)
-        if (!dateMatch) dateMatch = first.match(/as of\s+(.+?)$/)
-        if (dateMatch) {
-          const d = dateMatch[1].trim().replace(/\./g, '').replace(/,/g, '').replace(/__/g, '').trim()
-          currentDate = d
+      // Detect title rows
+      if (first.includes('SLI DAILY TRACKING REPORT')) {
+        const parsed = extractDateFromTitle(first)
+        if (parsed) {
+          currentDate = parsed
           if (!blocks[currentDate]) {
             blocks[currentDate] = { areas: [], overallTotal: null }
             dates.push(currentDate)
@@ -193,27 +330,20 @@ export function parseRawDailyData(rawRows) {
         continue
       }
 
-      // Skip sub-headers
-      if (first === 'FIBERX' || first === '' || first === 'AREA' || first.includes('FROM TOTAL') || first === 'BF') continue
+      // Skip non-data rows
+      if (first === 'FIBERX' || first === '' || first === 'AREA' ||
+          first === 'BF' || first.includes('FROM TOTAL') || first.includes('FROM RJO')) {
+        continue
+      }
       if (!currentDate) continue
 
-      // Data row — extract AREA from first meaningful column
-      const areaVal = String(row['AREA'] || '').trim() || first
+      // Use column-index based mapping (reliable!)
+      const areaVal = first
       if (!areaVal || areaVal === 'AREA') continue
 
       const entry = {
         area: areaVal,
-        bf: cleanNumber(row['BF']),
-        inc: cleanNumber(row['INC']),
-        totalJo: cleanNumber(row['TOTAL'] || row['Total Jo']),
-        completedFromTotal: cleanNumber(row['FROM TOTAL'] || row['COMPLETED FROM TOTAL']),
-        completedFromRjo: cleanNumber(row['FROM RJO'] || row['COMPLETED FROM RJO']),
-        totalCompleted: cleanNumber(row['TOTAL'] || row['COMPLETED'] || row['TOTAL COMPLETED']),
-        rjo: cleanNumber(row['RJO']),
-        carryOver: cleanNumber(row['CARRY OVER'] || row['Carry Over']),
-        mtd: cleanNumber(row['MTD']),
-        target: cleanNumber(row['TARGET']),
-        pct: cleanNumber(row['%']),
+        ...mapRowByIndex(arr),
       }
 
       if (areaVal === 'OVER ALL TOTAL') {
@@ -227,38 +357,42 @@ export function parseRawDailyData(rawRows) {
   return { dates, blocks }
 }
 
+// ==================== DATE UTILITIES ====================
+
 /**
- * Get today's date string in "Aug 30 2026" format for matching RAW DATA dates.
+ * Get today's date string in "August 31, 2026" format
  */
 export function getTodayStr() {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   const now = new Date()
-  return `${months[now.getMonth()]} ${now.getDate()} ${now.getFullYear()}`
+  return `${MONTH_NAMES[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`
 }
 
 /**
- * Find the closest available date to today (or today itself).
+ * Parse a display date like "August 31, 2026" into a Date object
+ */
+function parseDisplayDate(s) {
+  const m = s.match(/(\w+)\s+(\d+),?\s*(\d{4})/)
+  if (!m) return null
+  const monthIdx = MONTH_NAMES.findIndex(n => n.toLowerCase() === m[1].toLowerCase())
+  if (monthIdx === -1) return null
+  return new Date(parseInt(m[3]), monthIdx, parseInt(m[2]))
+}
+
+/**
+ * Find the closest available date to the target
  */
 export function findClosestDate(dates, targetDateStr) {
   if (!dates || dates.length === 0) return null
   if (dates.includes(targetDateStr)) return targetDateStr
 
-  // Try to parse and find closest
-  const parseShort = (s) => {
-    const m = s.match(/(\w+)\s+(\d+)\s+(\d{4})/)
-    if (!m) return null
-    const months = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 }
-    return new Date(parseInt(m[3]), months[m[1]], parseInt(m[2]))
-  }
-
-  const target = parseShort(targetDateStr)
-  if (!target) return dates[dates.length - 1] // fallback to latest
+  const target = parseDisplayDate(targetDateStr)
+  if (!target) return dates[dates.length - 1]
 
   let closest = dates[0]
   let minDiff = Infinity
 
   for (const d of dates) {
-    const dt = parseShort(d)
+    const dt = parseDisplayDate(d)
     if (!dt) continue
     const diff = Math.abs(dt.getTime() - target.getTime())
     if (diff < minDiff) {

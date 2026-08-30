@@ -1,5 +1,5 @@
-const CACHE_NAME = 'gvsi-sli-v5'
-const DATA_CACHE = 'gvsi-sli-data-v1'
+const CACHE_NAME = 'gvsi-sli-v8'
+const DATA_CACHE = 'gvsi-sli-data-v4'
 const BASE = '/GVSI-SLI-Tracker'
 
 const SHELL_ASSETS = [
@@ -19,14 +19,15 @@ self.addEventListener('install', (event) => {
   self.skipWaiting()
 })
 
-// Activate: clean old caches
+// Activate: delete all old caches, then create fresh ones
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
-      const keep = new Set([CACHE_NAME, DATA_CACHE])
-      return Promise.all(
-        keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k))
-      )
+      return Promise.all(keys.map((k) => caches.delete(k)))
+    }).then(() => {
+      return caches.open(CACHE_NAME)
+    }).then(() => {
+      return caches.open(DATA_CACHE)
     })
   )
   self.clients.claim()
@@ -36,34 +37,14 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
 
-  // Google Sheets data — cache-first with network update (for offline)
-  // Skip non-http(s) requests (e.g. chrome-extension://)
-  if (event.request.method === 'GET' && (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname === 'docs.google.com' && url.pathname.includes('/export')) {
+  // Skip non-http(s) requests
+  if (event.request.method !== 'GET') return
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return
+
+  // Google Sheets data — cache-first with network update
+  if (url.hostname === 'docs.google.com' && url.pathname.includes('/export')) {
     event.respondWith(
       caches.open(DATA_CACHE).then((cache) => {
-        return cache.match(event.request).then((cached) => {
-          const fetchPromise = fetch(event.request)
-            .then((response) => {
-              if (response.ok) {
-                cache.put(event.request, response.clone())
-              }
-              return response
-            })
-            .catch(() => cached) // offline: return cached version
-
-          // Return cached immediately if available, update in background
-          return cached || fetchPromise
-        })
-      })
-    )
-    return
-  }
-
-  // App shell — cache-first with network update (stale-while-revalidate)
-  // Skip non-http(s) requests (e.g. chrome-extension://)
-  if (event.request.method === 'GET' && (url.protocol === 'http:' || url.protocol === 'https:')) {
-    event.respondWith(
-      caches.open(CACHE_NAME).then((cache) => {
         return cache.match(event.request).then((cached) => {
           const fetchPromise = fetch(event.request)
             .then((response) => {
@@ -78,5 +59,24 @@ self.addEventListener('fetch', (event) => {
         })
       })
     )
+    return
   }
+
+  // App shell — stale-while-revalidate
+  event.respondWith(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.match(event.request).then((cached) => {
+        const fetchPromise = fetch(event.request)
+          .then((response) => {
+            if (response.ok) {
+              cache.put(event.request, response.clone())
+            }
+            return response
+          })
+          .catch(() => cached)
+
+        return cached || fetchPromise
+      })
+    })
+  )
 })

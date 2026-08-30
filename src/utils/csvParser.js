@@ -1,85 +1,78 @@
 /**
- * Parse a CSV string into an array of objects.
- * Handles quoted fields, various line endings, and title/header rows.
+ * Parse a CSV string into an array of row arrays (then map to objects).
+ * Returns { headers, rows } where rows are arrays of strings.
+ * Also returns objects[] for convenience.
+ *
+ * Single-pass parser: handles quoted fields, commas inside quotes,
+ * escaped quotes, and line endings all in one pass.
  */
 export function parseCSV(csvText) {
-  const lines = []
-  let current = ''
-  let inQuotes = false
+  if (!csvText || !csvText.trim()) return { headers: [], rows: [], objects: [] }
 
-  // Normalize line endings and split
   const normalized = csvText.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const allRows = []
+  let currentRow = []
+  let currentCell = ''
+  let inQuotes = false
 
   for (let i = 0; i < normalized.length; i++) {
     const char = normalized[i]
 
     if (char === '"') {
       if (inQuotes && normalized[i + 1] === '"') {
-        current += '"'
-        i++ // skip escaped quote
+        currentCell += '"'
+        i++
       } else {
         inQuotes = !inQuotes
       }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentCell.trim())
+      currentCell = ''
     } else if (char === '\n' && !inQuotes) {
-      lines.push(current)
-      current = ''
-    } else {
-      current += char
-    }
-  }
-  if (current) lines.push(current)
-
-  if (lines.length === 0) return []
-
-  const parseRow = (line) => {
-    const cells = []
-    let cell = ''
-    let inQ = false
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i]
-      if (c === '"') {
-        if (inQ && line[i + 1] === '"') {
-          cell += '"'
-          i++
-        } else {
-          inQ = !inQ
-        }
-      } else if (c === ',' && !inQ) {
-        cells.push(cell.trim())
-        cell = ''
-      } else {
-        cell += c
+      currentRow.push(currentCell.trim())
+      currentCell = ''
+      if (currentRow.length > 0) {
+        allRows.push(currentRow)
       }
+      currentRow = []
+    } else {
+      currentCell += char
     }
-    cells.push(cell.trim())
-    return cells
   }
 
-  // Find the header row: first line with at least 3 non-empty cells
-  // (skips title rows like "SLI MTD TRACKING REPORT,,,,,,,,")
+  if (currentCell || currentRow.length > 0) {
+    currentRow.push(currentCell.trim())
+    allRows.push(currentRow)
+  }
+
+  if (allRows.length === 0) return { headers: [], rows: [], objects: [] }
+
+  // Find header row: first row with ≥3 non-empty cells
   let headerIndex = 0
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].trim()) continue
-    const cells = parseRow(lines[i])
-    const nonEmpty = cells.filter(c => c !== '')
+  for (let i = 0; i < allRows.length; i++) {
+    const nonEmpty = allRows[i].filter(c => c !== '')
     if (nonEmpty.length >= 3) {
       headerIndex = i
       break
     }
   }
 
-  const headers = parseRow(lines[headerIndex])
-  const data = []
+  const headers = allRows[headerIndex]
+  const rows = [] // raw row arrays
+  const objects = [] // header-mapped objects
 
-  for (let i = headerIndex + 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue
-    const values = parseRow(lines[i])
-    const row = {}
+  for (let i = headerIndex + 1; i < allRows.length; i++) {
+    const rv = allRows[i]
+    if (rv.every(c => c === '')) continue
+
+    rows.push(rv)
+
+    const obj = {}
     headers.forEach((h, idx) => {
-      row[h] = values[idx] !== undefined ? values[idx] : ''
+      obj[h] = idx < rv.length ? rv[idx] : ''
     })
-    data.push(row)
+    objects.push(obj)
   }
 
-  return data
+  return { headers, rows, objects }
 }

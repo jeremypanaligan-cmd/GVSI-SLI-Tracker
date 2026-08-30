@@ -78,9 +78,9 @@ export default function App() {
   }, [])
 
   // Derived data
-  const executiveMetrics = extractExecutiveMetrics(mtdData)
   const dailyBlock = rawDaily?.blocks?.[selectedDate] || null
   const availableDates = rawDaily?.dates || []
+  const executiveMetrics = extractExecutiveMetrics(mtdData, dailyBlock)
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F17] flex flex-col font-sans">
@@ -167,6 +167,9 @@ export default function App() {
         ) : view === 'executive' ? (
           <ExecutiveOverview
             metrics={executiveMetrics}
+            selectedDate={selectedDate}
+            availableDates={availableDates}
+            onDateSelect={setSelectedDate}
             onGoToDetail={() => setView('daily')}
           />
         ) : (
