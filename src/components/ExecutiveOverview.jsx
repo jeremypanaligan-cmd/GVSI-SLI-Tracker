@@ -149,7 +149,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
         </div>
       </section>
 
-      {/* DAILY PORTION */}
+      {/* DAILY TO-DATE PORTION */}
       <section>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -176,16 +176,30 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
         </div>
 
         {daily ? (
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="flex flex-wrap items-stretch gap-3">
+            {/* LEFT GROUP: BF + INC */}
             <DailyMetricCard label="BF" value={fmt(daily.bf)} icon={<BFIcon />} />
             <DailyMetricCard label="INC" value={fmt(daily.inc)} icon={<INCIcon />} />
-            <DailyMetricCard label="Comp from RJO" value={fmt(daily.completedFromRjo)} icon={<RJOIcon />} />
-            <div className="col-span-2 sm:col-span-1 rounded-2xl border-2 border-teal-300 dark:border-teal-600 bg-gradient-to-br from-teal-50 to-teal-100/50 dark:from-teal-950/40 dark:to-teal-900/20 p-4 relative overflow-hidden">
+
+            {/* VERTICAL DIVIDER */}
+            <div className="hidden sm:flex w-px bg-slate-200 dark:bg-slate-700/60 self-stretch my-1 mx-0.5" />
+
+            {/* RIGHT GROUP: COMP ABL + COMP RJO + RJO + TOTAL COMPLETED + CARRY OVER */}
+            <DailyMetricCard label="COMP ABL" value={fmt(daily.activeBacklog)} icon={<BacklogIcon />} subtitle="BF + INC" />
+            <DailyMetricCard label="COMP RJO" value={fmt(daily.completedFromRjo)} icon={<RJOIcon />} subtitle="from previous months" />
+            <DailyMetricCard label="RJO" value={fmt(daily.rjo)} icon={<RJOIcon2 />} />
+
+            {/* TOTAL COMPLETED — Highlighted */}
+            <div className="rounded-2xl border-2 border-teal-300 dark:border-teal-600 bg-gradient-to-br from-teal-50 to-teal-100/50 dark:from-teal-950/40 dark:to-teal-900/20 p-4 relative overflow-hidden min-w-[140px] flex-1 sm:flex-none sm:w-[180px]">
               <div className="absolute -bottom-6 -right-6 w-24 h-24 rounded-full bg-teal-400/10" />
-              <p className="text-[10px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-widest mb-1 relative">Total Completed</p>
+              <div className="flex items-center gap-2 mb-1 relative">
+                <span className="text-teal-500 dark:text-teal-400"><TotalIcon /></span>
+                <p className="text-[10px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-widest">Total Completed</p>
+              </div>
               <span className="text-2xl sm:text-3xl font-black text-teal-700 dark:text-teal-300 tracking-tight relative">{fmt(dailyCompleted)}</span>
-              <p className="text-[10px] text-teal-500/70 dark:text-teal-400/50 mt-1 relative font-medium">BF + INC + RJO</p>
+              <p className="text-[10px] text-teal-500/70 dark:text-teal-400/50 mt-1 relative font-medium">COMP ABL + COMP RJO</p>
             </div>
+
             <DailyMetricCard label="Carry Over" value={fmt(daily.carryOver)} icon={<COIcon />} />
           </div>
         ) : (
@@ -210,14 +224,15 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
   )
 }
 
-function DailyMetricCard({ label, value, icon }) {
+function DailyMetricCard({ label, value, icon, subtitle }) {
   return (
-    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-4 hover:shadow-md transition-shadow duration-200">
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-4 hover:shadow-md transition-shadow duration-200 min-w-[120px] flex-1 sm:flex-none sm:w-[150px]">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-slate-400 dark:text-slate-500">{icon}</span>
-        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{label}</p>
+        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-tight">{label}</p>
       </div>
       <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">{value}</span>
+      {subtitle && <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 font-medium italic">{subtitle}</p>}
     </div>
   )
 }
@@ -228,8 +243,17 @@ function BFIcon() {
 function INCIcon() {
   return (<svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>)
 }
+function BacklogIcon() {
+  return (<svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>)
+}
 function RJOIcon() {
   return (<svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>)
+}
+function RJOIcon2() {
+  return (<svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /><circle cx="12" cy="12" r="3" /></svg>)
+}
+function TotalIcon() {
+  return (<svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>)
 }
 function COIcon() {
   return (<svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>)

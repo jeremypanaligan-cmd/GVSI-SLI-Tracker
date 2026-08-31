@@ -176,7 +176,9 @@ export function extractExecutiveMetrics(mtdData, dailyBlock) {
     ? {
         bf: dailyBlock.overallTotal.bf || 0,
         inc: dailyBlock.overallTotal.inc || 0,
+        activeBacklog: dailyBlock.overallTotal.completedFromTotal || 0,
         completedFromRjo: dailyBlock.overallTotal.completedFromRjo || 0,
+        rjo: dailyBlock.overallTotal.rjo || 0,
         totalCompleted: dailyBlock.overallTotal.totalCompleted || 0,
         carryOver: dailyBlock.overallTotal.carryOver || 0,
       }
