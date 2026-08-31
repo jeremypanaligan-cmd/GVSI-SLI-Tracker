@@ -176,7 +176,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
         </div>
 
         {daily ? (
-          <div className="flex flex-wrap items-stretch gap-3">
+          <div className="flex flex-wrap items-stretch justify-center gap-3">
             {/* LEFT GROUP: BF + INC */}
             <DailyMetricCard label="BF" value={fmt(daily.bf)} icon={<BFIcon />} />
             <DailyMetricCard label="INC" value={fmt(daily.inc)} icon={<INCIcon />} />

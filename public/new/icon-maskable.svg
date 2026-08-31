@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <filter id="glowCyanM" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+    </filter>
+    <filter id="glowEmeraldM" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="13" result="blur"/>
+    </filter>
+  </defs>
+
+  <!-- Background: Dark Slate Navy, full bleed (required for maskable safe cropping) -->
+  <rect x="0" y="0" width="512" height="512" fill="#0F172A"/>
+
+  <!-- Reference safe-zone guide (not exported, remove before shipping if desired) -->
+  <!-- Safe zone: circle r=205 centered at 256,256 -->
+
+  <!-- Soft emerald status glow behind target node -->
+  <circle cx="330" cy="210" r="72" fill="#10B981" opacity="0.16" filter="url(#glowEmeraldM)"/>
+
+  <!-- Fiber line glow pass -->
+  <path d="M 170 340 C 220 340, 230 260, 330 210" fill="none" stroke="#00F2FE" stroke-width="18" stroke-linecap="round" opacity="0.28" filter="url(#glowCyanM)"/>
+
+  <!-- Fiber optic connection line -->
+  <path d="M 170 340 C 220 340, 230 260, 330 210" fill="none" stroke="#00F2FE" stroke-width="11" stroke-linecap="round"/>
+
+  <!-- Origin / service source point -->
+  <circle cx="170" cy="340" r="14" fill="#00F2FE"/>
+  <circle cx="170" cy="340" r="21" fill="none" stroke="#00F2FE" stroke-width="2.5" opacity="0.4"/>
+
+  <!-- Data / signal pulse markers along the fiber line -->
+  <circle cx="219" cy="309" r="6.5" fill="#00F2FE" opacity="0.85"/>
+  <circle cx="245" cy="277" r="5.3" fill="#00F2FE" opacity="0.6"/>
+  <circle cx="280" cy="243" r="4" fill="#00F2FE" opacity="0.4"/>
+
+  <!-- Target checkpoint node: outer ring -->
+  <circle cx="330" cy="210" r="50" fill="none" stroke="#10B981" stroke-width="9"/>
+
+  <!-- Target checkpoint node: filled core -->
+  <circle cx="330" cy="210" r="36" fill="#10B981"/>
+
+  <!-- Installation status checkmark -->
+  <path d="M 313.6 211.6 L 325.1 223.1 L 348 198.5" fill="none" stroke="#0F172A" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

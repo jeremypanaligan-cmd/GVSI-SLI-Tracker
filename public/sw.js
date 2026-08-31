@@ -1,5 +1,5 @@
-const CACHE_NAME = 'gvsi-sli-v10'
-const DATA_CACHE = 'gvsi-sli-data-v6'
+const CACHE_NAME = 'gvsi-sli-v11'
+const DATA_CACHE = 'gvsi-sli-data-v7'
 const BASE = '/GVSI-SLI-Tracker'
 
 const SHELL_ASSETS = [
@@ -41,21 +41,16 @@ self.addEventListener('fetch', (event) => {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return
 
   // ── Google Sheets CSV data: NETWORK-FIRST ──
-  // Data changes frequently; try network, fall back to cache when offline.
-  // Skip URLs with cache-bust param (?t=) to avoid polluting cache.
   if (url.hostname === 'docs.google.com' && url.pathname.includes('/export')) {
     if (!url.searchParams.has('t')) {
       event.respondWith(networkFirst(event.request, DATA_CACHE))
     } else {
-      // Cache-busted request — network only, don't cache
       event.respondWith(fetch(event.request).catch(() => caches.match(event.request)))
     }
     return
   }
 
   // ── App shell & static assets: STALE-WHILE-REVALIDATE ──
-  // Return cached version immediately, update in background.
-  // This makes the app feel instant on repeat visits.
   if (isShellAsset(url)) {
     event.respondWith(staleWhileRevalidate(event.request, CACHE_NAME))
     return
@@ -66,7 +61,6 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          // Cache the navigation response for offline use
           const clone = response.clone()
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone))
           return response
@@ -84,15 +78,14 @@ self.addEventListener('fetch', (event) => {
 
 /**
  * NETWORK-FIRST: Try network, fall back to cache.
- * Best for data that changes frequently.
+ * Clone response immediately to avoid body-already-used errors.
  */
 function networkFirst(request, cacheName) {
   return fetch(request)
     .then((response) => {
-      if (response.ok) {
-        const cache = caches.open(cacheName)
-        cache.then((c) => c.put(request, response.clone()))
-      }
+      // Clone IMMEDIATELY before any async work
+      const clone = response.clone()
+      caches.open(cacheName).then((c) => c.put(request, clone)).catch(() => {})
       return response
     })
     .catch(() => caches.match(request))
@@ -100,7 +93,6 @@ function networkFirst(request, cacheName) {
 
 /**
  * STALE-WHILE-REVALIDATE: Return cached, update in background.
- * Best for assets that rarely change but should stay current.
  */
 function staleWhileRevalidate(request, cacheName) {
   return caches.open(cacheName).then((cache) =>
@@ -108,7 +100,8 @@ function staleWhileRevalidate(request, cacheName) {
       const fetchPromise = fetch(request)
         .then((response) => {
           if (response.ok) {
-            cache.put(request, response.clone())
+            const clone = response.clone()
+            cache.put(request, clone)
           }
           return response
         })
@@ -121,15 +114,14 @@ function staleWhileRevalidate(request, cacheName) {
 
 /**
  * CACHE-FIRST: Return cached, only fetch if not in cache.
- * Best for static assets that almost never change.
  */
 function cacheFirst(request, cacheName) {
   return caches.match(request).then((cached) => {
     if (cached) return cached
     return fetch(request).then((response) => {
       if (response.ok) {
-        const cache = caches.open(cacheName)
-        cache.then((c) => c.put(request, response.clone()))
+        const clone = response.clone()
+        caches.open(cacheName).then((c) => c.put(request, clone)).catch(() => {})
       }
       return response
     })

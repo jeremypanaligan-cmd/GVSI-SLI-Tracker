@@ -1,159 +1,161 @@
+#!/usr/bin/env node
+/**
+ * GVSI SLI Tracker — Icon Generator
+ * 
+ * Generates all required PWA icon sizes from icon-source.svg
+ * 
+ * Usage: node scripts/generate-icons.cjs
+ * 
+ * Requires: npm install sharp (or use the built-in fallback)
+ */
+
 const fs = require('fs')
 const path = require('path')
 
-// Minimal 192x192 PNG with cyan "SLI" text on dark background
-// Using a simple solid color PNG generator (no dependencies)
+const SIZES = [
+  { size: 48, name: 'icon-48.png', purpose: 'any' },
+  { size: 96, name: 'icon-96.png', purpose: 'any' },
+  { size: 180, name: 'icon-180.png', purpose: 'apple-touch-icon' },
+  { size: 192, name: 'icon-192.png', purpose: 'any' },
+  { size: 512, name: 'icon-512.png', purpose: 'any' },
+  { size: 512, name: 'icon-512-maskable.png', purpose: 'maskable' },
+]
 
-function createPNG(size, r, g, b) {
-  // Create a minimal valid PNG file
-  const width = size
-  const height = size
+const PUBLIC_DIR = path.join(__dirname, '..', 'public')
+const SVG_SOURCE = path.join(PUBLIC_DIR, 'icon-source.svg')
 
-  // PNG signature
-  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+async function generateWithSharp() {
+  const sharp = require('sharp')
+  const svgBuffer = fs.readFileSync(SVG_SOURCE)
 
-  // IHDR chunk
-  const ihdrData = Buffer.alloc(13)
-  ihdrData.writeUInt32BE(width, 0)
-  ihdrData.writeUInt32BE(height, 4)
-  ihdrData[8] = 8  // bit depth
-  ihdrData[9] = 2  // color type: RGB
-  ihdrData[10] = 0 // compression
-  ihdrData[11] = 0 // filter
-  ihdrData[12] = 0 // interlace
-  const ihdr = createChunk('IHDR', ihdrData)
+  for (const { size, name } of SIZES) {
+    const outputPath = path.join(PUBLIC_DIR, name)
+    
+    if (name.includes('maskable')) {
+      // Maskable: add padding (10% safe zone on each side)
+      const padded = Math.round(size * 1.2)
+      await sharp(svgBuffer)
+        .resize(padded, padded, { fit: 'contain', background: { r: 15, g: 23, b: 42, alpha: 1 } })
+        .resize(size, size, { fit: 'contain' })
+        .png()
+        .toFile(outputPath)
+    } else {
+      await sharp(svgBuffer)
+        .resize(size, size, { fit: 'contain', background: { r: 15, g: 23, b: 42, alpha: 1 } })
+        .png()
+        .toFile(outputPath)
+    }
+    
+    console.log(`✅ Generated ${name} (${size}×${size})`)
+  }
+}
 
-  // IDAT chunk - create image data with a gradient-like pattern
-  const rawData = []
-  for (let y = 0; y < height; y++) {
-    rawData.push(0) // filter byte: None
-    for (let x = 0; x < width; x++) {
-      // Create a rounded rectangle background
-      const cx = width / 2
-      const cy = height / 2
-      const rx = width * 0.42
-      const ry = height * 0.42
-      const cornerR = width * 0.12
+async function generateFallback() {
+  console.log('⚠️  sharp not installed. Generating placeholder HTML for manual export...')
+  console.log('   Run: npm install sharp && node scripts/generate-icons.cjs')
+  console.log('')
+  console.log('   Or open scripts/icon-preview.html in browser to export manually.')
+  
+  // Generate an HTML preview page for manual export
+  const svgContent = fs.readFileSync(SVG_SOURCE, 'utf8')
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <title>GVSI SLI Tracker — Icon Export</title>
+  <style>
+    body { font-family: system-ui; background: #0F172A; color: white; padding: 2rem; }
+    h1 { color: #00F2FE; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-top: 2rem; }
+    .card { background: #1E293B; border-radius: 12px; padding: 1.5rem; text-align: center; }
+    .card img { max-width: 100%; border-radius: 8px; margin-bottom: 1rem; }
+    .card p { font-size: 0.875rem; color: #94A3B8; }
+    .card strong { color: #10B981; }
+    canvas { display: none; }
+  </style>
+</head>
+<body>
+  <h1>GVSI SLI Tracker — Icon Export</h1>
+  <p>Right-click each icon → "Save Image As" to download as PNG</p>
+  <div class="grid" id="icons"></div>
+  <script>
+    const sizes = [
+      { size: 48, label: 'Favicon (48×48)' },
+      { size: 96, label: 'Standard (96×96)' },
+      { size: 180, label: 'Apple Touch (180×180)' },
+      { size: 192, label: 'Android (192×192)' },
+      { size: 512, label: 'Splash Screen (512×512)' },
+    ];
+    
+    const grid = document.getElementById('icons');
+    const svgStr = ${JSON.stringify(svgContent)};
+    
+    sizes.forEach(({ size, label }) => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      
+      const img = document.createElement('img');
+      img.src = 'data:image/svg+xml;base64,' + btoa(svgStr);
+      img.width = Math.min(size, 256);
+      img.height = Math.min(size, 256);
+      
+      const p = document.createElement('p');
+      p.innerHTML = '<strong>' + label + '</strong>';
+      
+      const btn = document.createElement('a');
+      btn.href = '#';
+      btn.textContent = 'Download PNG';
+      btn.style.cssText = 'display:inline-block;margin-top:0.5rem;padding:0.5rem 1rem;background:#10B981;color:white;border-radius:6px;text-decoration:none;font-size:0.875rem;';
+      btn.onclick = (e) => {
+        e.preventDefault();
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const svgBlob = new Blob([svgStr], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(svgBlob);
+        const img2 = new Image();
+        img2.onload = () => {
+          ctx.drawImage(img2, 0, 0, size, size);
+          URL.revokeObjectURL(url);
+          const a = document.createElement('a');
+          a.download = 'icon-' + size + '.png';
+          a.href = canvas.toDataURL('image/png');
+          a.click();
+        };
+        img2.src = url;
+      };
+      
+      card.appendChild(img);
+      card.appendChild(p);
+      card.appendChild(btn);
+      grid.appendChild(card);
+    });
+  </script>
+</body>
+</html>`
+  
+  fs.writeFileSync(path.join(__dirname, 'icon-preview.html'), html)
+  console.log('✅ Created scripts/icon-preview.html — open in browser to export icons')
+}
 
-      const dx = Math.abs(x - cx) - (rx - cornerR)
-      const dy = Math.abs(y - cy) - (ry - cornerR)
-
-      let inShape = false
-      if (dx <= 0 && dy <= 0) {
-        inShape = true
-      } else if (dx > 0 && dy > 0) {
-        inShape = (dx * dx + dy * dy) <= cornerR * cornerR
-      } else {
-        inShape = (dx <= 0 || dy <= 0)
-      }
-
-      if (inShape) {
-        // Cyan gradient background
-        const t = y / height
-        const cr = Math.round(6 + t * 0)
-        const cg = Math.round(182 - t * 40)
-        const cb = Math.round(212 - t * 30)
-        rawData.push(cr, cg, cb)
-
-        // Draw "SLI" text area (center rectangle)
-        const textLeft = width * 0.2
-        const textRight = width * 0.8
-        const textTop = height * 0.3
-        const textBottom = height * 0.7
-
-        if (x >= textLeft && x <= textRight && y >= textTop && y <= textBottom) {
-          // Dark text area
-          const inTextRegion = true
-          // Simple letter shapes for S, L, I
-          const letterWidth = (textRight - textLeft) / 3
-          const sLeft = textLeft
-          const sRight = textLeft + letterWidth * 0.8
-          const lLeft = textLeft + letterWidth * 1.1
-          const lRight = textLeft + letterWidth * 1.9
-          const iLeft = textLeft + letterWidth * 2.2
-          const iRight = textLeft + letterWidth * 2.8
-
-          const relY = (y - textTop) / (textBottom - textTop)
-          const letterThickness = 0.15
-
-          let isLetter = false
-
-          // S
-          if (x >= sLeft && x <= sRight) {
-            if (relY < letterThickness || (relY > 0.5 - letterThickness/2 && relY < 0.5 + letterThickness/2) || relY > 1 - letterThickness) {
-              isLetter = true
-            }
-            if (relY >= 0 && relY < 0.5 && x < sLeft + letterWidth * 0.3) isLetter = true
-            if (relY > 0.5 && relY <= 1 && x > sRight - letterWidth * 0.3) isLetter = true
-          }
-
-          // L
-          if (x >= lLeft && x <= lRight) {
-            if (x < lLeft + letterThickness * letterWidth) isLetter = true
-            if (relY > 1 - letterThickness) isLetter = true
-          }
-
-          // I
-          if (x >= iLeft && x <= iRight) {
-            if (relY < letterThickness || relY > 1 - letterThickness) isLetter = true
-            if (x > iLeft + letterWidth * 0.3 && x < iRight - letterWidth * 0.3 + letterWidth * 0.1) isLetter = true
-          }
-
-          if (isLetter) {
-            rawData.push(2, 6, 23) // Dark text color
-          }
-        }
-      } else {
-        // Transparent-ish dark background (use dark)
-        rawData.push(2, 6, 23)
-      }
+async function main() {
+  console.log('🎨 GVSI SLI Tracker — Icon Generator\n')
+  
+  if (!fs.existsSync(SVG_SOURCE)) {
+    console.error('❌ icon-source.svg not found in public/')
+    process.exit(1)
+  }
+  
+  try {
+    await generateWithSharp()
+    console.log('\n✅ All icons generated in public/')
+  } catch (e) {
+    if (e.code === 'MODULE_NOT_FOUND') {
+      await generateFallback()
+    } else {
+      throw e
     }
   }
-
-  const compressed = require('zlib').deflateSync(Buffer.from(rawData))
-  const idat = createChunk('IDAT', compressed)
-
-  // IEND chunk
-  const iend = createChunk('IEND', Buffer.alloc(0))
-
-  return Buffer.concat([signature, ihdr, idat, iend])
 }
 
-function createChunk(type, data) {
-  const length = Buffer.alloc(4)
-  length.writeUInt32BE(data.length, 0)
-
-  const typeBuffer = Buffer.from(type, 'ascii')
-  const crcData = Buffer.concat([typeBuffer, data])
-
-  const crc = Buffer.alloc(4)
-  crc.writeUInt32BE(crc32(crcData), 0)
-
-  return Buffer.concat([length, typeBuffer, data, crc])
-}
-
-function crc32(buf) {
-  let c = 0xffffffff
-  const table = new Int32Array(256)
-  for (let n = 0; n < 256; n++) {
-    let cval = n
-    for (let k = 0; k < 8; k++) {
-      cval = (cval & 1) ? (0xedb88320 ^ (cval >>> 1)) : (cval >>> 1)
-    }
-    table[n] = cval
-  }
-  for (let i = 0; i < buf.length; i++) {
-    c = table[(c ^ buf[i]) & 0xff] ^ (c >>> 8)
-  }
-  return (c ^ 0xffffffff) >>> 0
-}
-
-const publicDir = path.join(__dirname, '..', 'public')
-
-const png192 = createPNG(192, 6, 182, 212)
-fs.writeFileSync(path.join(publicDir, 'icon-192.png'), png192)
-console.log('Created icon-192.png')
-
-const png512 = createPNG(512, 6, 182, 212)
-fs.writeFileSync(path.join(publicDir, 'icon-512.png'), png512)
-console.log('Created icon-512.png')
+main().catch(console.error)
