@@ -29,13 +29,11 @@ export async function fetchAllData() {
 
   if (isOnline) {
     try {
-      console.log('[Fetch] Starting live fetch...')
       const [mtdRes, rawRes] = await Promise.all([
         fetch(MTD_CSV_URL + bust, { cache: 'no-store' }),
         fetch(RAW_DATA_CSV_URL + bust, { cache: 'no-store' })
       ])
 
-      console.log('[Fetch] MTD status:', mtdRes.status, 'RAW status:', rawRes.status)
       if (!mtdRes.ok) throw new Error(`MTD HTTP ${mtdRes.status}`)
       if (!rawRes.ok) throw new Error(`RAW HTTP ${rawRes.status}`)
 
@@ -47,7 +45,6 @@ export async function fetchAllData() {
       const mtd = parseCSV(mtdText)
       const raw = parseCSV(rawText)
 
-      console.log('[Fetch] MTD rows:', mtd.objects.length, 'RAW rows:', raw.objects.length)
 
       // Cache fresh data
       try {

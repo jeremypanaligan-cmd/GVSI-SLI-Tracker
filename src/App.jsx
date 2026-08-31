@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchAllData, getCachedData } from './utils/dataFetcher'
 import {
   parseMTDData, extractExecutiveMetrics,
@@ -9,19 +9,53 @@ import DailyTable from './components/DailyTable'
 import DatePicker from './components/DatePicker'
 import SyncIcon from './components/SyncIcon'
 import ThemeToggle from './components/ThemeToggle'
+import PWAInstallBanner from './components/PWAInstallBanner'
+
+const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000 // 5 minutes
+const STALE_THRESHOLD = 5 * 60 * 1000 // 5 minutes — data older than this is "stale"
+
+/**
+ * Format a timestamp into a human-readable "time ago" string.
+ * E.g. "just now", "2m ago", "1h ago", "3d ago"
+ */
+function formatTimeAgo(date) {
+  if (!date) return null
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
+  if (seconds < 30) return 'just now'
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+/**
+ * Get freshness status color classes.
+ */
+function getFreshnessStyle(ageMs, isOnline) {
+  if (!isOnline) return { dot: 'bg-amber-500 dark:bg-amber-400 animate-pulse', text: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20' }
+  if (ageMs < STALE_THRESHOLD) return { dot: 'bg-emerald-500 dark:bg-emerald-400', text: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20' }
+  return { dot: 'bg-amber-500 dark:bg-amber-400', text: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20' }
+}
 
 export default function App() {
   const [mtdData, setMtdData] = useState(null)
-  const [rawDaily, setRawDaily] = useState(null) // { dates, blocks }
+  const [rawDaily, setRawDaily] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [source, setSource] = useState('none')
   const [lastSync, setLastSync] = useState(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
-  const [view, setView] = useState('executive') // 'executive' | 'daily'
+  const [view, setView] = useState('executive')
   const [selectedDate, setSelectedDate] = useState('')
-  const [showVariance, setShowVariance] = useState(false)
+  const [nextRefresh, setNextRefresh] = useState(null)
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
+  const [tick, setTick] = useState(0) // force re-render for "time ago" updates
+
+  const loadDataRef = useRef(null)
 
   const loadData = useCallback(async (showSyncing = false) => {
     if (showSyncing) setIsSyncing(true)
@@ -31,18 +65,15 @@ export default function App() {
     try {
       const result = await fetchAllData()
 
-      // Parse MTD data
       const parsed = parseMTDData(result.mtd)
       setMtdData(parsed)
 
-      // Parse RAW DATA daily blocks
       const daily = parseRawDailyData(result.raw)
       setRawDaily(daily)
 
       setSource(result.source)
       setLastSync(result.timestamp)
 
-      // Auto-select closest date to today
       if (daily.dates.length > 0 && !selectedDate) {
         const today = getTodayStr()
         setSelectedDate(findClosestDate(daily.dates, today))
@@ -62,10 +93,53 @@ export default function App() {
     }
   }, [mtdData, selectedDate])
 
+  loadDataRef.current = loadData
+
+  // Initial load
   useEffect(() => {
     loadData()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Tick every 30s to update "time ago" display
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Auto-refresh polling
+  useEffect(() => {
+    if (!autoRefreshEnabled) return
+
+    const interval = setInterval(() => {
+
+      if (loadDataRef.current) {
+        loadDataRef.current(false)
+      }
+    }, AUTO_REFRESH_INTERVAL)
+
+    const timer = setInterval(() => {
+      setNextRefresh(prev => {
+        if (!prev) return Date.now() + AUTO_REFRESH_INTERVAL
+        return prev
+      })
+    }, 1000)
+
+    setNextRefresh(Date.now() + AUTO_REFRESH_INTERVAL)
+
+    return () => {
+      clearInterval(interval)
+      clearInterval(timer)
+    }
+  }, [autoRefreshEnabled])
+
+  // Reset next refresh timer when data is synced
+  useEffect(() => {
+    if (lastSync) {
+      setNextRefresh(Date.now() + AUTO_REFRESH_INTERVAL)
+    }
+  }, [lastSync])
+
+  // Online/offline detection
   useEffect(() => {
     const goOnline = () => setIsOnline(true)
     const goOffline = () => setIsOnline(false)
@@ -81,6 +155,13 @@ export default function App() {
   const dailyBlock = rawDaily?.blocks?.[selectedDate] || null
   const availableDates = rawDaily?.dates || []
   const executiveMetrics = extractExecutiveMetrics(mtdData, dailyBlock)
+
+  const refreshCountdown = nextRefresh ? Math.max(0, Math.ceil((nextRefresh - Date.now()) / 1000)) : null
+
+  // Data freshness
+  const dataAge = lastSync ? Date.now() - lastSync.getTime() : Infinity
+  const freshness = getFreshnessStyle(dataAge, isOnline)
+  const timeAgo = formatTimeAgo(lastSync)
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F17] flex flex-col font-sans">
@@ -112,7 +193,27 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Status */}
+            {/* Auto-refresh countdown */}
+            {autoRefreshEnabled && refreshCountdown !== null && !isSyncing && (
+              <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-500 border border-slate-200 dark:border-slate-700" title="Auto-refreshes every 5 minutes">
+                <svg className="w-3 h-3 animate-spin" style={{ animationDuration: '3s' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {Math.floor(refreshCountdown / 60)}:{String(refreshCountdown % 60).padStart(2, '0')}
+              </div>
+            )}
+
+            {/* Data freshness indicator */}
+            {lastSync && (
+              <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium border ${freshness.bg}`} title={`Last updated: ${lastSync.toLocaleString()}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${freshness.dot}`} />
+                <span className={freshness.text}>
+                  {isSyncing ? 'Updating…' : timeAgo}
+                </span>
+              </div>
+            )}
+
+            {/* Online/Offline status */}
             <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
               isOnline
                 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20'
@@ -123,12 +224,6 @@ export default function App() {
               }`} />
               {isOnline ? 'Online' : 'Offline'}
             </span>
-
-            {source === 'cache' || source === 'stale-cache' ? (
-              <span className="px-2 py-1 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500 border border-slate-200 dark:border-slate-700 hidden sm:inline-flex">
-                Cached
-              </span>
-            ) : null}
 
             <ThemeToggle />
 
@@ -205,6 +300,9 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* PWA Install Banner */}
+      <PWAInstallBanner />
     </div>
   )
 }

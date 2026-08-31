@@ -1,14 +1,17 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { ThemeProvider } from './context/ThemeContext.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 import App from './App.jsx'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ThemeProvider>
-      <App />
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <App />
+      </ThemeProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 )
 
@@ -18,14 +21,20 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker
       .register('/GVSI-SLI-Tracker/sw.js', { scope: '/GVSI-SLI-Tracker/' })
       .then((reg) => {
-        // Check for SW updates periodically
+        // Check for SW updates on focus (when user returns to tab)
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            reg.update()
+          }
+        })
+
         reg.addEventListener('updatefound', () => {
           const newWorker = reg.installing
           if (newWorker) {
             newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'activated') {
-                // New SW activated — could show a toast here
-                console.log('New service worker activated')
+              if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+                // New SW activated — notify user
+                console.log('[SW] New version available. Refresh to update.')
               }
             })
           }
