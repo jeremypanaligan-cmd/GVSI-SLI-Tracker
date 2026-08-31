@@ -47,11 +47,11 @@ export function parseCSV(csvText) {
 
   if (allRows.length === 0) return { headers: [], rows: [], objects: [] }
 
-  // Find header row: first row with ≥3 non-empty cells
+  // Find header row: first row with ≥5 non-empty cells
   let headerIndex = 0
   for (let i = 0; i < allRows.length; i++) {
     const nonEmpty = allRows[i].filter(c => c !== '')
-    if (nonEmpty.length >= 3) {
+    if (nonEmpty.length >= 5) {
       headerIndex = i
       break
     }

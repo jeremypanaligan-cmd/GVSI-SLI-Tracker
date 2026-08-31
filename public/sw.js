@@ -1,5 +1,5 @@
-const CACHE_NAME = 'gvsi-sli-v8'
-const DATA_CACHE = 'gvsi-sli-data-v4'
+const CACHE_NAME = 'gvsi-sli-v9'
+const DATA_CACHE = 'gvsi-sli-data-v5'
 const BASE = '/GVSI-SLI-Tracker'
 
 const SHELL_ASSETS = [
@@ -19,11 +19,14 @@ self.addEventListener('install', (event) => {
   self.skipWaiting()
 })
 
-// Activate: delete all old caches, then create fresh ones
+// Activate: delete ALL old caches, then create fresh ones
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
-      return Promise.all(keys.map((k) => caches.delete(k)))
+      return Promise.all(
+        keys.filter(k => k !== CACHE_NAME && k !== DATA_CACHE)
+            .map(k => caches.delete(k))
+      )
     }).then(() => {
       return caches.open(CACHE_NAME)
     }).then(() => {
