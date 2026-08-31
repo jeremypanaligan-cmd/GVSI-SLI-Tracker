@@ -183,11 +183,11 @@ export default function App() {
               SLI
             </div>
             <div>
-              <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight">
-                GVSI SLI Tracker
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight tracking-tight">
+                <span className="text-teal-600 dark:text-teal-400">GVSI</span> SLI Tracker
               </h1>
-              <p className="text-xs text-slate-500 hidden sm:block">
-                {view === 'executive' ? 'Executive Overview — MTD Data' : `Daily Status — ${selectedDate || 'Loading…'}`}
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:block tracking-wide">
+                GallopVision Services, Inc. — {view === 'executive' ? 'Executive Overview' : `Daily Status — ${selectedDate || '…'}`}
               </p>
             </div>
           </div>
@@ -303,6 +303,26 @@ export default function App() {
 
       {/* PWA Install Banner */}
       <PWAInstallBanner />
+
+      {/* Footer */}
+      <footer className="border-t border-slate-200 dark:border-slate-800/60 bg-white/80 dark:bg-[#0B0F17]/80 backdrop-blur-xl">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center font-black text-white text-[7px] tracking-tight">
+              SLI
+            </div>
+            <span className="text-[11px] text-slate-500 dark:text-slate-500">
+              <span className="font-semibold text-slate-600 dark:text-slate-400">GVSI SLI Tracker</span> — Service Line Installation Daily Tracking
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-600">
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+            <span>Developed by <span className="font-bold text-teal-600 dark:text-teal-400">GVSI Dev</span></span>
+            <span className="mx-1 text-slate-300 dark:text-slate-700">•</span>
+            <span>© {new Date().getFullYear()} GallopVision Services, Inc.</span>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }

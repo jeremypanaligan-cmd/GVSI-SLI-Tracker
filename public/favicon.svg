@@ -1,6 +1,75 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0f172a"/>
-  <rect x="4" y="4" width="56" height="56" rx="10" fill="#1e293b"/>
-  <text x="32" y="42" font-family="Arial,sans-serif" font-size="28" font-weight="bold" fill="#22d3ee" text-anchor="middle">SLI</text>
-  <rect x="8" y="50" width="48" height="4" rx="2" fill="#22d3ee" opacity="0.4"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="tealArc" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d9488;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#14b8a6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="#1a1a1a"/>
+  <!-- Teal accent arc -->
+  <path d="M 400 120 A 180 180 0 0 1 400 392" fill="none" stroke="url(#tealArc)" stroke-width="28" stroke-linecap="round"/>
+  <!-- Galloping horse silhouette -->
+  <g transform="translate(100, 90) scale(1.1)">
+    <!-- Horse body -->
+    <path d="M 180 280 
+             C 170 260, 150 240, 130 230 
+             C 110 220, 90 210, 80 195 
+             C 70 180, 65 165, 70 150 
+             C 75 135, 85 125, 100 120 
+             C 110 117, 120 118, 130 122 
+             C 140 126, 148 132, 155 140 
+             C 160 146, 168 155, 175 160 
+             C 185 168, 195 172, 205 170 
+             C 215 168, 225 162, 232 155 
+             C 238 148, 242 140, 240 130 
+             C 238 120, 232 112, 225 108 
+             C 218 104, 210 102, 200 105 
+             C 195 107, 190 110, 186 115 
+             L 175 105 
+             C 178 95, 182 85, 185 78 
+             C 188 70, 192 65, 198 62 
+             C 204 59, 210 60, 215 64 
+             C 220 68, 222 74, 220 80 
+             C 218 86, 214 90, 208 93 
+             C 240 88, 260 95, 275 110 
+             C 285 120, 290 132, 288 145 
+             C 286 155, 280 165, 272 172 
+             C 280 178, 290 185, 298 195 
+             C 305 205, 310 218, 308 232 
+             C 306 245, 298 255, 288 262 
+             C 295 268, 300 278, 302 290 
+             C 304 302, 302 315, 296 325 
+             L 280 325 
+             C 282 318, 282 310, 280 302 
+             C 278 295, 274 288, 268 284 
+             L 255 284 
+             L 255 340 
+             L 270 340 
+             L 270 380 
+             L 245 380 
+             L 245 340 
+             L 220 340 
+             L 220 380 
+             L 195 380 
+             L 195 325 
+             L 170 325 
+             L 170 380 
+             L 145 380 
+             L 145 325 
+             L 120 325 
+             L 120 380 
+             L 95 380 
+             L 95 310 
+             C 110 305, 130 295, 145 285 
+             Z" 
+          fill="#f5f5f5"/>
+    <!-- Horse eye -->
+    <circle cx="198" cy="82" r="4" fill="#1a1a1a"/>
+    <!-- Mane details -->
+    <path d="M 165 120 C 158 115, 150 112, 142 115 C 148 110, 155 108, 162 112" fill="#e0e0e0" opacity="0.6"/>
+    <path d="M 175 130 C 168 125, 160 122, 152 125 C 158 120, 165 118, 172 122" fill="#e0e0e0" opacity="0.5"/>
+  </g>
+  <!-- GVSI text -->
+  <text x="256" y="470" text-anchor="middle" font-family="Arial, sans-serif" font-weight="900" font-size="48" fill="#ffffff" letter-spacing="8">GVSI</text>
 </svg>
