@@ -120,7 +120,13 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
         </div>
 
         {/* Bottom row: Total Completed + Target + To Go */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="group rounded-xl border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-[#0E1622] p-4 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 dark:hover:border-slate-700/60 hover:shadow-md min-h-[100px]">
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Total Incoming</p>
+            <span className="text-2xl sm:text-3xl font-black text-violet-600 dark:text-violet-400 tracking-tight">{fmt(mtd.totalIncoming)}</span>
+            <p className="text-[11px] text-slate-500 mt-1.5">incoming tickets</p>
+          </div>
+
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between">
             <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Total Completed</p>
             <div>

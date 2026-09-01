@@ -15,7 +15,7 @@
  *
  * MTD format:
  *   AREA | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
- *   | THIS MO. RJO | PREV MOS. RJO | TOTAL RJO | LAST MTD | TARGET | LAST %
+ *   | THIS MO. RJO | PREV MOS. RJO | TOTAL RJO | LAST MTD | TARGET | LAST % | TOTAL INCOMING
  *   Cols: A    B                     C                   D
  *         E               F              G           H        I       J
  */
@@ -36,7 +36,7 @@ const RAW_HEADER = [
 const MTD_HEADER = [
   'AREA', 'COMPLETED FROM TOTAL', 'COMPLETED FROM RJO', 'TOTAL COMPLETED',
   'THIS MO. RJO', 'PREV MOS. RJO', 'TOTAL RJO',
-  'LAST MTD', 'TARGET', 'LAST %'
+  'LAST MTD', 'TARGET', 'LAST %', 'TOTAL INCOMING'
 ];
 
 // ==================== IMPORT ====================
@@ -239,6 +239,7 @@ function generateMTDReport() {
       // Sum across all days in the month
       var totalCompFromTotal = 0, totalCompFromRjo = 0, totalComp = 0;
       var totalRjoIncoming = 0, totalRjoRedispatched = 0;
+      var totalInc = 0;
       for (var d = 0; d < monthData.length; d++) {
         var ad = monthData[d].areas[area];
         if (ad) {
@@ -247,6 +248,7 @@ function generateMTDReport() {
           totalComp += ad.totalCompleted || 0;
           totalRjoIncoming += ad.rjoIncoming || 0;
           totalRjoRedispatched += ad.rjoRedispatched || 0;
+          totalInc += ad.inc || 0;
         }
       }
       
@@ -255,7 +257,7 @@ function generateMTDReport() {
       mtdSheet.getRange(currentRow, 1, 1, MTD_HEADER.length).setValues([[
         area, totalCompFromTotal, totalCompFromRjo, totalComp,
         totalRjoIncoming, totalRjoRedispatched, totalRjo,
-        areaData.mtd, areaData.target, areaData.pct
+        areaData.mtd, areaData.target, areaData.pct, totalInc
       ]]);
       currentRow++;
     }
@@ -263,6 +265,7 @@ function generateMTDReport() {
     // OVER ALL TOTAL
     var tCompFromTotal = 0, tCompFromRjo = 0, tComp = 0;
     var tRjoIncoming = 0, tRjoRedispatched = 0;
+    var tInc = 0;
     for (var d = 0; d < monthData.length; d++) {
       var da = Object.values(monthData[d].areas);
       for (var aa = 0; aa < da.length; aa++) {
@@ -271,6 +274,7 @@ function generateMTDReport() {
         tComp += da[aa].totalCompleted || 0;
         tRjoIncoming += da[aa].rjoIncoming || 0;
         tRjoRedispatched += da[aa].rjoRedispatched || 0;
+        tInc += da[aa].inc || 0;
       }
     }
     
@@ -286,7 +290,7 @@ function generateMTDReport() {
     totalRowRange.setValues([[
       'OVER ALL TOTAL', tCompFromTotal, tCompFromRjo, tComp,
       tRjoIncoming, tRjoRedispatched, tTotalRjo,
-      lm, ltarget, lpct
+      lm, ltarget, lpct, tInc
     ]]);
     totalRowRange.setFontFamily('Lexend');
     totalRowRange.setFontColor('#000000');

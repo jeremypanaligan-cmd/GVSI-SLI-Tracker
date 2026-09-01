@@ -112,6 +112,7 @@ function buildMTDEntry(area, rawArr, colMap) {
     lastMtd: val('LAST MTD'),
     target: val('TARGET'),
     lastPct: val('LAST %'),
+    totalIncoming: val('TOTAL INCOMING'),
   }
 }
 
@@ -219,6 +220,7 @@ export function extractExecutiveMetrics(mtdData, dailyBlock) {
     mtd: ot.lastMtd,              // LAST MTD
     toGo: Math.max(0, (ot.target || 0) - (ot.lastMtd || 0)),
     variance: (ot.lastMtd || 0) - (ot.target || 0),
+    totalIncoming: ot.totalIncoming || 0,
   }
 
   const daily = dailyBlock?.overallTotal
