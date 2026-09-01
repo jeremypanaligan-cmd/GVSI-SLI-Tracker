@@ -197,11 +197,11 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
             {/* VERTICAL DIVIDER */}
             <div className="hidden sm:flex w-px bg-slate-200 dark:bg-slate-700/60 self-stretch my-1 mx-0.5" />
 
-            {/* RIGHT GROUP: COMP ABL + COMP RJO + RJO INCOMING + RJO RD + TOTAL RJO */}
+            {/* RIGHT GROUP: COMP ABL + COMP RJO + RJO INCOMING + RJO FPMos + TOTAL RJO */}
             <DailyMetricCard label="COMP ABL" value={fmt(daily.activeBacklog)} icon={<BacklogIcon />} subtitle="BF + INC" />
             <DailyMetricCard label="COMP RJO" value={fmt(daily.completedFromRjo)} icon={<RJOIcon />} subtitle="from previous months" />
             <DailyMetricCard label="RJO INCOMING" value={fmt(daily.rjoIncoming)} icon={<RJOIcon2 />} subtitle="this month" />
-            <DailyMetricCard label="RJO RD" value={fmt(daily.rjoRedispatched)} icon={<RJOIcon2 />} subtitle="from prev. months" />
+            <DailyMetricCard label="RJO FPMos" value={fmt(daily.rjoRedispatched)} icon={<RJOIcon2 />} subtitle="from previous months" />
             <DailyMetricCard label="TOTAL RJO" value={fmt(daily.totalRjo)} icon={<RJOIcon />} />
 
             {/* TOTAL COMPLETED — Highlighted */}
