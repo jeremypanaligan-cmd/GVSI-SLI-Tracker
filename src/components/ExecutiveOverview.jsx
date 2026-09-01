@@ -1,4 +1,4 @@
-import { getBadgeStyle, formatNumber } from '../utils/dataProcessor'
+import { getBadgeStyle, formatNumber, getTodayStr } from '../utils/dataProcessor'
 
 export default function ExecutiveOverview({ metrics, selectedDate, availableDates, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail }) {
   if (!metrics) {
@@ -24,7 +24,8 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
 
   const currentDateIdx = availableDates ? availableDates.indexOf(selectedDate) : -1
   const hasPrev = currentDateIdx > 0
-  const hasNext = availableDates && currentDateIdx < availableDates.length - 1
+  const isToday = selectedDate === getTodayStr()
+  const hasNext = availableDates && currentDateIdx < availableDates.length - 1 && !isToday
 
   return (
     <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-5 space-y-5">
@@ -196,10 +197,12 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
             {/* VERTICAL DIVIDER */}
             <div className="hidden sm:flex w-px bg-slate-200 dark:bg-slate-700/60 self-stretch my-1 mx-0.5" />
 
-            {/* RIGHT GROUP: COMP ABL + COMP RJO + RJO + TOTAL COMPLETED + CARRY OVER */}
+            {/* RIGHT GROUP: COMP ABL + COMP RJO + RJO INCOMING + RJO RD + TOTAL RJO */}
             <DailyMetricCard label="COMP ABL" value={fmt(daily.activeBacklog)} icon={<BacklogIcon />} subtitle="BF + INC" />
             <DailyMetricCard label="COMP RJO" value={fmt(daily.completedFromRjo)} icon={<RJOIcon />} subtitle="from previous months" />
-            <DailyMetricCard label="RJO" value={fmt(daily.rjo)} icon={<RJOIcon2 />} />
+            <DailyMetricCard label="RJO INCOMING" value={fmt(daily.rjoIncoming)} icon={<RJOIcon2 />} subtitle="this month" />
+            <DailyMetricCard label="RJO RD" value={fmt(daily.rjoRedispatched)} icon={<RJOIcon2 />} subtitle="from prev. months" />
+            <DailyMetricCard label="TOTAL RJO" value={fmt(daily.totalRjo)} icon={<RJOIcon />} />
 
             {/* TOTAL COMPLETED — Highlighted */}
             <div className="rounded-2xl border-2 border-teal-300 dark:border-teal-600 bg-gradient-to-br from-teal-50 to-teal-100/50 dark:from-teal-950/40 dark:to-teal-900/20 p-4 relative overflow-hidden min-w-[140px] flex-1 sm:flex-none sm:w-[180px]">
@@ -209,7 +212,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
                 <p className="text-[10px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-widest">Total Completed</p>
               </div>
               <span className="text-2xl sm:text-3xl font-black text-teal-700 dark:text-teal-300 tracking-tight relative">{fmt(dailyCompleted)}</span>
-              <p className="text-[10px] text-teal-500/70 dark:text-teal-400/50 mt-1 relative font-medium">COMP ABL + COMP RJO</p>
+              <p className="text-[10px] text-teal-500/70 dark:text-teal-400/50 mt-1 relative font-medium">COMP FROM TOTAL + COMP FROM RJO</p>
             </div>
 
             <DailyMetricCard label="Carry Over" value={fmt(daily.carryOver)} icon={<COIcon />} />

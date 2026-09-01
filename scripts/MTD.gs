@@ -1,32 +1,42 @@
 /**
- * GVSI SLI Tracker - Automated Database Management v7
+ * GVSI SLI Tracker - Automated Database Management v8
  * 
+ * FIBERX NEW REPORT format:
+ *   AREA | BF | INC | TOTAL | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
+ *   | RJO THIS MO. | RJO REDISPATCHED | TOTAL RJO | CARRY OVER | MTD | TARGET | %
+ *   Cols: A  B    C     D       E                     F                    G
+ *         H              I              J              K           L     M      N
+ *
  * RAW DATA format (continuous table):
- *   Date | AREA | BF | INC | Total Jo | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED | RJO | Carry Over | MTD | TARGET | %
- * 
- * MTD format (new):
- *   AREA | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED | TOTAL RJO | LAST MTD | TARGET | LAST %
+ *   Date | AREA | BF | INC | Total Jo | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
+ *   | RJO INCOMING | RJO REDISPATCHED | TOTAL RJO | Carry Over | MTD | TARGET | %
+ *   Cols: A     B     C    D     E         F                     G                   H
+ *         I               J              K           L           M      N       O
+ *
+ * MTD format:
+ *   AREA | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
+ *   | THIS MO. RJO | PREV MOS. RJO | TOTAL RJO | LAST MTD | TARGET | LAST %
+ *   Cols: A    B                     C                   D
+ *         E               F              G           H        I       J
  */
 
 const FIBERX_SHEET_NAME = 'FIBERX NEW REPORT';
 const RAW_DATA_SHEET_NAME = 'RAW DATA';
 const MTD_SHEET_NAME = 'MTD';
 
-const AREAS = [
-  'Benguet', 'Ilocos Sur', 'Ilocos Norte', 'Nueva Vizcaya',
-  'Isabela', 'Quirino', 'Cagayan', 'Kalinga', 'Abra',
-  'Ifugao', 'Apayao', 'Mountain Province'
-];
+// Areas are now dynamically detected from RAW DATA — no hardcoded list needed
 
 const RAW_HEADER = [
   'Date', 'AREA', 'BF', 'INC', 'Total Jo',
   'COMPLETED FROM TOTAL', 'COMPLETED FROM RJO', 'TOTAL COMPLETED',
-  'RJO', 'Carry Over', 'MTD', 'TARGET', '%'
+  'RJO INCOMING', 'RJO REDISPATCHED', 'TOTAL RJO',
+  'Carry Over', 'MTD', 'TARGET', '%'
 ];
 
 const MTD_HEADER = [
-  'AREA', 'COMPLETED FROM TOTAL', 'COMPLETED FROM RJO',
-  'TOTAL COMPLETED', 'TOTAL RJO', 'LAST MTD', 'TARGET', 'LAST %'
+  'AREA', 'COMPLETED FROM TOTAL', 'COMPLETED FROM RJO', 'TOTAL COMPLETED',
+  'THIS MO. RJO', 'PREV MOS. RJO', 'TOTAL RJO',
+  'LAST MTD', 'TARGET', 'LAST %'
 ];
 
 // ==================== IMPORT ====================
@@ -74,17 +84,22 @@ function importFiberxToRawData() {
     
     if (!currentDate) continue;
     
-    var bf = row[1] || 0;
-    var inc = row[2] || 0;
-    var total = row[3] || 0;
-    var fromTotal = row[4] || 0;
-    var fromRjo = row[5] || 0;
-    var completedTotal = row[6] || 0;
-    var rjo = row[7] || 0;
-    var carryOver = row[8] || 0;
-    var mtd = row[9] || 0;
-    var target = row[10] || 0;
-    var pct = row[11] || '0.00%';
+    // FIBERX columns: AREA(0) BF(1) INC(2) TOTAL(3) COMP_FROM_TOTAL(4) COMP_FROM_RJO(5)
+    //   TOTAL_COMPLETED(6) RJO_THIS_MO(7) RJO_REDISPATCHED(8) TOTAL_RJO(9)
+    //   CARRY_OVER(10) MTD(11) TARGET(12) %(13)
+    var bf = cleanNum(row[1]);
+    var inc = cleanNum(row[2]);
+    var total = cleanNum(row[3]);
+    var fromTotal = cleanNum(row[4]);
+    var fromRjo = cleanNum(row[5]);
+    var completedTotal = cleanNum(row[6]);
+    var rjoThisMo = cleanNum(row[7]);
+    var rjoRedispatched = cleanNum(row[8]);
+    var totalRjo = cleanNum(row[9]);
+    var carryOver = cleanNum(row[10]);
+    var mtd = cleanNum(row[11]);
+    var target = cleanNum(row[12]);
+    var pct = String(row[13] || '0.00%').trim();
     
     var areaName = '';
     if (firstCell === 'OVER ALL TOTAL') {
@@ -94,7 +109,16 @@ function importFiberxToRawData() {
     }
     
     if (areaName) {
-      allRows.push([currentDate, areaName, bf, inc, total, fromTotal, fromRjo, completedTotal, rjo, carryOver, mtd, target, pct]);
+      // RAW DATA columns: Date(0) AREA(1) BF(2) INC(3) TotalJo(4)
+      //   CompFromTotal(5) CompFromRjo(6) TotalCompleted(7)
+      //   RjoIncoming(8) RjoRedispatched(8) TotalRjo(9)
+      //   CarryOver(10) MTD(11) Target(12) %(13)
+      allRows.push([
+        currentDate, areaName, bf, inc, total,
+        fromTotal, fromRjo, completedTotal,
+        rjoThisMo, rjoRedispatched, totalRjo,
+        carryOver, mtd, target, pct
+      ]);
     }
   }
   
@@ -120,10 +144,10 @@ function applyRawDataFormat(sheet) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return;
   var dataRows = lastRow - 1;
-  // C-L (cols 3-12): numbers with comma
-  sheet.getRange(2, 3, dataRows, 10).setNumberFormat('#,##0');
-  // M (col 13): percentage
-  sheet.getRange(2, 13, dataRows, 1).setNumberFormat('0.00%');
+  // C-O (cols 3-15): numbers with comma
+  sheet.getRange(2, 3, dataRows, 13).setNumberFormat('#,##0');
+  // P (col 16 — actually col 15 = %): percentage
+  sheet.getRange(2, 15, dataRows, 1).setNumberFormat('0.00%');
 }
 
 /**
@@ -138,11 +162,11 @@ function applyOverAllTotalFormatting(sheet) {
   for (var i = 0; i < data.length; i++) {
     var areaCell = String(data[i][1]).trim(); // Column B = AREA
     if (areaCell === 'OVER ALL TOTAL') {
-      var rowNum = i + 2; // +2 because: 1-indexed + header row
+      var rowNum = i + 2;
       var rowRange = sheet.getRange(rowNum, 1, 1, RAW_HEADER.length);
-      rowRange.setBackground('#000000'); // Black background
-      rowRange.setFontColor('#FFFFFF');  // White text
-      rowRange.setFontWeight('bold');    // Bold
+      rowRange.setBackground('#000000');
+      rowRange.setFontColor('#FFFFFF');
+      rowRange.setFontWeight('bold');
     }
   }
 }
@@ -173,6 +197,7 @@ function generateMTDReport() {
   var monthlyData = groupByMonth(dailyData);
   var currentRow = 1;
   
+  // Title row
   mtdSheet.getRange(currentRow, 1).setValue('SLI MTD TRACKING REPORT');
   mtdSheet.getRange(currentRow, 1).setFontWeight(true).setFontSize(14);
   currentRow += 2;
@@ -184,90 +209,131 @@ function generateMTDReport() {
     var monthData = monthlyData[monthKey];
     var parts = monthKey.split('-');
     var monthName = getMonthName(parseInt(parts[1]));
+    var monthYearLabel = monthName + ' ' + parts[0];
     
-    mtdSheet.getRange(currentRow, 1).setValue(monthName + ' ' + parts[0]);
-    mtdSheet.getRange(currentRow, 1).setFontWeight(true).setFontSize(12);
+    // Month Year row — Lexend, white text, bold, purple bg
+    var monthRowRange = mtdSheet.getRange(currentRow, 1, 1, MTD_HEADER.length);
+    monthRowRange.setValue(monthYearLabel);
+    monthRowRange.setFontFamily('Lexend');
+    monthRowRange.setFontColor('#FFFFFF');
+    monthRowRange.setFontWeight('bold');
+    monthRowRange.setBackground('#9900FF');
+    monthRowRange.merge();
     currentRow++;
     
-    // New MTD header format
+    // MTD header row
     mtdSheet.getRange(currentRow, 1, 1, MTD_HEADER.length).setValues([MTD_HEADER]);
     mtdSheet.getRange(currentRow, 1, 1, MTD_HEADER.length).setFontWeight(true);
     currentRow++;
     
     var lastDay = monthData[monthData.length - 1];
     
-    for (var a = 0; a < AREAS.length; a++) {
-      var area = AREAS[a];
+    // Dynamically discover all areas from the last day's data
+    var dynamicAreas = Object.keys(lastDay.areas).sort();
+    
+    for (var a = 0; a < dynamicAreas.length; a++) {
+      var area = dynamicAreas[a];
       var areaData = lastDay.areas[area];
       if (!areaData) continue;
       
-      // Sum completed from total and completed from RJO across all days
-      var totalCompFromTotal = 0, totalCompFromRjo = 0, totalComp = 0, totalRjo = 0;
+      // Sum across all days in the month
+      var totalCompFromTotal = 0, totalCompFromRjo = 0, totalComp = 0;
+      var totalRjoIncoming = 0, totalRjoRedispatched = 0;
       for (var d = 0; d < monthData.length; d++) {
         var ad = monthData[d].areas[area];
         if (ad) {
           totalCompFromTotal += ad.compFromTotal || 0;
           totalCompFromRjo += ad.compFromRjo || 0;
           totalComp += ad.totalCompleted || 0;
-          totalRjo += ad.rjo || 0;
+          totalRjoIncoming += ad.rjoIncoming || 0;
+          totalRjoRedispatched += ad.rjoRedispatched || 0;
         }
       }
       
+      var totalRjo = totalRjoIncoming + totalRjoRedispatched;
+      
       mtdSheet.getRange(currentRow, 1, 1, MTD_HEADER.length).setValues([[
-        area, totalCompFromTotal, totalCompFromRjo, totalComp, totalRjo,
+        area, totalCompFromTotal, totalCompFromRjo, totalComp,
+        totalRjoIncoming, totalRjoRedispatched, totalRjo,
         areaData.mtd, areaData.target, areaData.pct
       ]]);
       currentRow++;
     }
     
     // OVER ALL TOTAL
-    var tCompFromTotal = 0, tCompFromRjo = 0, tComp = 0, tRjo = 0;
+    var tCompFromTotal = 0, tCompFromRjo = 0, tComp = 0;
+    var tRjoIncoming = 0, tRjoRedispatched = 0;
     for (var d = 0; d < monthData.length; d++) {
       var da = Object.values(monthData[d].areas);
       for (var aa = 0; aa < da.length; aa++) {
         tCompFromTotal += da[aa].compFromTotal || 0;
         tCompFromRjo += da[aa].compFromRjo || 0;
         tComp += da[aa].totalCompleted || 0;
-        tRjo += da[aa].rjo || 0;
+        tRjoIncoming += da[aa].rjoIncoming || 0;
+        tRjoRedispatched += da[aa].rjoRedispatched || 0;
       }
     }
+    
+    var tTotalRjo = tRjoIncoming + tRjoRedispatched;
     
     var lt = lastDay.overallTotal;
     var lm = lt ? lt.mtd : 0;
     var ltarget = lt ? lt.target : 0;
     var lpct = ltarget > 0 ? (lm / ltarget) : 0;
     
-    mtdSheet.getRange(currentRow, 1, 1, MTD_HEADER.length).setValues([[
-      'OVER ALL TOTAL', tCompFromTotal, tCompFromRjo, tComp, tRjo,
+    // OVER ALL TOTAL row — Lexend, black text, bold italic, teal bg
+    var totalRowRange = mtdSheet.getRange(currentRow, 1, 1, MTD_HEADER.length);
+    totalRowRange.setValues([[
+      'OVER ALL TOTAL', tCompFromTotal, tCompFromRjo, tComp,
+      tRjoIncoming, tRjoRedispatched, tTotalRjo,
       lm, ltarget, lpct
     ]]);
-    mtdSheet.getRange(currentRow, 1).setFontWeight(true);
+    totalRowRange.setFontFamily('Lexend');
+    totalRowRange.setFontColor('#000000');
+    totalRowRange.setFontWeight('bold');
+    totalRowRange.setFontStyle('italic');
+    totalRowRange.setBackground('#87C5D0');
     currentRow += 3;
   }
   
-  // Apply MTD formatting
-  var lastDataRow = currentRow - 4;
-  if (lastDataRow > 4) {
-    // B-F (cols 2-6): numbers with comma
-    mtdSheet.getRange(5, 2, lastDataRow - 4, 5).setNumberFormat('#,##0');
-    // G (col 7): LAST MTD
-    mtdSheet.getRange(5, 7, lastDataRow - 4, 1).setNumberFormat('#,##0');
-    // H (col 8): TARGET
-    mtdSheet.getRange(5, 8, lastDataRow - 4, 1).setNumberFormat('#,##0');
-    // I (col 9): LAST % — wait, let me recount
-    // MTD_HEADER: AREA(0), COMP FROM TOTAL(1), COMP FROM RJO(2), TOTAL COMP(3), TOTAL RJO(4), LAST MTD(5), TARGET(6), LAST %(7)
-    // Columns: A=1, B=2, C=3, D=4, E=5, F=6, G=7, H=8
-    // B-F = cols 2-6 = COMP FROM TOTAL, COMP FROM RJO, TOTAL COMP, TOTAL RJO, LAST MTD → #,##0
-    // G = col 7 = TARGET → #,##0
-    // H = col 8 = LAST % → 0.00%
-    mtdSheet.getRange(5, 2, lastDataRow - 4, 5).setNumberFormat('#,##0');
-    mtdSheet.getRange(5, 7, lastDataRow - 4, 1).setNumberFormat('#,##0');
-    mtdSheet.getRange(5, 8, lastDataRow - 4, 1).setNumberFormat('0.00%');
-  }
+  // Apply number formatting to data rows
+  applyMTDFormatting(mtdSheet);
   
   for (var c = 1; c <= MTD_HEADER.length; c++) mtdSheet.autoResizeColumn(c);
   
   try { SpreadsheetApp.getUi().alert('MTD Report Generated!'); } catch(e) {}
+}
+
+/**
+ * Apply number formatting to MTD data rows (skip title, month headers, and sub-headers)
+ */
+function applyMTDFormatting(sheet) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 4) return;
+  
+  // Scan for data rows (skip title row 1, skip month/year merged rows, skip header rows)
+  for (var r = 1; r <= lastRow; r++) {
+    var cellA = String(sheet.getRange(r, 1).getValue()).trim();
+    
+    // Skip title, month headers, area headers, and empty rows
+    if (cellA === 'SLI MTD TRACKING REPORT' || cellA === '' || cellA === 'AREA') continue;
+    if (cellA.includes('202') && cellA.length < 20) continue; // month year rows like "September 2026"
+    
+    // Check if this is a data row (has a number or area name)
+    var cellB = sheet.getRange(r, 2).getValue();
+    if (typeof cellB === 'number' || cellB === 0) {
+      // B-F (cols 2-6): COMPLETED FROM TOTAL, COMPLETED FROM RJO, TOTAL COMPLETED, THIS MO. RJO, PREV MOS. RJO → #,##0
+      sheet.getRange(r, 2, 1, 5).setNumberFormat('#,##0');
+      // G (col 7): TOTAL RJO → #,##0
+      sheet.getRange(r, 7).setNumberFormat('#,##0');
+      // H (col 8): LAST MTD → #,##0
+      sheet.getRange(r, 8).setNumberFormat('#,##0');
+      // I (col 9): TARGET → #,##0
+      sheet.getRange(r, 9).setNumberFormat('#,##0');
+      // J (col 10): LAST % → 0.00%
+      sheet.getRange(r, 10).setNumberFormat('0.00%');
+    }
+  }
 }
 
 // ==================== PARSING ====================
@@ -290,23 +356,22 @@ function parseRawData(rawData) {
     
     if (!currentBlock) continue;
     
-    // RAW DATA: Date(0), AREA(1), BF(2), INC(3), TotalJo(4), CompFromTotal(5), CompFromRjo(6), TotalCompleted(7), RJO(8), CarryOver(9), MTD(10), TARGET(11), %(12)
+    // RAW DATA v8 columns:
+    // Date(0) AREA(1) BF(2) INC(3) TotalJo(4) CompFromTotal(5) CompFromRjo(6) TotalCompleted(7)
+    // RjoIncoming(8) RjoRedispatched(9) TotalRjo(10) CarryOver(11) MTD(12) TARGET(13) %(14)
     var entry = {
       bf: cleanNum(row[2]), inc: cleanNum(row[3]), totalJo: cleanNum(row[4]),
       compFromTotal: cleanNum(row[5]), compFromRjo: cleanNum(row[6]), totalCompleted: cleanNum(row[7]),
-      rjo: cleanNum(row[8]), carryOver: cleanNum(row[9]), mtd: cleanNum(row[10]),
-      target: cleanNum(row[11]), pct: String(row[12]).trim()
+      rjoIncoming: cleanNum(row[8]), rjoRedispatched: cleanNum(row[9]), totalRjo: cleanNum(row[10]),
+      carryOver: cleanNum(row[11]), mtd: cleanNum(row[12]),
+      target: cleanNum(row[13]), pct: String(row[14]).trim()
     };
     
     if (areaStr === 'OVER ALL TOTAL') {
       currentBlock.overallTotal = entry;
-    } else if (areaStr) {
-      for (var a = 0; a < AREAS.length; a++) {
-        if (areaStr.includes(AREAS[a])) {
-          currentBlock.areas[AREAS[a]] = entry;
-          break;
-        }
-      }
+    } else if (areaStr && areaStr !== 'AREA') {
+      // Use the exact area name from RAW DATA — no hardcoded filtering
+      currentBlock.areas[areaStr] = entry;
     }
   }
   
@@ -328,6 +393,9 @@ function parseExportDate(dateStr) {
   var months = { 'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5, 'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11 };
   var match = dateStr.match(/(\w+)\s+(\d+),?\s*(\d{4})/);
   if (match) return new Date(parseInt(match[3]), months[match[1].substring(0, 3)], parseInt(match[2]));
+  // Also handle "Aug 1 2026" format (no comma)
+  var match2 = dateStr.match(/(\w+)\s+(\d+)\s+(\d{4})/);
+  if (match2) return new Date(parseInt(match2[3]), months[match2[1].substring(0, 3)], parseInt(match2[2]));
   return null;
 }
 

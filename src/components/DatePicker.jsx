@@ -2,12 +2,13 @@
  * DatePicker — Dropdown date selector for daily data view.
  * Shows available dates with left/right navigation arrows.
  */
-export default function DatePicker({ dates, selectedDate, onSelect }) {
+export default function DatePicker({ dates, selectedDate, onSelect, maxDate }) {
   if (!dates || dates.length === 0) return null
 
   const currentIndex = dates.indexOf(selectedDate)
   const hasPrev = currentIndex > 0
-  const hasNext = currentIndex < dates.length - 1
+  const isAtMax = maxDate ? selectedDate === maxDate : false
+  const hasNext = currentIndex < dates.length - 1 && !isAtMax
 
   const goPrev = () => { if (hasPrev) onSelect(dates[currentIndex - 1]) }
   const goNext = () => { if (hasNext) onSelect(dates[currentIndex + 1]) }

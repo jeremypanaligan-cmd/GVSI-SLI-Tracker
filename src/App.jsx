@@ -76,9 +76,9 @@ export default function App() {
       setSource(result.source)
       setLastSync(result.timestamp)
 
-      if (daily.dates.length > 0 && !selectedDate) {
+      if (!selectedDate) {
         const today = getTodayStr()
-        setSelectedDate(findClosestDate(daily.dates, today))
+        setSelectedDate(today)
       }
     } catch (err) {
       setError(err.message)
@@ -300,6 +300,7 @@ export default function App() {
                   dates={availableDates}
                   selectedDate={selectedDate}
                   onSelect={setSelectedDate}
+                  maxDate={getTodayStr()}
                 />
                 <span className="text-[11px] text-slate-400 dark:text-slate-600">
                   {lastSync && `Last sync: ${lastSync.toLocaleTimeString()}`}

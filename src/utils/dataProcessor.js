@@ -20,6 +20,12 @@ function cleanNumber(val) {
   return neg ? -n : n
 }
 
+/** Convert value to number, returning 0 for empty/NaN (used for RAW DATA numeric fields) */
+function toNum(val) {
+  const n = cleanNumber(val)
+  return isNaN(n) ? 0 : n
+}
+
 export function formatNumber(val, colKey) {
   if (val === null || val === undefined || val === '') return '—'
   if (colKey === '%') {
@@ -189,7 +195,9 @@ export function extractExecutiveMetrics(mtdData, dailyBlock) {
         inc: dailyBlock.overallTotal.inc || 0,
         activeBacklog: dailyBlock.overallTotal.completedFromTotal || 0,
         completedFromRjo: dailyBlock.overallTotal.completedFromRjo || 0,
-        rjo: dailyBlock.overallTotal.rjo || 0,
+        rjoIncoming: dailyBlock.overallTotal.rjoIncoming || 0,
+        rjoRedispatched: dailyBlock.overallTotal.rjoRedispatched || 0,
+        totalRjo: dailyBlock.overallTotal.totalRjo || 0,
         totalCompleted: dailyBlock.overallTotal.totalCompleted || 0,
         carryOver: dailyBlock.overallTotal.carryOver || 0,
       }
@@ -200,11 +208,7 @@ export function extractExecutiveMetrics(mtdData, dailyBlock) {
 
 // ==================== RAW DATA (DAILY) PARSING ====================
 
-const AREAS = [
-  'Benguet', 'Ilocos Sur', 'Ilocos Norte', 'Nueva Vizcaya',
-  'Isabela', 'Quirino', 'Cagayan', 'Kalinga', 'Abra',
-  'Ifugao', 'Apayao', 'Mountain Province'
-]
+// Areas are now dynamically detected from RAW DATA — no hardcoded list needed
 
 /**
  * Map a raw CSV row array to an entry object using column indices.
@@ -300,20 +304,24 @@ export function parseRawDailyData(rawData) {
         dates.push(dateStr)
       }
 
-      // For continuous format, offset by 1 (Date is col 0)
+      // RAW DATA v8 columns:
+      // Date(0) AREA(1) BF(2) INC(3) TotalJo(4) CompFromTotal(5) CompFromRjo(6) TotalCompleted(7)
+      // RjoIncoming(8) RjoRedispatched(9) TotalRjo(10) CarryOver(11) MTD(12) TARGET(13) %(14)
       const entry = {
         area,
-        bf: cleanNumber(arr[2]),
-        inc: cleanNumber(arr[3]),
-        totalJo: cleanNumber(arr[4]),
-        completedFromTotal: cleanNumber(arr[5]),
-        completedFromRjo: cleanNumber(arr[6]),
-        totalCompleted: cleanNumber(arr[7]),
-        rjo: cleanNumber(arr[8]),
-        carryOver: cleanNumber(arr[9]),
-        mtd: cleanNumber(arr[10]),
-        target: cleanNumber(arr[11]),
-        pct: cleanNumber(arr[12]),
+        bf: toNum(arr[2]),
+        inc: toNum(arr[3]),
+        totalJo: toNum(arr[4]),
+        completedFromTotal: toNum(arr[5]),
+        completedFromRjo: toNum(arr[6]),
+        totalCompleted: toNum(arr[7]),
+        rjoIncoming: toNum(arr[8]),
+        rjoRedispatched: toNum(arr[9]),
+        totalRjo: toNum(arr[10]),
+        carryOver: toNum(arr[11]),
+        mtd: toNum(arr[12]),
+        target: toNum(arr[13]),
+        pct: toNum(arr[14]),
       }
 
       if (area === 'OVER ALL TOTAL') {
@@ -354,14 +362,30 @@ export function parseRawDailyData(rawData) {
       const areaVal = first
       if (!areaVal || areaVal === 'AREA') continue
 
+      // Old block format columns (same as new RAW DATA):
+      // AREA(0) BF(1) INC(2) TotalJo(3) CompFromTotal(4) CompFromRjo(5) TotalCompleted(6)
+      // RjoIncoming(7) RjoRedispatched(8) TotalRjo(9) CarryOver(10) MTD(11) TARGET(12) %(13)
       const entry = {
         area: areaVal,
-        ...mapRowByIndex(arr),
+        bf: toNum(arr[1]),
+        inc: toNum(arr[2]),
+        totalJo: toNum(arr[3]),
+        completedFromTotal: toNum(arr[4]),
+        completedFromRjo: toNum(arr[5]),
+        totalCompleted: toNum(arr[6]),
+        rjoIncoming: toNum(arr[7]),
+        rjoRedispatched: toNum(arr[8]),
+        totalRjo: toNum(arr[9]),
+        carryOver: toNum(arr[10]),
+        mtd: toNum(arr[11]),
+        target: toNum(arr[12]),
+        pct: toNum(arr[13]),
       }
 
       if (areaVal === 'OVER ALL TOTAL') {
         blocks[currentDate].overallTotal = entry
-      } else if (AREAS.some(a => areaVal.includes(a))) {
+      } else if (areaVal && areaVal !== 'AREA') {
+        // Accept any area name dynamically — no hardcoded filtering
         blocks[currentDate].areas.push(entry)
       }
     }
