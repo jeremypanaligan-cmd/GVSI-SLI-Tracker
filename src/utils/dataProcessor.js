@@ -56,104 +56,115 @@ export function getCurrentMonthYear() {
 // ==================== MTD PARSING ====================
 
 /**
- * Parse MTD sheet CSV into structured data for Executive Overview.
- * @param {Object} mtdData - { headers, rows, objects } from parseCSV
+ * Parse a month-year header string like "August 2026" → "August 2026" or null.
  */
-export function parseMTDData(mtdData) {
-  if (!mtdData) return null
-  const mtdRows = mtdData.objects || []
-  if (mtdRows.length === 0) return null
-
-  const currentMonthYear = getCurrentMonthYear()
-  let foundCurrentMonth = false
-  let areas = []
-  let overallTotal = null
-
-  for (const row of mtdRows) {
-    const area = String(row['AREA'] || '').trim()
-
-    if (area === 'AREA') continue
-
-    // Detect month section headers
-    const isMonthHeader = MONTH_NAMES.some(m => area.includes(m)) && /\d{4}/.test(area)
-    if (isMonthHeader) {
-      foundCurrentMonth = area === currentMonthYear
-      if (!foundCurrentMonth && areas.length > 0) break
-      areas = []
-      overallTotal = null
-      continue
-    }
-
-    if (!area || area.includes('SLI MTD')) continue
-    if (!foundCurrentMonth) continue
-
-    const entry = {
-      area,
-      compFromTotal: cleanNumber(row['COMPLETED FROM TOTAL']),
-      compFromRjo: cleanNumber(row['COMPLETED FROM RJO']),
-      totalCompleted: cleanNumber(row['TOTAL COMPLETED']),
-      totalRjo: cleanNumber(row['TOTAL RJO']),
-      lastMtd: cleanNumber(row['LAST MTD']),
-      target: cleanNumber(row['TARGET']),
-      lastPct: cleanNumber(row['LAST %']),
-    }
-
-    if (area === 'OVER ALL TOTAL') {
-      overallTotal = entry
-    } else {
-      areas.push(entry)
-    }
+function parseMonthYearHeader(text) {
+  if (!text) return null
+  const trimmed = text.trim()
+  for (const month of MONTH_NAMES) {
+    const regex = new RegExp(`^${month}\\s+(\\d{4})$`, 'i')
+    const m = trimmed.match(regex)
+    if (m) return `${month} ${m[1]}`
   }
-
-  // Fallback: if current month not found, use last complete section
-  if (!overallTotal && areas.length === 0) {
-    return parseMTDDataFallback(mtdRows)
-  }
-
-  return { areas, overallTotal }
+  return null
 }
 
-function parseMTDDataFallback(mtdRows) {
-  if (!mtdRows || mtdRows.length === 0) return null
+/**
+ * Build a structured entry from MTD row using raw array positional indexing.
+ * MTD columns: AREA(0) COMP_FROM_TOTAL(1) COMP_FROM_RJO(2) TOTAL_COMP(3) TOTAL_RJO(4) LAST_MTD(5) TARGET(6) LAST_PCT(7)
+ */
+function buildMTDEntry(area, rawArr) {
+  return {
+    area,
+    compFromTotal: cleanNumber(rawArr[1]),
+    compFromRjo: cleanNumber(rawArr[2]),
+    totalCompleted: cleanNumber(rawArr[3]),
+    totalRjo: cleanNumber(rawArr[4]),
+    lastMtd: cleanNumber(rawArr[5]),
+    target: cleanNumber(rawArr[6]),
+    lastPct: cleanNumber(rawArr[7]),
+  }
+}
 
-  let areas = []
-  let overallTotal = null
-  let tempAreas = []
+/**
+ * Parse ALL month sections from the MTD sheet.
+ * Returns { months: string[], sections: { [monthYear]: { areas, overallTotal } } }
+ * Uses rawArr positional indexing to bypass CSV header mapping issues.
+ */
+function parseAllMonthSections(mtdData) {
+  const rawArrays = mtdData.allRows || mtdData.rows || []
+  const sections = {}
+  const months = []
+  let currentMonth = null
+  let currentAreas = []
+  let currentOverall = null
 
-  for (const row of mtdRows) {
-    const area = String(row['AREA'] || '').trim()
-    if (area === 'AREA') continue
+  for (let i = 0; i < rawArrays.length; i++) {
+    const arr = rawArrays[i]
+    const first = String(arr[0] || '').trim()
 
-    const isMonthHeader = MONTH_NAMES.some(m => area.includes(m)) && /\d{4}/.test(area)
-    if (isMonthHeader) {
-      if (overallTotal) break
-      tempAreas = []
+    if (first === 'AREA' || first === '') continue
+
+    const monthYear = parseMonthYearHeader(first)
+    if (monthYear) {
+      // Save previous month section
+      if (currentMonth) {
+        sections[currentMonth] = { areas: currentAreas, overallTotal: currentOverall }
+        months.push(currentMonth)
+      }
+      currentMonth = monthYear
+      currentAreas = []
+      currentOverall = null
       continue
     }
 
-    if (!area || area.includes('SLI MTD')) continue
+    if (first.includes('SLI MTD')) continue
+    if (!currentMonth) continue
 
-    const entry = {
-      area,
-      compFromTotal: cleanNumber(row['COMPLETED FROM TOTAL']),
-      compFromRjo: cleanNumber(row['COMPLETED FROM RJO']),
-      totalCompleted: cleanNumber(row['TOTAL COMPLETED']),
-      totalRjo: cleanNumber(row['TOTAL RJO']),
-      lastMtd: cleanNumber(row['LAST MTD']),
-      target: cleanNumber(row['TARGET']),
-      lastPct: cleanNumber(row['LAST %']),
-    }
+    const entry = buildMTDEntry(first, arr)
 
-    if (area === 'OVER ALL TOTAL') {
-      overallTotal = entry
-      areas = [...tempAreas]
-      tempAreas = []
+    if (first === 'OVER ALL TOTAL') {
+      currentOverall = entry
     } else {
-      tempAreas.push(entry)
+      currentAreas.push(entry)
     }
   }
 
-  return { areas, overallTotal }
+  // Save last section
+  if (currentMonth) {
+    sections[currentMonth] = { areas: currentAreas, overallTotal: currentOverall }
+    months.push(currentMonth)
+  }
+
+  return { months, sections }
+}
+
+/**
+ * Parse MTD sheet CSV into structured data for Executive Overview.
+ * @param {Object} mtdData - { headers, rows, objects } from parseCSV
+ * @param {string} selectedMonthYear - e.g. "August 2026" (optional, defaults to current month)
+ * @returns {{ areas, overallTotal, availableMonths, selectedMonthYear }} | null
+ */
+export function parseMTDData(mtdData, selectedMonthYear) {
+  if (!mtdData) return null
+  if (!mtdData.rows || mtdData.rows.length === 0) return null
+
+  const currentMonthYear = getCurrentMonthYear()
+  const targetMonth = selectedMonthYear || currentMonthYear
+
+  const { months, sections } = parseAllMonthSections(mtdData)
+
+  if (months.length === 0) return null
+
+  // Return data for the target month, or fall back to current, or last available
+  const data = sections[targetMonth] || sections[currentMonthYear] || sections[months[months.length - 1]]
+  if (!data) return null
+
+  return {
+    ...data,
+    availableMonths: months,
+    selectedMonthYear: sections[targetMonth] ? targetMonth : (sections[currentMonthYear] ? currentMonthYear : months[months.length - 1]),
+  }
 }
 
 /**

@@ -1,6 +1,6 @@
 import { getBadgeStyle, formatNumber } from '../utils/dataProcessor'
 
-export default function ExecutiveOverview({ metrics, selectedDate, availableDates, onDateSelect, onGoToDetail }) {
+export default function ExecutiveOverview({ metrics, selectedDate, availableDates, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail }) {
   if (!metrics) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
@@ -34,9 +34,21 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
         <div className="flex items-center gap-2 mb-3">
           <div className="w-1.5 h-5 rounded-full bg-gradient-to-b from-teal-500 to-teal-600" />
           <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Month-to-Date</h2>
-          <span className="text-[10px] font-medium text-slate-400 dark:text-slate-600 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
-            {new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
-          </span>
+          {availableMonths && availableMonths.length > 1 ? (
+            <select
+              value={selectedMonthYear || new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+              onChange={(e) => onMonthSelect && onMonthSelect(e.target.value)}
+              className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-500/40 transition appearance-none cursor-pointer"
+            >
+              {availableMonths.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-[10px] font-medium text-slate-400 dark:text-slate-600 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+              {selectedMonthYear || new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+            </span>
+          )}
         </div>
 
         {/* Hero: Achievement Rate + Progress Bar */}

@@ -45,7 +45,7 @@ export function parseCSV(csvText) {
     allRows.push(currentRow)
   }
 
-  if (allRows.length === 0) return { headers: [], rows: [], objects: [] }
+  if (allRows.length === 0) return { headers: [], rows: [], objects: [], allRows: [] }
 
   // Find header row: first row with ≥5 non-empty cells
   let headerIndex = 0
@@ -74,5 +74,5 @@ export function parseCSV(csvText) {
     objects.push(obj)
   }
 
-  return { headers, rows, objects }
+  return { headers, rows, objects, allRows }
 }

@@ -3,6 +3,7 @@ import { fetchAllData, getCachedData } from './utils/dataFetcher'
 import {
   parseMTDData, extractExecutiveMetrics,
   parseRawDailyData, getTodayStr, findClosestDate,
+  getCurrentMonthYear,
 } from './utils/dataProcessor'
 import ExecutiveOverview from './components/ExecutiveOverview'
 import DailyTable from './components/DailyTable'
@@ -51,6 +52,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [view, setView] = useState('executive')
   const [selectedDate, setSelectedDate] = useState('')
+  const [selectedMonthYear, setSelectedMonthYear] = useState(getCurrentMonthYear())
   const [nextRefresh, setNextRefresh] = useState(null)
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
   const [tick, setTick] = useState(0) // force re-render for "time ago" updates
@@ -65,7 +67,7 @@ export default function App() {
     try {
       const result = await fetchAllData()
 
-      const parsed = parseMTDData(result.mtd)
+      const parsed = parseMTDData(result.mtd, selectedMonthYear)
       setMtdData(parsed)
 
       const daily = parseRawDailyData(result.raw)
@@ -91,7 +93,7 @@ export default function App() {
       setLoading(false)
       setIsSyncing(false)
     }
-  }, [mtdData, selectedDate])
+  }, [mtdData, selectedDate, selectedMonthYear])
 
   loadDataRef.current = loadData
 
@@ -155,6 +157,15 @@ export default function App() {
   const dailyBlock = rawDaily?.blocks?.[selectedDate] || null
   const availableDates = rawDaily?.dates || []
   const executiveMetrics = extractExecutiveMetrics(mtdData, dailyBlock)
+
+  // When month changes, re-parse MTD data from cache
+  const handleMonthChange = useCallback((newMonth) => {
+    setSelectedMonthYear(newMonth)
+    const cached = getCachedData()
+    if (cached.mtd) {
+      setMtdData(parseMTDData(cached.mtd, newMonth))
+    }
+  }, [])
 
   const refreshCountdown = nextRefresh ? Math.max(0, Math.ceil((nextRefresh - Date.now()) / 1000)) : null
 
@@ -265,6 +276,9 @@ export default function App() {
             selectedDate={selectedDate}
             availableDates={availableDates}
             onDateSelect={setSelectedDate}
+            onMonthSelect={handleMonthChange}
+            selectedMonthYear={selectedMonthYear}
+            availableMonths={mtdData?.availableMonths || []}
             onGoToDetail={() => setView('daily')}
           />
         ) : (
