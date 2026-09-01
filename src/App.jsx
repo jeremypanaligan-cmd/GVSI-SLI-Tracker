@@ -175,7 +175,7 @@ export default function App() {
   const timeAgo = formatTimeAgo(lastSync)
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0B0F17] flex flex-col font-sans">
+    <div className="min-h-screen flex flex-col font-sans">
       {/* Sync overlay */}
       {isSyncing && mtdData && (
         <div className="fixed inset-0 z-[60] bg-black/20 dark:bg-black/40 backdrop-blur-sm flex items-center justify-center pointer-events-none">
@@ -187,7 +187,7 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/90 dark:bg-[#0B0F17]/90 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60">
+      <header className="sticky top-0 z-50 bg-white/80 dark:bg-[#0B0F17]/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60">
         <div className="w-full px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center font-black text-white text-sm tracking-tight shadow-lg shadow-teal-500/20">
@@ -198,43 +198,24 @@ export default function App() {
                 <span className="text-teal-600 dark:text-teal-400">GVSI</span> SLI Tracker
               </h1>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:block tracking-wide">
-                GallopVision Services, Inc. — {view === 'executive' ? 'Executive Overview' : `Daily Status — ${selectedDate || '…'}`}
+                Gallopvision Services, Inc. — {view === 'executive' ? 'Executive Overview' : `Daily Status — ${selectedDate || '…'}`}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Auto-refresh countdown */}
-            {autoRefreshEnabled && refreshCountdown !== null && !isSyncing && (
-              <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-500 border border-slate-200 dark:border-slate-700" title="Auto-refreshes every 5 minutes">
-                <svg className="w-3 h-3 animate-spin" style={{ animationDuration: '3s' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            {/* Consolidated Status Pill: countdown + time ago */}
+            {lastSync && (
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60" title={`Last updated: ${lastSync.toLocaleString()} • Auto-refreshes every 5 min`}>                <svg className="w-3 h-3 text-slate-400 dark:text-slate-500 animate-spin" style={{ animationDuration: '3s' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                {Math.floor(refreshCountdown / 60)}:{String(refreshCountdown % 60).padStart(2, '0')}
-              </div>
-            )}
-
-            {/* Data freshness indicator */}
-            {lastSync && (
-              <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium border ${freshness.bg}`} title={`Last updated: ${lastSync.toLocaleString()}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${freshness.dot}`} />
-                <span className={freshness.text}>
-                  {isSyncing ? 'Updating…' : timeAgo}
+                <span className="text-slate-500 dark:text-slate-400">
+                  {Math.floor(refreshCountdown / 60)}:{String(refreshCountdown % 60).padStart(2, '0')}
                 </span>
+                <span className="text-slate-300 dark:text-slate-600">·</span>
+                <span className={`${freshness.text}`}>{isSyncing ? 'Syncing…' : timeAgo}</span>
               </div>
             )}
-
-            {/* Online/Offline status */}
-            <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-              isOnline
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20'
-                : 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20'
-            }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${
-                isOnline ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-amber-500 dark:bg-amber-400 animate-pulse'
-              }`} />
-              {isOnline ? 'Online' : 'Offline'}
-            </span>
 
             <ThemeToggle />
 
@@ -320,7 +301,7 @@ export default function App() {
       <PWAInstallBanner />
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 dark:border-slate-800/60 bg-white/80 dark:bg-[#0B0F17]/80 backdrop-blur-xl">
+      <footer className="border-t border-slate-200 dark:border-slate-800/60 bg-white/60 dark:bg-[#0B0F17]/60 backdrop-blur-xl">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <div className="w-5 h-5 rounded bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center font-black text-white text-[7px] tracking-tight">
@@ -334,7 +315,7 @@ export default function App() {
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
             <span>Developed by <span className="font-bold text-teal-600 dark:text-teal-400">GVSI Dev</span></span>
             <span className="mx-1 text-slate-300 dark:text-slate-700">•</span>
-            <span>© {new Date().getFullYear()} GallopVision Services, Inc.</span>
+            <span>© {new Date().getFullYear()} Gallopvision Services, Inc.</span>
           </div>
         </div>
       </footer>

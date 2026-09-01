@@ -36,17 +36,22 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
           <div className="w-1.5 h-5 rounded-full bg-gradient-to-b from-teal-500 to-teal-600" />
           <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Month-to-Date</h2>
           {availableMonths && availableMonths.length > 1 ? (
-            <select
-              value={selectedMonthYear || new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
-              onChange={(e) => onMonthSelect && onMonthSelect(e.target.value)}
-              className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-500/40 transition appearance-none cursor-pointer"
-            >
-              {availableMonths.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                value={selectedMonthYear || new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+                onChange={(e) => onMonthSelect && onMonthSelect(e.target.value)}
+                className="text-[11px] font-semibold px-4 py-1.5 pr-8 rounded-lg bg-slate-100 dark:bg-[#0E1622] border border-slate-200 dark:border-slate-700/60 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/50 transition appearance-none cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800"
+              >
+                {availableMonths.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+              <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 dark:text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
           ) : (
-            <span className="text-[10px] font-medium text-slate-400 dark:text-slate-600 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+            <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-[#0E1622] border border-slate-200 dark:border-slate-700/60 px-3 py-1.5 rounded-lg">
               {selectedMonthYear || new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
             </span>
           )}
@@ -80,7 +85,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2">
                 {mtd.pct !== null && !isNaN(mtd.pct)
-                  ? mtd.pct >= 100 ? '🎉 Target achieved!' : `${(100 - mtd.pct).toFixed(1)}% gap remaining`
+                  ? mtd.pct >= 100 ? (<span className="inline-flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg> Target achieved</span>) : `${(100 - mtd.pct).toFixed(1)}% gap remaining`
                   : 'Awaiting data'}
               </p>
             </div>
@@ -155,7 +160,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
             <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
               {mtd.toGo > 0
                 ? <span className="font-semibold text-amber-600 dark:text-amber-400">remaining installations</span>
-                : <span className="font-semibold text-emerald-600 dark:text-emerald-400">✓ Target reached!</span>
+                : <span className="font-semibold text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg> Target reached!</span>
               }
             </p>
           </div>
@@ -191,17 +196,17 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
         {daily ? (
           <div className="flex flex-wrap items-stretch justify-center gap-3">
             {/* LEFT GROUP: BF + INC */}
-            <DailyMetricCard label="BF" value={fmt(daily.bf)} icon={<BFIcon />} />
-            <DailyMetricCard label="INC" value={fmt(daily.inc)} icon={<INCIcon />} />
+            <DailyMetricCard label="BF" value={fmt(daily.bf)} icon={<BFIcon />} subtitle="Brought forward"  />
+            <DailyMetricCard label="INC" value={fmt(daily.inc)} icon={<INCIcon />} subtitle="Incoming" />
 
             {/* VERTICAL DIVIDER */}
             <div className="hidden sm:flex w-px bg-slate-200 dark:bg-slate-700/60 self-stretch my-1 mx-0.5" />
 
             {/* RIGHT GROUP: COMP ABL + COMP RJO + RJO INCOMING + RJO FPMos + TOTAL RJO */}
             <DailyMetricCard label="COMP ABL" value={fmt(daily.activeBacklog)} icon={<BacklogIcon />} subtitle="BF + INC" />
-            <DailyMetricCard label="COMP RJO" value={fmt(daily.completedFromRjo)} icon={<RJOIcon />} subtitle="from previous months" />
-            <DailyMetricCard label="RJO INCOMING" value={fmt(daily.rjoIncoming)} icon={<RJOIcon2 />} subtitle="this month" />
-            <DailyMetricCard label="RJO FPMos" value={fmt(daily.rjoRedispatched)} icon={<RJOIcon2 />} subtitle="from previous months" />
+            <DailyMetricCard label="COMP RJO" value={fmt(daily.completedFromRjo)} icon={<RJOIcon />} subtitle="From previous months" />
+            <DailyMetricCard label="RJO INCOMING" value={fmt(daily.rjoIncoming)} icon={<RJOIcon2 />} subtitle="Current month" />
+            <DailyMetricCard label="RJO FPMos" value={fmt(daily.rjoRedispatched)} icon={<RJOIcon2 />} subtitle="From previous months" />
             <DailyMetricCard label="TOTAL RJO" value={fmt(daily.totalRjo)} icon={<RJOIcon />} />
 
             {/* TOTAL COMPLETED — Highlighted */}
@@ -212,7 +217,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
                 <p className="text-[10px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-widest">Total Completed</p>
               </div>
               <span className="text-2xl sm:text-3xl font-black text-teal-700 dark:text-teal-300 tracking-tight relative">{fmt(dailyCompleted)}</span>
-              <p className="text-[10px] text-teal-500/70 dark:text-teal-400/50 mt-1 relative font-medium">COMP FROM TOTAL + COMP FROM RJO</p>
+              <p className="text-[10px] text-teal-500/70 dark:text-teal-400/50 mt-1 relative font-medium">INC + BF + CRJO</p>
             </div>
 
             <DailyMetricCard label="Carry Over" value={fmt(daily.carryOver)} icon={<COIcon />} />
@@ -229,11 +234,16 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
 
       {/* VIEW BREAKDOWN */}
       <button onClick={onGoToDetail}
-        className="w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-500 hover:to-teal-400 active:from-teal-700 active:to-teal-600 text-white font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-600/20 hover:shadow-xl hover:shadow-teal-500/30 hover:-translate-y-0.5">
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+        className="group w-full flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-white dark:bg-[#0E1622] border border-slate-200 dark:border-slate-800/60 hover:border-emerald-300 dark:hover:border-emerald-500/40 hover:shadow-md hover:shadow-emerald-500/5 dark:hover:shadow-emerald-500/5 text-slate-700 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 font-semibold text-sm transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0">
+        <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800/60 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-500/10 transition-colors duration-200">
+          <svg className="w-4 h-4 text-slate-500 dark:text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          </svg>
+        </span>
+        <span>View Provincial Breakdown</span>
+        <svg className="w-4 h-4 text-slate-400 dark:text-slate-500 group-hover:text-emerald-500 dark:group-hover:text-emerald-400 group-hover:translate-x-1 transition-all duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
         </svg>
-        View Provincial Breakdown
       </button>
     </div>
   )

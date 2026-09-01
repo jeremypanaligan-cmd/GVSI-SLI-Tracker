@@ -14,12 +14,23 @@
     @apply antialiased;
     min-height: 100dvh;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    @apply bg-slate-50 text-slate-900;
     font-variant-numeric: tabular-nums;
+    /* Light mode defaults */
+    color: #0F172A;
+    background-color: #F8FAFC;
+    background-image:
+      linear-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+    background-size: 20px 20px;
   }
-  .dark body,
+
   html.dark body {
-    @apply bg-[#0B0F17] text-slate-100;
+    color: #E2E8F0;
+    background-color: #0B0F17;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 20px 20px;
   }
 }
 
@@ -29,13 +40,14 @@
   height: 5px;
 }
 ::-webkit-scrollbar-track {
-  @apply bg-slate-100;
+  background: #F1F5F9;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-300 rounded-full;
+  background: #CBD5E1;
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-400;
+  background: #94A3B8;
 }
 .dark ::-webkit-scrollbar-track {
   background: #0B0F17;
@@ -62,13 +74,13 @@
   100% { background-position: 200% 0; }
 }
 .skeleton {
-  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background: linear-gradient(90deg, #E2E8F0 25%, #F1F5F9 50%, #E2E8F0 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
   border-radius: 0.75rem;
 }
 .dark .skeleton {
-  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+  background: linear-gradient(90deg, #1E293B 25%, #334155 50%, #1E293B 75%);
   background-size: 200% 100%;
 }
 
