@@ -76,19 +76,42 @@ function parseMonthYearHeader(text) {
 }
 
 /**
- * Build a structured entry from MTD row using raw array positional indexing.
- * MTD columns: AREA(0) COMP_FROM_TOTAL(1) COMP_FROM_RJO(2) TOTAL_COMP(3) TOTAL_RJO(4) LAST_MTD(5) TARGET(6) LAST_PCT(7)
+ * Build a column index map from a header row array.
+ * Returns { colName: index } for mapping data rows.
  */
-function buildMTDEntry(area, rawArr) {
+function buildColumnMap(headerArr) {
+  const map = {}
+  headerArr.forEach((h, idx) => {
+    const key = String(h || '').trim().toUpperCase()
+    if (key) map[key] = idx
+  })
+  return map
+}
+
+/**
+ * Build a structured entry from MTD row using a column map.
+ * Dynamically finds column indices by header name.
+ */
+function buildMTDEntry(area, rawArr, colMap) {
+  const col = (name) => {
+    const idx = colMap[name]
+    return idx !== undefined ? idx : -1
+  }
+  const val = (name) => {
+    const idx = col(name)
+    return idx >= 0 && idx < rawArr.length ? cleanNumber(rawArr[idx]) : NaN
+  }
   return {
     area,
-    compFromTotal: cleanNumber(rawArr[1]),
-    compFromRjo: cleanNumber(rawArr[2]),
-    totalCompleted: cleanNumber(rawArr[3]),
-    totalRjo: cleanNumber(rawArr[4]),
-    lastMtd: cleanNumber(rawArr[5]),
-    target: cleanNumber(rawArr[6]),
-    lastPct: cleanNumber(rawArr[7]),
+    compFromTotal: val('COMPLETED FROM TOTAL'),
+    compFromRjo: val('COMPLETED FROM RJO'),
+    totalCompleted: val('TOTAL COMPLETED'),
+    thisMoRjo: val('THIS MO. RJO'),
+    prevMosRjo: val('PREV MOS. RJO'),
+    totalRjo: val('TOTAL RJO'),
+    lastMtd: val('LAST MTD'),
+    target: val('TARGET'),
+    lastPct: val('LAST %'),
   }
 }
 
@@ -104,16 +127,25 @@ function parseAllMonthSections(mtdData) {
   let currentMonth = null
   let currentAreas = []
   let currentOverall = null
+  let currentColMap = null
 
   for (let i = 0; i < rawArrays.length; i++) {
     const arr = rawArrays[i]
     const first = String(arr[0] || '').trim()
 
-    if (first === 'AREA' || first === '') continue
+    // Detect header row: starts with 'AREA' and has multiple non-empty cells
+    if (first === 'AREA') {
+      const nonEmpty = arr.filter(c => String(c || '').trim() !== '')
+      if (nonEmpty.length >= 5) {
+        currentColMap = buildColumnMap(arr)
+        continue
+      }
+    }
+
+    if (first === '') continue
 
     const monthYear = parseMonthYearHeader(first)
     if (monthYear) {
-      // Save previous month section
       if (currentMonth) {
         sections[currentMonth] = { areas: currentAreas, overallTotal: currentOverall }
         months.push(currentMonth)
@@ -126,8 +158,9 @@ function parseAllMonthSections(mtdData) {
 
     if (first.includes('SLI MTD')) continue
     if (!currentMonth) continue
+    if (!currentColMap) continue
 
-    const entry = buildMTDEntry(first, arr)
+    const entry = buildMTDEntry(first, arr, currentColMap)
 
     if (first === 'OVER ALL TOTAL') {
       currentOverall = entry
@@ -136,7 +169,6 @@ function parseAllMonthSections(mtdData) {
     }
   }
 
-  // Save last section
   if (currentMonth) {
     sections[currentMonth] = { areas: currentAreas, overallTotal: currentOverall }
     months.push(currentMonth)
@@ -181,10 +213,10 @@ export function extractExecutiveMetrics(mtdData, dailyBlock) {
   const ot = mtdData.overallTotal
 
   const mtd = {
-    pct: ot.lastPct,
-    totalCompleted: ot.totalCompleted,
-    target: ot.target,
-    mtd: ot.lastMtd,
+    pct: ot.lastPct,              // LAST % → Achievement Rate
+    totalCompleted: ot.lastMtd,   // LAST MTD → Total Completed
+    target: ot.target,            // TARGET → Monthly Target
+    mtd: ot.lastMtd,              // LAST MTD
     toGo: Math.max(0, (ot.target || 0) - (ot.lastMtd || 0)),
     variance: (ot.lastMtd || 0) - (ot.target || 0),
   }
@@ -198,7 +230,8 @@ export function extractExecutiveMetrics(mtdData, dailyBlock) {
         rjoIncoming: dailyBlock.overallTotal.rjoIncoming || 0,
         rjoRedispatched: dailyBlock.overallTotal.rjoRedispatched || 0,
         totalRjo: dailyBlock.overallTotal.totalRjo || 0,
-        totalCompleted: dailyBlock.overallTotal.totalCompleted || 0,
+        // Total Completed = COMPLETED FROM TOTAL (Col F) + COMPLETED FROM RJO (Col G)
+        totalCompleted: (dailyBlock.overallTotal.completedFromTotal || 0) + (dailyBlock.overallTotal.completedFromRjo || 0),
         carryOver: dailyBlock.overallTotal.carryOver || 0,
       }
     : null
@@ -272,6 +305,30 @@ function formatDisplayDate(monthDay, year) {
 }
 
 /**
+ * Normalize date strings from RAW DATA to 'Month Day, Year' format.
+ * Handles: 'Aug 1 2026', 'Aug. 1, 2026', 'September 1, 2026', etc.
+ */
+function normalizeRawDate(raw) {
+  const s = raw.trim()
+  // Already in full format
+  if (/^\w+\s+\d+,\s*\d{4}$/.test(s)) return s
+  // 'Aug 1 2026' or 'Aug. 1 2026' or 'Aug 1, 2026'
+  const m = s.match(/^(\w+\.?)\s+(\d+),?\s*(\d{4})$/)
+  if (!m) return s
+  const monthAbbr = m[1].replace(/\.$/, '').toLowerCase()
+  const day = parseInt(m[2])
+  const year = m[3]
+  const monthMap = {
+    jan: 'January', feb: 'February', mar: 'March', apr: 'April',
+    may: 'May', jun: 'June', jul: 'July', aug: 'August',
+    sep: 'September', sept: 'September', oct: 'October',
+    nov: 'November', dec: 'December'
+  }
+  const fullMonth = monthMap[monthAbbr]
+  return fullMonth ? `${fullMonth} ${day}, ${year}` : s
+}
+
+/**
  * Parse RAW DATA CSV into date-keyed blocks.
  * @param {Object} rawData - { headers, rows, objects } from parseCSV
  */
@@ -293,7 +350,10 @@ export function parseRawDailyData(rawData) {
       const row = rawObjects[i]
       const arr = rawArrays[i] || []
 
-      const dateStr = String(arr[0] || row['Date'] || '').trim()
+      const rawDate = String(arr[0] || row['Date'] || '').trim()
+      if (!rawDate) continue
+      // Normalize date format: 'Aug 1 2026' → 'August 1, 2026'
+      const dateStr = normalizeRawDate(rawDate)
       if (!dateStr) continue
 
       const area = String(arr[1] || row['AREA'] || '').trim()
@@ -307,14 +367,17 @@ export function parseRawDailyData(rawData) {
       // RAW DATA v8 columns:
       // Date(0) AREA(1) BF(2) INC(3) TotalJo(4) CompFromTotal(5) CompFromRjo(6) TotalCompleted(7)
       // RjoIncoming(8) RjoRedispatched(9) TotalRjo(10) CarryOver(11) MTD(12) TARGET(13) %(14)
+      const compTotal = toNum(arr[5])
+      const compRjo = toNum(arr[6])
       const entry = {
         area,
         bf: toNum(arr[2]),
         inc: toNum(arr[3]),
         totalJo: toNum(arr[4]),
-        completedFromTotal: toNum(arr[5]),
-        completedFromRjo: toNum(arr[6]),
-        totalCompleted: toNum(arr[7]),
+        completedFromTotal: compTotal,
+        completedFromRjo: compRjo,
+        // Total Completed = COMPLETED FROM TOTAL + COMPLETED FROM RJO
+        totalCompleted: compTotal + compRjo,
         rjoIncoming: toNum(arr[8]),
         rjoRedispatched: toNum(arr[9]),
         totalRjo: toNum(arr[10]),
@@ -372,7 +435,8 @@ export function parseRawDailyData(rawData) {
         totalJo: toNum(arr[3]),
         completedFromTotal: toNum(arr[4]),
         completedFromRjo: toNum(arr[5]),
-        totalCompleted: toNum(arr[6]),
+        // Total Completed = COMPLETED FROM TOTAL + COMPLETED FROM RJO
+        totalCompleted: toNum(arr[4]) + toNum(arr[5]),
         rjoIncoming: toNum(arr[7]),
         rjoRedispatched: toNum(arr[8]),
         totalRjo: toNum(arr[9]),

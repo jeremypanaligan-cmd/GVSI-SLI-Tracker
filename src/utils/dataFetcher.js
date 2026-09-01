@@ -1,11 +1,11 @@
 import { parseCSV } from './csvParser'
 
 const MTD_CSV_URL = 'https://docs.google.com/spreadsheets/d/1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=1061751267'
-const RAW_DATA_CSV_URL = 'https://docs.google.com/spreadsheets/d/1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv'
+const RAW_DATA_CSV_URL = 'https://docs.google.com/spreadsheets/d/1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=486719298'
 
-const MTD_CACHE_KEY = 'gvsi_mtd_data_v4'
-const RAW_CACHE_KEY = 'gvsi_raw_data_v4'
-const CACHE_TIME_KEY = 'gvsi_data_time_v4'
+const MTD_CACHE_KEY = 'gvsi_mtd_data_v5'
+const RAW_CACHE_KEY = 'gvsi_raw_data_v5'
+const CACHE_TIME_KEY = 'gvsi_data_time_v5'
 const CACHE_MAX_AGE = 1000 * 60 * 5 // 5 minutes
 
 // Clear ALL old cache versions
@@ -14,6 +14,7 @@ try {
     'gvsi_mtd_data', 'gvsi_raw_data', 'gvsi_data_time',
     'gvsi_mtd_data_v2', 'gvsi_raw_data_v2', 'gvsi_data_time_v2',
     'gvsi_mtd_data_v3', 'gvsi_raw_data_v3', 'gvsi_data_time_v3',
+    'gvsi_mtd_data_v4', 'gvsi_raw_data_v4', 'gvsi_data_time_v4',
     'gvsi_sli_data', 'gvsi_sli_data_time'
   ]
   oldKeys.forEach(k => localStorage.removeItem(k))
