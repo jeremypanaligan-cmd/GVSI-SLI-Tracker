@@ -213,22 +213,22 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
             {/* RIGHT GROUP: COMP ABL + COMP RJO + RJO INCOMING + RJO FPMos + TOTAL RJO */}
             <DailyMetricCard label="COMP ABL" value={fmt(daily.activeBacklog)} icon={<BacklogIcon />} subtitle="BF + INC" />
             <DailyMetricCard label="COMP RJO" value={fmt(daily.completedFromRjo)} icon={<RJOIcon />} subtitle="From previous months" />
-            <DailyMetricCard label="RJO INCOMING" value={fmt(daily.rjoIncoming)} icon={<RJOIcon2 />} subtitle="Current month" />
+            <DailyMetricCard label="RJO" value={fmt(daily.rjoIncoming)} icon={<RJOIcon2 />} subtitle="Current month" />
             <DailyMetricCard label="RJO FPMos" value={fmt(daily.rjoRedispatched)} icon={<RJOIcon2 />} subtitle="From previous months" />
-            <DailyMetricCard label="TOTAL RJO" value={fmt(daily.totalRjo)} icon={<RJOIcon />} />
+            <DailyMetricCard label="TOTAL RJO" value={fmt(daily.totalRjo)} icon={<RJOIcon />} subtitle="RJO + RJO FPMos"  />
 
             {/* TOTAL COMPLETED — Highlighted */}
             <div className={`rounded-2xl border-2 ${pc.badge || 'border-teal-300 dark:border-teal-600'} bg-gradient-to-br from-teal-50 to-teal-100/50 dark:from-teal-950/40 dark:to-teal-900/20 p-4 relative overflow-hidden min-w-[140px] flex-1 sm:flex-none sm:w-[180px]`}>
               <div className="absolute -bottom-6 -right-6 w-24 h-24 rounded-full bg-teal-400/10" />
               <div className="flex items-center gap-2 mb-1 relative">
                 <span className={pc.text || 'text-teal-500 dark:text-teal-400'}><TotalIcon /></span>
-                <p className={`text-[10px] font-bold uppercase tracking-widest ${pc.text || 'text-teal-600 dark:text-teal-400'}`}>Total Completed</p>
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${pc.text || 'text-teal-600 dark:text-teal-400'}`}>Completed</p>
               </div>
               <span className={`text-2xl sm:text-3xl font-black tracking-tight relative ${pc.text || 'text-teal-700 dark:text-teal-300'}`}>{fmt(dailyCompleted)}</span>
               <p className={`text-[10px] mt-1 relative font-medium ${pc.text || 'text-teal-500/70 dark:text-teal-400/50'}`}>INC + BF + CRJO</p>
             </div>
 
-            <DailyMetricCard label="Carry Over" value={fmt(daily.carryOver)} icon={<COIcon />} />
+            <DailyMetricCard label="CO" value={fmt(daily.carryOver)} icon={<COIcon />} subtitle="Carry Over" />
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 p-8 text-center">
