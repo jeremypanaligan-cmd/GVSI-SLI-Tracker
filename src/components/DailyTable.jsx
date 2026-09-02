@@ -30,8 +30,8 @@ const COLUMNS = [
 function Td({ children, align = 'left', bold = false, highlight = false, className = '', sticky = false, bgColor = '' }) {
   const alignClass = align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''
   return (
-    <td className={`px-3 py-2.5 text-sm whitespace-nowrap ${alignClass} ${bold ? 'font-bold' : 'font-medium'} ${className} ${sticky ? 'sticky left-0 z-10 border-r border-slate-200 dark:border-slate-700/40' : ''} ${bgColor}`}
-      style={sticky ? { minWidth: '140px', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis' } : undefined}
+    <td className={`px-3 py-2.5 text-sm whitespace-nowrap ${alignClass} ${bold ? 'font-bold' : 'font-medium'} ${className} ${sticky ? 'sticky left-0 z-[15] border-r border-slate-200 dark:border-slate-700/40 hover:bg-slate-100 dark:hover:bg-[#162032]' : ''} ${bgColor}`}
+      style={sticky ? { minWidth: '150px' } : undefined}
     >
       {children}
     </td>
@@ -113,7 +113,7 @@ export default function DailyTable({ dateData }) {
                 onClick={() => col.sortable && handleSort(col.key)}
                 className={`px-3 py-3 text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-colors ${
                   col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''
-                } ${col.sticky ? 'sticky left-0 bg-slate-100 dark:bg-slate-800/60 z-20 border-r border-slate-200 dark:border-slate-700/40' : ''} ${
+                } ${col.sticky ? 'sticky left-0 bg-slate-100 dark:bg-[#111c2e] z-20 border-r border-slate-200 dark:border-slate-700/40' : ''} ${
                   col.sortable ? 'cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700/60 text-slate-600 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400'
                 }`}
                 style={col.sticky ? { minWidth: '140px' } : undefined}
@@ -132,10 +132,10 @@ export default function DailyTable({ dateData }) {
             <tr
               key={entry.area}
               className={`border-b border-slate-100 dark:border-slate-800/40 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors ${
-                i % 2 === 0 ? 'bg-white dark:bg-transparent' : 'bg-slate-50/50 dark:bg-slate-800/10'
+                i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'
               }`}
             >
-              <Td bold sticky bgColor={i % 2 === 0 ? 'bg-white dark:bg-transparent' : 'bg-slate-50/50 dark:bg-slate-800/10'}>{entry.area}</Td>
+              <Td bold sticky bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}>{entry.area}</Td>
               <Td align="right">{formatNumber(entry.bf)}</Td>
               <Td align="right">{formatNumber(entry.inc)}</Td>
               <Td align="right" bold>{formatNumber(entry.totalJo)}</Td>
@@ -155,7 +155,7 @@ export default function DailyTable({ dateData }) {
           {/* OVER ALL TOTAL row */}
           {dateData.overallTotal && (
             <tr className="bg-teal-50 dark:bg-teal-950/40 border-t-2 border-teal-300 dark:border-teal-700/50 font-bold">
-              <Td bold sticky bgColor="bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300">
+              <Td bold sticky bgColor="bg-teal-50 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300">
                 OVER ALL TOTAL
               </Td>
               <Td align="right">{formatNumber(dateData.overallTotal.bf)}</Td>

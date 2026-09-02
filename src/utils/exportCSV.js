@@ -35,7 +35,7 @@ function num(val) {
  * Export all RAW DATA blocks as a CSV file download.
  * @param {Object} rawDaily - parsed daily data { dates: string[], blocks: { [date]: { areas: [...], overallTotal } } }
  */
-export function exportRawDataCSV(rawDaily) {
+export function exportRawDataCSV(rawDaily, planId = 'fiberx') {
   if (!rawDaily || !rawDaily.dates || rawDaily.dates.length === 0) {
     alert('No data available to export.')
     return
@@ -99,7 +99,7 @@ export function exportRawDataCSV(rawDaily) {
 
   const link = document.createElement('a')
   link.href = url
-  link.download = `SLI_RAW_DATA_${new Date().toISOString().slice(0, 10)}.csv`
+  link.download = `SLI_${planId.toUpperCase()}_RAW_DATA_${new Date().toISOString().slice(0, 10)}.csv`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)

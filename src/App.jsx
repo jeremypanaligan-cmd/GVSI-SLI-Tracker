@@ -10,6 +10,8 @@ import DailyTable from './components/DailyTable'
 import DatePicker from './components/DatePicker'
 import SyncIcon from './components/SyncIcon'
 import ThemeToggle from './components/ThemeToggle'
+import PlanSelector from './components/PlanSelector'
+import { PLANS, DEFAULT_PLAN } from './config/plans'
 import PWAInstallBanner from './components/PWAInstallBanner'
 import { exportRawDataCSV } from './utils/exportCSV'
 
@@ -56,7 +58,8 @@ export default function App() {
   const [selectedMonthYear, setSelectedMonthYear] = useState(getCurrentMonthYear())
   const [nextRefresh, setNextRefresh] = useState(null)
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
-  const [tick, setTick] = useState(0) // force re-render for "time ago" updates
+  const [tick, setTick] = useState(0)
+  const [activePlan, setActivePlan] = useState(() => localStorage.getItem('gvsi_active_plan') || DEFAULT_PLAN) // force re-render for "time ago" updates
 
   const loadDataRef = useRef(null)
 
@@ -66,7 +69,7 @@ export default function App() {
     setError(null)
 
     try {
-      const result = await fetchAllData()
+      const result = await fetchAllData(activePlan)
 
       const parsed = parseMTDData(result.mtd, selectedMonthYear)
       setMtdData(parsed)
@@ -83,7 +86,7 @@ export default function App() {
       }
     } catch (err) {
       setError(err.message)
-      const cached = await getCachedData()
+      const cached = await getCachedData(activePlan)
       if (cached.mtd) {
         setMtdData(parseMTDData(cached.mtd))
         setRawDaily(parseRawDailyData(cached.raw))
@@ -95,6 +98,31 @@ export default function App() {
       setIsSyncing(false)
     }
   }, [mtdData, selectedDate, selectedMonthYear])
+
+  const handlePlanChange = useCallback(async (newPlan) => {
+    if (newPlan === activePlan) return
+    setActivePlan(newPlan)
+    localStorage.setItem('gvsi_active_plan', newPlan)
+    setMtdData(null); setRawDaily(null); setLoading(true); setError(null)
+    try {
+      const result = await fetchAllData(newPlan)
+      setMtdData(parseMTDData(result.mtd, getCurrentMonthYear()))
+      setSelectedMonthYear(getCurrentMonthYear())
+      setRawDaily(parseRawDailyData(result.raw))
+      setSource(result.source); setLastSync(result.timestamp)
+      setSelectedDate(getTodayStr())
+    } catch (err) {
+      setError(err.message)
+      const cached = await getCachedData(newPlan)
+      if (cached.mtd) {
+        setMtdData(parseMTDData(cached.mtd))
+        setRawDaily(parseRawDailyData(cached.raw))
+        setSource(cached.source); setLastSync(cached.timestamp)
+      }
+    } finally { setLoading(false); setIsSyncing(false) }
+  }, [activePlan])
+
+  const currentPlan = PLANS[activePlan] || PLANS[DEFAULT_PLAN]
 
   loadDataRef.current = loadData
 
@@ -162,7 +190,7 @@ export default function App() {
   // When month changes, re-parse MTD data from cache
   const handleMonthChange = useCallback(async (newMonth) => {
     setSelectedMonthYear(newMonth)
-    const cached = await getCachedData()
+    const cached = await getCachedData(activePlan)
     if (cached.mtd) {
       setMtdData(parseMTDData(cached.mtd, newMonth))
     }
@@ -218,11 +246,12 @@ export default function App() {
               </div>
             )}
 
+            <PlanSelector activePlan={activePlan} onPlanChange={handlePlanChange} isSyncing={isSyncing} />
             <ThemeToggle />
 
             {/* Export CSV button */}
             <button
-              onClick={() => exportRawDataCSV(rawDaily)}
+              onClick={() => exportRawDataCSV(rawDaily, activePlan)}
               disabled={!rawDaily || rawDaily.dates?.length === 0}
               className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
               title="Export all RAW DATA as CSV"
@@ -236,7 +265,8 @@ export default function App() {
             <button
               onClick={() => loadData(true)}
               disabled={isSyncing}
-              className="flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-teal-600 hover:bg-teal-500 active:bg-teal-700 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-teal-600/20 hover:shadow-teal-500/30"
+              className="flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-teal-600 hover:bg-teal-500 active:bg-teal-700 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg'
+              style={{ backgroundColor: currentPlan.accentHex }}"
             >
               <SyncIcon spinning={isSyncing} />
               <span className="hidden sm:inline">{isSyncing ? 'Syncing…' : 'Sync Data'}</span>
@@ -322,7 +352,7 @@ export default function App() {
               SLI
             </div>
             <span className="text-[11px] text-slate-500 dark:text-slate-500">
-              <span className="font-semibold text-slate-600 dark:text-slate-400">GVSI SLI Tracker</span> — Service Line Installation Daily Tracking
+              <span className="font-semibold text-slate-600 dark:text-slate-400">GVSI SLI Tracker</span> {'—'} {currentPlan.fullName}
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-600">
