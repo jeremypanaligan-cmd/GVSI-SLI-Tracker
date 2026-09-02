@@ -1,6 +1,6 @@
 import { getBadgeStyle, formatNumber, getTodayStr } from '../utils/dataProcessor'
 
-export default function ExecutiveOverview({ metrics, selectedDate, availableDates, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail }) {
+export default function ExecutiveOverview({ metrics, selectedDate, availableDates, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail, plan }) {
   if (!metrics) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
@@ -25,6 +25,8 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
   const currentDateIdx = availableDates ? availableDates.indexOf(selectedDate) : -1
   const hasPrev = currentDateIdx > 0
   const isToday = selectedDate === getTodayStr()
+  const pc = plan?.accentClasses || {}
+  const px = plan?.accentHex || '#0d9488'
   const hasNext = availableDates && currentDateIdx < availableDates.length - 1 && !isToday
 
   return (
@@ -33,7 +35,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
       {/* MTD PORTION */}
       <section>
         <div className="flex items-center gap-2 mb-3">
-          <div className="w-1.5 h-5 rounded-full bg-gradient-to-b from-teal-500 to-teal-600" />
+          <div className={`w-1.5 h-5 rounded-full bg-gradient-to-b ${pc.bg || 'bg-teal-500'}`} />
           <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Month-to-Date</h2>
           {availableMonths && availableMonths.length > 1 ? (
             <div className="relative">
@@ -140,7 +142,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between">
             <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Monthly Target</p>
             <div>
-              <span className="text-3xl sm:text-4xl font-black text-teal-600 dark:text-teal-400 tracking-tight">{fmt(mtd.target)}</span>
+              <span className={`text-3xl sm:text-4xl font-black tracking-tight ${pc.text || 'text-teal-600 dark:text-teal-400'}`}>{fmt(mtd.target)}</span>
             </div>
             <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
               {mtd.variance >= 0
@@ -216,14 +218,14 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
             <DailyMetricCard label="TOTAL RJO" value={fmt(daily.totalRjo)} icon={<RJOIcon />} />
 
             {/* TOTAL COMPLETED — Highlighted */}
-            <div className="rounded-2xl border-2 border-teal-300 dark:border-teal-600 bg-gradient-to-br from-teal-50 to-teal-100/50 dark:from-teal-950/40 dark:to-teal-900/20 p-4 relative overflow-hidden min-w-[140px] flex-1 sm:flex-none sm:w-[180px]">
+            <div className={`rounded-2xl border-2 ${pc.badge || 'border-teal-300 dark:border-teal-600'} bg-gradient-to-br from-teal-50 to-teal-100/50 dark:from-teal-950/40 dark:to-teal-900/20 p-4 relative overflow-hidden min-w-[140px] flex-1 sm:flex-none sm:w-[180px]`}>
               <div className="absolute -bottom-6 -right-6 w-24 h-24 rounded-full bg-teal-400/10" />
               <div className="flex items-center gap-2 mb-1 relative">
-                <span className="text-teal-500 dark:text-teal-400"><TotalIcon /></span>
-                <p className="text-[10px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-widest">Total Completed</p>
+                <span className={pc.text || 'text-teal-500 dark:text-teal-400'}><TotalIcon /></span>
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${pc.text || 'text-teal-600 dark:text-teal-400'}`}>Total Completed</p>
               </div>
-              <span className="text-2xl sm:text-3xl font-black text-teal-700 dark:text-teal-300 tracking-tight relative">{fmt(dailyCompleted)}</span>
-              <p className="text-[10px] text-teal-500/70 dark:text-teal-400/50 mt-1 relative font-medium">INC + BF + CRJO</p>
+              <span className={`text-2xl sm:text-3xl font-black tracking-tight relative ${pc.text || 'text-teal-700 dark:text-teal-300'}`}>{fmt(dailyCompleted)}</span>
+              <p className={`text-[10px] mt-1 relative font-medium ${pc.text || 'text-teal-500/70 dark:text-teal-400/50'}`}>INC + BF + CRJO</p>
             </div>
 
             <DailyMetricCard label="Carry Over" value={fmt(daily.carryOver)} icon={<COIcon />} />
