@@ -1,4 +1,5 @@
 import { parseCSV } from './csvParser'
+import { idbGet, idbSet } from './idbCache'
 
 const MTD_CSV_URL = 'https://docs.google.com/spreadsheets/d/1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=1061751267'
 const RAW_DATA_CSV_URL = 'https://docs.google.com/spreadsheets/d/1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=486719298'
@@ -19,6 +20,26 @@ try {
   ]
   oldKeys.forEach(k => localStorage.removeItem(k))
 } catch { /* ignore */ }
+
+/**
+ * Save to localStorage; if quota exceeded, fall back to IndexedDB.
+ */
+async function saveCache(mtd, raw) {
+  const json = { mtd: JSON.stringify(mtd), raw: JSON.stringify(raw), time: Date.now().toString() }
+  try {
+    localStorage.setItem(MTD_CACHE_KEY, json.mtd)
+    localStorage.setItem(RAW_CACHE_KEY, json.raw)
+    localStorage.setItem(CACHE_TIME_KEY, json.time)
+  } catch {
+    // localStorage full — use IndexedDB
+    console.warn('[Cache] localStorage full, saving to IndexedDB')
+    await Promise.all([
+      idbSet(MTD_CACHE_KEY, mtd),
+      idbSet(RAW_CACHE_KEY, raw),
+      idbSet(CACHE_TIME_KEY, json.time),
+    ])
+  }
+}
 
 /**
  * Fetch both MTD and RAW DATA sheets in parallel.
@@ -46,13 +67,8 @@ export async function fetchAllData() {
       const mtd = parseCSV(mtdText)
       const raw = parseCSV(rawText)
 
-
-      // Cache fresh data
-      try {
-        localStorage.setItem(MTD_CACHE_KEY, JSON.stringify(mtd))
-        localStorage.setItem(RAW_CACHE_KEY, JSON.stringify(raw))
-        localStorage.setItem(CACHE_TIME_KEY, Date.now().toString())
-      } catch { /* storage full */ }
+      // Cache fresh data (localStorage → IndexedDB fallback)
+      await saveCache(mtd, raw)
 
       return { mtd, raw, source: 'live', timestamp: new Date() }
     } catch (err) {
@@ -60,19 +76,52 @@ export async function fetchAllData() {
     }
   }
 
-  return getCachedData()
+  return await getCachedData()
+}
+
+const EMPTY = { mtd: { headers: [], rows: [], objects: [] }, raw: { headers: [], rows: [], objects: [] } }
+
+/**
+ * Read cache from localStorage, falling back to IndexedDB if empty/full.
+ */
+async function readCache() {
+  let mtdRaw = null
+  let rawRaw = null
+  let timeStr = null
+
+  // 1) Try localStorage first
+  try {
+    mtdRaw = localStorage.getItem(MTD_CACHE_KEY)
+    rawRaw = localStorage.getItem(RAW_CACHE_KEY)
+    timeStr = localStorage.getItem(CACHE_TIME_KEY)
+  } catch { /* ignore */ }
+
+  // 2) If localStorage is empty, try IndexedDB
+  if (!mtdRaw && !rawRaw) {
+    console.log('[Cache] localStorage empty, trying IndexedDB')
+    const [idbMtd, idbRaw, idbTime] = await Promise.all([
+      idbGet(MTD_CACHE_KEY),
+      idbGet(RAW_CACHE_KEY),
+      idbGet(CACHE_TIME_KEY),
+    ])
+    if (idbMtd && idbRaw) {
+      mtdRaw = JSON.stringify(idbMtd)
+      rawRaw = JSON.stringify(idbRaw)
+      timeStr = idbTime ? String(idbTime) : null
+    }
+  }
+
+  return { mtdRaw, rawRaw, timeStr }
 }
 
 /**
- * Get cached data from localStorage
+ * Get cached data — tries localStorage first, then IndexedDB.
  */
-export function getCachedData() {
+export async function getCachedData() {
   try {
-    const mtdRaw = localStorage.getItem(MTD_CACHE_KEY)
-    const rawRaw = localStorage.getItem(RAW_CACHE_KEY)
-    const timeStr = localStorage.getItem(CACHE_TIME_KEY)
+    const { mtdRaw, rawRaw, timeStr } = await readCache()
 
-    if (!mtdRaw && !rawRaw) return { mtd: { headers: [], rows: [], objects: [] }, raw: { headers: [], rows: [], objects: [] }, source: 'none', timestamp: null }
+    if (!mtdRaw && !rawRaw) return { ...EMPTY, source: 'none', timestamp: null }
 
     const mtd = mtdRaw ? JSON.parse(mtdRaw) : { headers: [], rows: [], objects: [] }
     const raw = rawRaw ? JSON.parse(rawRaw) : { headers: [], rows: [], objects: [] }
@@ -83,6 +132,6 @@ export function getCachedData() {
 
     return { mtd, raw, source, timestamp }
   } catch {
-    return { mtd: { headers: [], rows: [], objects: [] }, raw: { headers: [], rows: [], objects: [] }, source: 'none', timestamp: null }
+    return { ...EMPTY, source: 'none', timestamp: null }
   }
 }

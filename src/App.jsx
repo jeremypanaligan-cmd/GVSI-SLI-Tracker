@@ -11,6 +11,7 @@ import DatePicker from './components/DatePicker'
 import SyncIcon from './components/SyncIcon'
 import ThemeToggle from './components/ThemeToggle'
 import PWAInstallBanner from './components/PWAInstallBanner'
+import { exportRawDataCSV } from './utils/exportCSV'
 
 const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000 // 5 minutes
 const STALE_THRESHOLD = 5 * 60 * 1000 // 5 minutes — data older than this is "stale"
@@ -82,7 +83,7 @@ export default function App() {
       }
     } catch (err) {
       setError(err.message)
-      const cached = getCachedData()
+      const cached = await getCachedData()
       if (cached.mtd) {
         setMtdData(parseMTDData(cached.mtd))
         setRawDaily(parseRawDailyData(cached.raw))
@@ -159,9 +160,9 @@ export default function App() {
   const executiveMetrics = extractExecutiveMetrics(mtdData, dailyBlock)
 
   // When month changes, re-parse MTD data from cache
-  const handleMonthChange = useCallback((newMonth) => {
+  const handleMonthChange = useCallback(async (newMonth) => {
     setSelectedMonthYear(newMonth)
-    const cached = getCachedData()
+    const cached = await getCachedData()
     if (cached.mtd) {
       setMtdData(parseMTDData(cached.mtd, newMonth))
     }
@@ -218,6 +219,19 @@ export default function App() {
             )}
 
             <ThemeToggle />
+
+            {/* Export CSV button */}
+            <button
+              onClick={() => exportRawDataCSV(rawDaily)}
+              disabled={!rawDaily || rawDaily.dates?.length === 0}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Export all RAW DATA as CSV"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="hidden sm:inline">Export</span>
+            </button>
 
             <button
               onClick={() => loadData(true)}
