@@ -217,7 +217,7 @@ export default function App() {
 
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/80 dark:bg-[#0B0F17]/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60">
-        <div className="w-full px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+        <div className="w-full px-3 sm:px-6 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center font-black text-white text-sm tracking-tight shadow-lg shadow-teal-500/20">
               SLI
@@ -232,7 +232,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap justify-end">
             {/* Consolidated Status Pill: countdown + time ago */}
             {lastSync && (
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60" title={`Last updated: ${lastSync.toLocaleString()} • Auto-refreshes every 5 min`}>                <svg className="w-3 h-3 text-slate-400 dark:text-slate-500 animate-spin" style={{ animationDuration: '3s' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -265,7 +265,7 @@ export default function App() {
             <button
               onClick={() => loadData(true)}
               disabled={isSyncing}
-              className="flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-teal-600 hover:bg-teal-500 active:bg-teal-700 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg'
+              className="flex items-center gap-2 px-2 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-teal-600 hover:bg-teal-500 active:bg-teal-700 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg'
               style={{ backgroundColor: currentPlan.accentHex }}"
             >
               <SyncIcon spinning={isSyncing} />

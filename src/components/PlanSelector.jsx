@@ -6,7 +6,7 @@ import { PLANS, PLAN_ORDER } from '../config/plans'
 
 export default function PlanSelector({ activePlan, onPlanChange, isSyncing }) {
   return (
-    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/60 rounded-lg p-0.5 border border-slate-200 dark:border-slate-700/40">
+    <div className="flex items-center gap-0.5 sm:gap-1 bg-slate-100 dark:bg-slate-800/60 rounded-lg p-0.5 border border-slate-200 dark:border-slate-700/40">
       {PLAN_ORDER.map((planId) => {
         const plan = PLANS[planId]
         const isActive = activePlan === planId
@@ -16,7 +16,7 @@ export default function PlanSelector({ activePlan, onPlanChange, isSyncing }) {
             onClick={() => !isSyncing && onPlanChange(planId)}
             disabled={isSyncing}
             className={`
-              relative px-3 py-1.5 rounded-md text-xs font-semibold tracking-wide transition-all duration-200
+              relative px-2 py-1 sm:px-3 sm:py-1.5 rounded-md text-[10px] sm:text-xs font-semibold tracking-wide transition-all duration-200
               ${isActive
                 ? `${plan.accentClasses.bg} text-white shadow-md shadow-${plan.color}-600/20`
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700/60'
