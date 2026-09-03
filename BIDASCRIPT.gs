@@ -1,11 +1,12 @@
 /**
  * GVSI SLI Tracker - Automated Database Management v8
  * 
- * FIBERX NEW REPORT format:
+ * BIDA NEW REPORT format (Column J removed):
+
  *   AREA | BF | INC | TOTAL | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
- *   | RJO THIS MO. | RJO REDISPATCHED | TOTAL RJO | CARRY OVER | MTD | TARGET | %
+ *   | RJO THIS MO. | RJO REDISPATCHED | CARRY OVER | MTD | TARGET | %
  *   Cols: A  B    C     D       E                     F                    G
- *         H              I              J              K           L     M      N
+ *         H              I              J           K     L      M
  *
  * RAW DATA format (continuous table):
  *   Date | AREA | BF | INC | Total Jo | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
@@ -20,7 +21,7 @@
  *         E               F              G           H        I       J
  */
 
-const FIBERX_SHEET_NAME = 'FIBERX NEW REPORT';
+const BIDA_SHEET_NAME = 'BIDA NEW REPORT';
 const RAW_DATA_SHEET_NAME = 'RAW DATA';
 const MTD_SHEET_NAME = 'MTD';
 
@@ -41,12 +42,12 @@ const MTD_HEADER = [
 
 // ==================== IMPORT ====================
 
-function importFiberxToRawData() {
+function importBIDAToRawData() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var fiberxSheet = ss.getSheetByName(FIBERX_SHEET_NAME);
+  var BIDASheet = ss.getSheetByName(BIDA_SHEET_NAME);
   var rawSheet = ss.getSheetByName(RAW_DATA_SHEET_NAME);
   
-  if (!fiberxSheet || !rawSheet) {
+  if (!BIDASheet || !rawSheet) {
     try { SpreadsheetApp.getUi().alert('Error: Sheet not found.'); } catch(e) {}
     return;
   }
@@ -58,13 +59,13 @@ function importFiberxToRawData() {
   rawSheet.getRange(1, 1, 1, RAW_HEADER.length).setValues([RAW_HEADER]);
   rawSheet.getRange(1, 1, 1, RAW_HEADER.length).setFontWeight(true);
   
-  // Read FIBERX data
-  var fiberxData = fiberxSheet.getDataRange().getValues();
+  // Read BIDA data
+  var BIDAData = BIDASheet.getDataRange().getValues();
   var allRows = [];
   var currentDate = '';
   
-  for (var i = 0; i < fiberxData.length; i++) {
-    var row = fiberxData[i];
+  for (var i = 0; i < BIDAData.length; i++) {
+    var row = BIDAData[i];
     var firstCell = String(row[0]).trim();
     
     // Detect block header
@@ -78,15 +79,15 @@ function importFiberxToRawData() {
     }
     
     // Skip non-data rows
-    if (firstCell === 'FIBERX' || firstCell === '' || firstCell === 'AREA') continue;
+    if (firstCell === 'BIDA' || firstCell === '' || firstCell === 'AREA') continue;
     if (firstCell.includes('FROM TOTAL') || firstCell === 'BF') continue;
     if (firstCell.startsWith(',,,,')) continue;
     
     if (!currentDate) continue;
     
-    // FIBERX columns: AREA(0) BF(1) INC(2) TOTAL(3) COMP_FROM_TOTAL(4) COMP_FROM_RJO(5)
-    //   TOTAL_COMPLETED(6) RJO_THIS_MO(7) RJO_REDISPATCHED(8) TOTAL_RJO(9)
-    //   CARRY_OVER(10) MTD(11) TARGET(12) %(13)
+    // BIDA columns (Column J removed): AREA(0) BF(1) INC(2) TOTAL(3) COMP_FROM_TOTAL(4) COMP_FROM_RJO(5)
+    //   TOTAL_COMPLETED(6) RJO_THIS_MO(7) RJO_REDISPATCHED(8)
+    //   CARRY_OVER(9) MTD(10) TARGET(11) %(12)
     var bf = cleanNum(row[1]);
     var inc = cleanNum(row[2]);
     var total = cleanNum(row[3]);
@@ -95,11 +96,16 @@ function importFiberxToRawData() {
     var completedTotal = cleanNum(row[6]);
     var rjoThisMo = cleanNum(row[7]);
     var rjoRedispatched = cleanNum(row[8]);
-    var totalRjo = cleanNum(row[9]);
-    var carryOver = cleanNum(row[10]);
-    var mtd = cleanNum(row[11]);
-    var target = cleanNum(row[12]);
-    var pct = String(row[13] || '0.00%').trim();
+    var totalRjo = rjoThisMo + rjoRedispatched; // Calculated: H + I
+
+    var carryOver = cleanNum(row[9]);
+
+    var mtd = cleanNum(row[10]);
+
+    var target = cleanNum(row[11]);
+
+    var pct = String(row[12] || '0.00%').trim();
+
     
     var areaName = '';
     if (firstCell === 'OVER ALL TOTAL') {
@@ -433,7 +439,7 @@ function setupAutoTrigger() {
 }
 
 function autoSync() {
-  importFiberxToRawData();
+  importBIDAToRawData();
   generateMTDReport();
 }
 
@@ -449,7 +455,7 @@ function stopAutoTrigger() {
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('GVSI Auto-DB')
-    .addItem('Import FIBERX to RAW DATA', 'importFiberxToRawData')
+    .addItem('Import BIDA to RAW DATA', 'importBIDAToRawData')
     .addItem('Generate MTD Report', 'generateMTDReport')
     .addSeparator()
     .addItem('Full Sync (Import + MTD)', 'fullSync')
@@ -459,6 +465,6 @@ function onOpen() {
 }
 
 function fullSync() {
-  importFiberxToRawData();
+  importBIDAToRawData();
   generateMTDReport();
 }

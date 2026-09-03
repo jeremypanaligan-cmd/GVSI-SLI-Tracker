@@ -1,11 +1,12 @@
 /**
  * GVSI SLI Tracker - Automated Database Management v8
  * 
- * FIBERX NEW REPORT format:
+ * FIBERX NEW REPORT format (Column J removed):
+
  *   AREA | BF | INC | TOTAL | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
- *   | RJO THIS MO. | RJO REDISPATCHED | TOTAL RJO | CARRY OVER | MTD | TARGET | %
+ *   | RJO THIS MO. | RJO REDISPATCHED | CARRY OVER | MTD | TARGET | %
  *   Cols: A  B    C     D       E                     F                    G
- *         H              I              J              K           L     M      N
+ *         H              I              J           K     L      M
  *
  * RAW DATA format (continuous table):
  *   Date | AREA | BF | INC | Total Jo | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
@@ -84,9 +85,9 @@ function importFiberxToRawData() {
     
     if (!currentDate) continue;
     
-    // FIBERX columns: AREA(0) BF(1) INC(2) TOTAL(3) COMP_FROM_TOTAL(4) COMP_FROM_RJO(5)
-    //   TOTAL_COMPLETED(6) RJO_THIS_MO(7) RJO_REDISPATCHED(8) TOTAL_RJO(9)
-    //   CARRY_OVER(10) MTD(11) TARGET(12) %(13)
+    // FIBERX columns (Column J removed): AREA(0) BF(1) INC(2) TOTAL(3) COMP_FROM_TOTAL(4) COMP_FROM_RJO(5)
+    //   TOTAL_COMPLETED(6) RJO_THIS_MO(7) RJO_REDISPATCHED(8)
+    //   CARRY_OVER(9) MTD(10) TARGET(11) %(12)
     var bf = cleanNum(row[1]);
     var inc = cleanNum(row[2]);
     var total = cleanNum(row[3]);
@@ -95,11 +96,16 @@ function importFiberxToRawData() {
     var completedTotal = cleanNum(row[6]);
     var rjoThisMo = cleanNum(row[7]);
     var rjoRedispatched = cleanNum(row[8]);
-    var totalRjo = cleanNum(row[9]);
-    var carryOver = cleanNum(row[10]);
-    var mtd = cleanNum(row[11]);
-    var target = cleanNum(row[12]);
-    var pct = String(row[13] || '0.00%').trim();
+    var totalRjo = rjoThisMo + rjoRedispatched; // Calculated: H + I
+
+    var carryOver = cleanNum(row[9]);
+
+    var mtd = cleanNum(row[10]);
+
+    var target = cleanNum(row[11]);
+
+    var pct = String(row[12] || '0.00%').trim();
+
     
     var areaName = '';
     if (firstCell === 'OVER ALL TOTAL') {
