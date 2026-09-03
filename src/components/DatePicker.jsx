@@ -8,6 +8,7 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate }) {
   const currentIndex = dates.indexOf(selectedDate)
   const hasPrev = currentIndex > 0
   const isAtMax = maxDate ? selectedDate === maxDate : false
+  const isFallback = maxDate && selectedDate !== maxDate
   const hasNext = currentIndex < dates.length - 1 && !isAtMax
 
   const goPrev = () => { if (hasPrev) onSelect(dates[currentIndex - 1]) }
@@ -54,6 +55,13 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate }) {
       <span className="text-[11px] text-slate-400 dark:text-slate-600 ml-1">
         {currentIndex + 1}/{dates.length}
       </span>
+
+      {/* Fallback indicator */}
+      {isFallback && (
+        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/40 whitespace-nowrap" title={`No data for today. Showing latest available date.`}>
+          Latest available
+        </span>
+      )}
     </div>
   )
 }

@@ -197,6 +197,11 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
               </button>
               <span className="text-[10px] text-slate-400 dark:text-slate-600 ml-0.5">{currentDateIdx + 1}/{availableDates.length}</span>
+              {!isToday && (
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/40 ml-1 whitespace-nowrap" title={`No data for today (${getTodayStr()}). Showing latest available date.`}>
+                  Latest available
+                </span>
+              )}
             </div>
           )}
         </div>

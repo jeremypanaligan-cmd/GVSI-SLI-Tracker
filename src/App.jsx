@@ -80,9 +80,14 @@ export default function App() {
       setSource(result.source)
       setLastSync(result.timestamp)
 
-      if (!selectedDate) {
+      // Select date: today if available, otherwise closest to today
+      const dates = daily.dates || []
+      if (dates.length > 0) {
         const today = getTodayStr()
-        setSelectedDate(today)
+        const best = findClosestDate(dates, today)
+        if (!selectedDate || selectedDate === today || !dates.includes(selectedDate)) {
+          setSelectedDate(best)
+        }
       }
     } catch (err) {
       setError(err.message)
@@ -110,7 +115,8 @@ export default function App() {
       setSelectedMonthYear(getCurrentMonthYear())
       setRawDaily(parseRawDailyData(result.raw))
       setSource(result.source); setLastSync(result.timestamp)
-      setSelectedDate(getTodayStr())
+      const planDates = parseRawDailyData(result.raw).dates || []
+      setSelectedDate(planDates.length > 0 ? findClosestDate(planDates, getTodayStr()) : getTodayStr())
     } catch (err) {
       setError(err.message)
       const cached = await getCachedData(newPlan)
