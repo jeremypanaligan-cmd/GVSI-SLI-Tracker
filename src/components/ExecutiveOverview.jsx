@@ -1,4 +1,5 @@
 import { getBadgeStyle, formatNumber, getTodayStr } from '../utils/dataProcessor'
+import DatePicker from './DatePicker'
 
 export default function ExecutiveOverview({ metrics, selectedDate, availableDates, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail, plan }) {
   if (!metrics) {
@@ -22,12 +23,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
   const progressPct = mtd.pct !== null && !isNaN(mtd.pct) ? Math.min(mtd.pct, 100) : 0
   const dailyCompleted = daily?.totalCompleted ?? 0
 
-  const currentDateIdx = availableDates ? availableDates.indexOf(selectedDate) : -1
-  const hasPrev = currentDateIdx > 0
-  const isToday = selectedDate === getTodayStr()
   const pc = plan?.accentClasses || {}
-  const px = plan?.accentHex || '#0d9488'
-  const hasNext = availableDates && currentDateIdx < availableDates.length - 1 && !isToday
 
   return (
     <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-5 space-y-5">
@@ -183,25 +179,13 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
             <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Daily To-Date</h2>
           </div>
           {availableDates && availableDates.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <button onClick={() => hasPrev && onDateSelect(availableDates[currentDateIdx - 1])} disabled={!hasPrev}
-                className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Previous day">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-              </button>
-              <select value={selectedDate} onChange={(e) => onDateSelect(e.target.value)}
-                className="px-2 py-1 rounded-lg text-[11px] font-medium bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-teal-500/40 transition appearance-none cursor-pointer">
-                {availableDates.map((d) => (<option key={d} value={d}>{d}</option>))}
-              </select>
-              <button onClick={() => hasNext && onDateSelect(availableDates[currentDateIdx + 1])} disabled={!hasNext}
-                className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Next day">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-              </button>
-              <span className="text-[10px] text-slate-400 dark:text-slate-600 ml-0.5">{currentDateIdx + 1}/{availableDates.length}</span>
-              {!isToday && (
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/40 ml-1 whitespace-nowrap" title={`No data for today (${getTodayStr()}). Showing latest available date.`}>
-                  Latest available
-                </span>
-              )}
+            <div className="relative">
+              <DatePicker
+                dates={availableDates}
+                selectedDate={selectedDate}
+                onSelect={onDateSelect}
+                maxDate={getTodayStr()}
+              />
             </div>
           )}
         </div>
