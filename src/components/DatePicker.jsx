@@ -15,8 +15,18 @@ function parseDate(str) {
 }
 
 function formatDateKey(d) {
-  // Date → "September 1, 2026"
+  // Date → "September 1, 2026" (internal key)
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`
+}
+
+/** Display format: MMM d, yyyy */
+function formatDisplay(str) {
+  const d = parseDate(str)
+  if (!d) return str || 'Select date'
+  const mmm = MONTHS[d.getMonth()].slice(0, 3) // Kukunin ang "Aug", "Sep", etc.
+  const day = d.getDate()
+  const yyyy = d.getFullYear()
+  return `${mmm} ${day}, ${yyyy}`
 }
 
 function isSameDay(a, b) {
@@ -102,7 +112,7 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate }) {
       <button
         onClick={goPrev}
         disabled={!hasPrev}
-        className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition"
+        className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition shrink-0"
         title="Previous day"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -113,9 +123,9 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate }) {
       {/* Calendar toggle button */}
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 focus:outline-none focus:ring-2 focus:ring-teal-500/40 transition cursor-pointer min-w-[180px] justify-between"
+        className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 focus:outline-none focus:ring-2 focus:ring-teal-500/40 transition cursor-pointer min-w-0 max-w-[130px] sm:max-w-none justify-between"
       >
-        <span>{selectedDate || 'Select date'}</span>
+        <span className="truncate">{formatDisplay(selectedDate)}</span>
         <svg className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
         </svg>
@@ -125,7 +135,7 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate }) {
       <button
         onClick={goNext}
         disabled={!hasNext}
-        className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition"
+        className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition shrink-0"
         title="Next day"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -134,20 +144,20 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate }) {
       </button>
 
       {/* Date count badge */}
-      <span className="text-[11px] text-slate-400 dark:text-slate-600 ml-1">
+      <span className="text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-600 ml-0.5 sm:ml-1 hidden sm:inline">
         {currentIndex + 1}/{dates.length}
       </span>
 
       {/* Fallback indicator */}
       {isFallback && (
-        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/40 whitespace-nowrap" title="No data for today. Showing latest available date.">
+        <span className="hidden sm:inline-flex text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/40 whitespace-nowrap" title="No data for today. Showing latest available date.">
           Latest available
         </span>
       )}
 
       {/* Calendar dropdown */}
       {open && (
-        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-50 w-[300px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl p-3">
+        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-50 w-[calc(100vw-2rem)] sm:w-[300px] max-w-[300px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl p-3">
           {/* Month/Year header */}
           <div className="flex items-center justify-between mb-3">
             <button
