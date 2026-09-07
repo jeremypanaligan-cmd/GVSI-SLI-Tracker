@@ -3,7 +3,7 @@ import { fetchAllData, getCachedData } from './utils/dataFetcher'
 import {
   parseMTDData, extractExecutiveMetrics,
   parseRawDailyData, getTodayStr, findClosestDate,
-  getCurrentMonthYear,
+  getCurrentMonthYear, findLatestDataDate,
 } from './utils/dataProcessor'
 import ExecutiveOverview from './components/ExecutiveOverview'
 import DailyTable from './components/DailyTable'
@@ -80,11 +80,13 @@ export default function App() {
       setSource(result.source)
       setLastSync(result.timestamp)
 
-      // Select date: today if available, otherwise closest to today
+      // Select date: latest with actual input (INC > 0); today only if it has data,
+      // otherwise closest to today. Sheet entries can lag behind, so an all-zero
+      // "today" block is treated as not-yet-available.
       const dates = daily.dates || []
       if (dates.length > 0) {
         const today = getTodayStr()
-        const best = findClosestDate(dates, today)
+        const best = findLatestDataDate(daily) || findClosestDate(dates, today)
         if (!selectedDate || selectedDate === today || !dates.includes(selectedDate)) {
           setSelectedDate(best)
         }
@@ -113,10 +115,13 @@ export default function App() {
       const result = await fetchAllData(newPlan)
       setMtdData(parseMTDData(result.mtd, getCurrentMonthYear()))
       setSelectedMonthYear(getCurrentMonthYear())
-      setRawDaily(parseRawDailyData(result.raw))
+      const planDaily = parseRawDailyData(result.raw)
+      setRawDaily(planDaily)
       setSource(result.source); setLastSync(result.timestamp)
-      const planDates = parseRawDailyData(result.raw).dates || []
-      setSelectedDate(planDates.length > 0 ? findClosestDate(planDates, getTodayStr()) : getTodayStr())
+      const planDates = planDaily.dates || []
+      setSelectedDate(planDates.length > 0
+        ? (findLatestDataDate(planDaily) || findClosestDate(planDates, getTodayStr()))
+        : getTodayStr())
     } catch (err) {
       setError(err.message)
       const cached = await getCachedData(newPlan)
@@ -191,6 +196,7 @@ export default function App() {
   // Derived data
   const dailyBlock = rawDaily?.blocks?.[selectedDate] || null
   const availableDates = rawDaily?.dates || []
+  const latestDataDate = findLatestDataDate(rawDaily)
   const executiveMetrics = extractExecutiveMetrics(mtdData, dailyBlock)
 
   // When month changes, re-parse MTD data from cache
@@ -306,6 +312,7 @@ export default function App() {
             metrics={executiveMetrics}
             selectedDate={selectedDate}
             availableDates={availableDates}
+            latestDataDate={latestDataDate}
             onDateSelect={setSelectedDate}
             onMonthSelect={handleMonthChange}
             selectedMonthYear={selectedMonthYear}
@@ -332,6 +339,7 @@ export default function App() {
                   selectedDate={selectedDate}
                   onSelect={setSelectedDate}
                   maxDate={getTodayStr()}
+                  latestDataDate={latestDataDate}
                 />
                 <span className="text-[11px] text-slate-400 dark:text-slate-600">
                   {lastSync && `Last sync: ${lastSync.toLocaleTimeString()}`}

@@ -31,7 +31,7 @@ function getFirstDayOfMonth(year, month) {
   return new Date(year, month, 1).getDay()
 }
 
-export default function DatePicker({ dates, selectedDate, onSelect, maxDate }) {
+export default function DatePicker({ dates, selectedDate, onSelect, maxDate, latestDataDate }) {
   const [open, setOpen] = useState(false)
   const [viewMonth, setViewMonth] = useState(() => {
     const sel = parseDate(selectedDate)
@@ -86,7 +86,10 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate }) {
   // If maxDate exists in the array, don't go past it; otherwise allow full range
   const upperBound = maxDateIdx >= 0 ? maxDateIdx : lastAvailableIdx
   const hasNext = currentIndex < upperBound
-  const isFallback = maxDate && selectedDate !== maxDate
+  // Badge shows ONLY on the latest date that actually has data input (INC > 0).
+  // Falls back to the last array entry when no explicit latestDataDate is given.
+  const latestDate = latestDataDate || (dates.length > 0 ? dates[dates.length - 1] : null)
+  const isLatest = latestDate != null && selectedDate === latestDate
 
   const goPrev = () => { if (hasPrev) onSelect(dates[currentIndex - 1]) }
   const goNext = () => { if (hasNext) onSelect(dates[currentIndex + 1]) }
@@ -213,7 +216,17 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate }) {
   )
 
   return (
-    <div className="flex items-center gap-2" ref={ref}>
+    <div className="flex items-center gap-1.5 sm:gap-2" ref={ref}>
+      {/* Badge — shows ONLY on the single latest available date in the dataset */}
+      {isLatest && (
+        <span
+          className="inline-flex items-center max-w-[90px] sm:max-w-none text-[10px] font-medium px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/40 truncate shrink-0"
+          title="Latest date with available data"
+        >
+          Latest available
+        </span>
+      )}
+
       {/* Previous arrow */}
       <button
         onClick={goPrev}
@@ -250,16 +263,9 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate }) {
       </button>
 
       {/* Date count badge — desktop only */}
-      <span className="text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-600 ml-0.5 sm:ml-1 hidden sm:inline">
+      <span className="text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-600 ml-0.5 sm:ml-1 hidden sm:inline shrink-0">
         {currentIndex + 1}/{dates.length}
       </span>
-
-      {/* Fallback indicator — desktop only */}
-      {isFallback && (
-        <span className="hidden sm:inline-flex text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/40 whitespace-nowrap" title="No data for today. Showing latest available date.">
-          Latest available
-        </span>
-      )}
 
       {/* Desktop: inline popover */}
       {open && (

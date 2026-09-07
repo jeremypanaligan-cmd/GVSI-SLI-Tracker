@@ -357,6 +357,8 @@ export function parseRawDailyData(rawData) {
       // Normalize date format: 'Aug 1 2026' → 'August 1, 2026'
       const dateStr = normalizeRawDate(rawDate)
       if (!dateStr) continue
+      // Skip pre-entered future-dated rows (beyond today)
+      if (isFutureDate(dateStr)) continue
 
       const area = String(arr[1] || row['AREA'] || '').trim()
       if (!area || area === 'AREA') continue
@@ -406,12 +408,11 @@ export function parseRawDailyData(rawData) {
       // Detect title rows
       if (first.includes('SLI DAILY TRACKING REPORT')) {
         const parsed = extractDateFromTitle(first)
-        if (parsed) {
-          currentDate = parsed
-          if (!blocks[currentDate]) {
-            blocks[currentDate] = { areas: [], overallTotal: null }
-            dates.push(currentDate)
-          }
+        // Skip pre-entered future-dated blocks entirely (rows too)
+        currentDate = parsed && !isFutureDate(parsed) ? parsed : null
+        if (currentDate && !blocks[currentDate]) {
+          blocks[currentDate] = { areas: [], overallTotal: null }
+          dates.push(currentDate)
         }
         continue
       }
@@ -479,6 +480,40 @@ function parseDisplayDate(s) {
   const monthIdx = MONTH_NAMES.findIndex(n => n.toLowerCase() === m[1].toLowerCase())
   if (monthIdx === -1) return null
   return new Date(parseInt(m[3]), monthIdx, parseInt(m[2]))
+}
+
+/**
+ * True when a display date is strictly after today (start of tomorrow onward).
+ * Used to drop pre-entered future-dated rows/blocks from RAW DATA so they don't
+ * surface as selectable dates in the daily views.
+ */
+function isFutureDate(dateStr) {
+  const d = parseDisplayDate(dateStr)
+  if (!d) return false
+  const now = new Date()
+  const startOfTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+  return d >= startOfTomorrow
+}
+
+/**
+ * Newest date in a parsed RAW DATA dataset that actually has incoming (INC > 0).
+ * Google Sheet entries can be delayed, so the last date in the array may still be
+ * an empty/pre-created block. Returns the latest date whose block has real input,
+ * or null when no date has incoming at all.
+ */
+export function findLatestDataDate(daily) {
+  const dates = daily?.dates || []
+  const blocks = daily?.blocks || {}
+  for (let i = dates.length - 1; i >= 0; i--) {
+    const blk = blocks[dates[i]]
+    if (!blk) continue
+    const overall = blk.overallTotal
+    const inc = overall
+      ? overall.inc || 0
+      : (blk.areas || []).reduce((s, a) => s + (a.inc || 0), 0)
+    if (inc > 0) return dates[i]
+  }
+  return null
 }
 
 /**

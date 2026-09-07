@@ -4,6 +4,26 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
+## [1.4.0] — 2026-09-07
+
+### 📅 Date Selector & Daily View
+
+- Calendar-grid date picker (popover on desktop, centered modal on mobile) shared by Executive Overview and Provincial Breakdown.
+- Reordered date bar: `Latest available` badge → prev day → date toggle → next day → date counter.
+- `Latest available` badge now appears **only on the newest date with actual input (INC > 0)**, tolerating delayed Google Sheet entries; app defaults to that date instead of an empty "today" block.
+- Excluded future-dated rows from the RAW DATA parser so pre-entered days don't surface as available dates.
+- Mobile: responsive trigger (truncating label), full-width modal calendar, readable day grid.
+- MM/DD/YY formatting removed in favor of consistent `MMM d, yyyy` labels.
+
+### 🐛 Bug Fixes
+
+- Fixed missing next-month chevron / trapped month navigation in the calendar modal.
+- Fixed Next-day arrow state after navigating to earlier dates.
+- Fixed date picker crash (`d is not defined`) and stale `currentDateIdx` reference.
+- Fixed console `Response body already used` and `chrome-extension` cache errors in the service worker (earlier hotfixes).
+
+---
+
 ## [1.3.0] — 2026-09-03
 
 ### 🔧 Backend — Apps Script Column Layout Update

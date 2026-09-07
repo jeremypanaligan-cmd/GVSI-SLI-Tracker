@@ -1,7 +1,7 @@
 import { getBadgeStyle, formatNumber, getTodayStr } from '../utils/dataProcessor'
 import DatePicker from './DatePicker'
 
-export default function ExecutiveOverview({ metrics, selectedDate, availableDates, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail, plan }) {
+export default function ExecutiveOverview({ metrics, selectedDate, availableDates, latestDataDate, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail, plan }) {
   if (!metrics) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
@@ -185,6 +185,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
                 selectedDate={selectedDate}
                 onSelect={onDateSelect}
                 maxDate={getTodayStr()}
+                latestDataDate={latestDataDate}
               />
             </div>
           )}
