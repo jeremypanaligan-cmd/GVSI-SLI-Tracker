@@ -1,4 +1,4 @@
-import { getBadgeStyle, formatNumber, getTodayStr, projectRunRate, getPaceBadgeStyle } from '../utils/dataProcessor'
+import { getBadgeStyle, getTodayStr, projectRunRate, getPaceBadgeStyle } from '../utils/dataProcessor'
 import DatePicker from './DatePicker'
 import Sparkline from './Sparkline'
 
@@ -34,7 +34,6 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
 
   // Phase 2 — F1 trend analytics
   const t = (key) => (dailyTrends && dailyTrends[key]) || null
-  const isUp = (v) => v && v.dayDelta != null && v.dayDelta > 0
   return (
     <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-5 space-y-5">
 
