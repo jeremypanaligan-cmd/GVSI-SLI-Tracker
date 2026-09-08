@@ -4,6 +4,48 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
+## [1.5.0] — 2026-09-08
+
+### 🗺️ Roadmap Document
+
+- Added `ROADMAP.md` — feature/architecture proposal for the next phase: Momentum & Trend Analytics (WoW/MoM/DoD), Run-Rate Projection & Health Alerts, One-Click Executive Report & Shareable Snapshots, Portfolio Compare Mode, and Instant-State Pack.
+- Added detailed **Phase 1 scope** (planning only): URL/localStorage state persistence, background prefetch of non-active plans, and run-rate projection — with a task list and file-level plan.
+
+### 🔗 State Persistence (Phase 1 — Tasks 1–2, completed)
+
+**New file: `src/utils/urlState.js`**
+- `readUrlState()` / `writeUrlState()` — shareable view state via URL query params (`?plan=&date=&month=&view=`)
+- Date/month conversion helpers: `2026-09-06` ↔ `"September 6, 2026"`, `2026-09` ↔ `"September 2026"`
+- Uses `history.replaceState` (never `pushState`) so date-stepping doesn't spam browser history
+- `STATE_STORAGE_KEYS` — `gvsi_selected_date`, `gvsi_selected_month`, `gvsi_selected_view` (plan reuses `gvsi_active_plan`)
+
+**`src/App.jsx`**
+- Initial-state resolver: URL params → localStorage → defaults, resolved in `useState` initializers (no flash of wrong state)
+- URL + localStorage sync effect on plan/date/month/view change — shareable deep links now work
+- Validation: invalid or no-longer-available restored dates/months fall back to `findLatestDataDate` / current month — never crashes
+- Plan persistence centralized in the sync effect (removed duplicate write in `handlePlanChange`)
+
+### ⚡ Instant Plan Switching (Phase 1 — Tasks 3–4, completed)
+
+**`src/utils/dataFetcher.js`**
+- New `prefetchAllPlans(activePlanId)` — background-prefetches RAW + MTD for every non-active plan into the plan-scoped cache
+- Skips plans whose cache is still fresh (within the 5-min `CACHE_MAX_AGE`) to avoid hammering Google's export endpoints
+- Dedupe guard: concurrent calls share one in-flight run (promise resets when it settles); never throws — failures are logged and ignored
+
+**`src/App.jsx`**
+- `handlePlanChange` is now **cache-first**: cached data renders instantly (no loading skeleton), then a background refresh swaps in fresh data when it arrives
+- New `applyPlanData()` helper — single code path for cache/live/fallback results (MTD, RAW, source, timestamp, latest date)
+- Race-condition guard (`planChangeRef`) — rapidly switching plans can no longer let a stale fetch overwrite the latest selection
+- Prefetch triggered on initial load and after every plan change, so future switches are near-instant
+
+### ⏳ Phase 1 — Planned (Tasks 5–7, not yet implemented)
+
+- Run-rate projection math (`projectRunRate`, `computeAreaPace`) and per-area pace badges
+- Run-rate projection math: `projectRunRate`, `computeAreaPace`, `getPaceBadgeStyle` (`dataProcessor.js`)
+- Projection UI: MTD hero pace pill + projected month-end, To-Go required-daily-rate, per-area pace badges (Executive Overview / Provincial Breakdown)
+
+---
+
 ## [1.4.0] — 2026-09-07
 
 ### 📅 Date Selector & Daily View

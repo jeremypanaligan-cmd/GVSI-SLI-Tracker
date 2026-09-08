@@ -1,6 +1,6 @@
 import { parseCSV } from './csvParser'
 import { idbGet, idbSet } from './idbCache'
-import { PLANS, DEFAULT_PLAN } from '../config/plans'
+import { PLANS, PLAN_ORDER, DEFAULT_PLAN } from '../config/plans'
 
 const CACHE_VERSION = 'v6'
 const CACHE_MAX_AGE = 1000 * 60 * 5 // 5 minutes
@@ -150,4 +150,40 @@ export async function fetchAllData(planId = DEFAULT_PLAN) {
   }
 
   return await getCachedData(planId)
+}
+
+let prefetchPromise = null
+
+/**
+ * Background-prefetch RAW + MTD data for every non-active plan and store it
+ * in the plan-scoped cache. Skips plans whose cache is still fresh (within
+ * CACHE_MAX_AGE) so we don't hammer Google's export endpoints on every load.
+ *
+ * Dedupe guard: concurrent calls share one in-flight run; the promise resets
+ * once it settles. Never throws — failures are logged and ignored.
+ */
+export async function prefetchAllPlans(activePlanId = DEFAULT_PLAN) {
+  if (prefetchPromise) return prefetchPromise
+
+  prefetchPromise = (async () => {
+    const jobs = PLAN_ORDER
+      .filter(id => id !== activePlanId)
+      .map(async (planId) => {
+        try {
+          const cached = await getCachedData(planId)
+          const fresh = cached.timestamp && (Date.now() - cached.timestamp.getTime()) < CACHE_MAX_AGE
+          if (fresh) return { planId, status: 'fresh' }
+          const result = await fetchAllData(planId)
+          return { planId, status: result.source === 'live' ? 'prefetched' : 'cached' }
+        } catch (err) {
+          console.warn(`[Prefetch] ${planId} failed:`, err.message)
+          return { planId, status: 'failed' }
+        }
+      })
+    return Promise.all(jobs)
+  })().finally(() => {
+    prefetchPromise = null
+  })
+
+  return prefetchPromise
 }

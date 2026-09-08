@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { fetchAllData, getCachedData } from './utils/dataFetcher'
+import { fetchAllData, getCachedData, prefetchAllPlans } from './utils/dataFetcher'
 import {
   parseMTDData, extractExecutiveMetrics,
   parseRawDailyData, getTodayStr, findClosestDate,
@@ -14,6 +14,7 @@ import PlanSelector from './components/PlanSelector'
 import { PLANS, DEFAULT_PLAN } from './config/plans'
 import PWAInstallBanner from './components/PWAInstallBanner'
 import { exportRawDataCSV } from './utils/exportCSV'
+import { readUrlState, writeUrlState, STATE_STORAGE_KEYS } from './utils/urlState'
 
 const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000 // 5 minutes
 const STALE_THRESHOLD = 5 * 60 * 1000 // 5 minutes — data older than this is "stale"
@@ -44,6 +45,31 @@ function getFreshnessStyle(ageMs, isOnline) {
   return { dot: 'bg-amber-500 dark:bg-amber-400', text: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20' }
 }
 
+function storageGet(key) {
+  try { return localStorage.getItem(key) } catch { return null }
+}
+
+// Initial shareable state — resolved once per app load: URL params → localStorage → defaults.
+const initialUrlState = readUrlState()
+
+function initialView() {
+  const v = initialUrlState.view || storageGet(STATE_STORAGE_KEYS.view)
+  return v === 'daily' ? 'daily' : 'executive'
+}
+
+function initialDate() {
+  return initialUrlState.date || storageGet(STATE_STORAGE_KEYS.date) || ''
+}
+
+function initialMonth() {
+  return initialUrlState.month || storageGet(STATE_STORAGE_KEYS.month) || getCurrentMonthYear()
+}
+
+function initialPlan() {
+  const p = initialUrlState.plan || storageGet(STATE_STORAGE_KEYS.plan)
+  return PLANS[p] ? p : DEFAULT_PLAN
+}
+
 export default function App() {
   const [mtdData, setMtdData] = useState(null)
   const [rawDaily, setRawDaily] = useState(null)
@@ -53,15 +79,18 @@ export default function App() {
   const [lastSync, setLastSync] = useState(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
-  const [view, setView] = useState('executive')
-  const [selectedDate, setSelectedDate] = useState('')
-  const [selectedMonthYear, setSelectedMonthYear] = useState(getCurrentMonthYear())
+  const [view, setView] = useState(initialView)
+  const [selectedDate, setSelectedDate] = useState(initialDate)
+  const [selectedMonthYear, setSelectedMonthYear] = useState(initialMonth)
   const [nextRefresh, setNextRefresh] = useState(null)
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
   const [tick, setTick] = useState(0)
-  const [activePlan, setActivePlan] = useState(() => localStorage.getItem('gvsi_active_plan') || DEFAULT_PLAN) // force re-render for "time ago" updates
+  const [activePlan, setActivePlan] = useState(initialPlan)
 
   const loadDataRef = useRef(null)
+  // Guards against race conditions when the user rapidly switches plans: only
+  // the result of the most recently requested plan may update state.
+  const planChangeRef = useRef(activePlan)
 
   const loadData = useCallback(async (showSyncing = false) => {
     if (showSyncing) setIsSyncing(true)
@@ -106,40 +135,84 @@ export default function App() {
     }
   }, [mtdData, selectedDate, selectedMonthYear])
 
+  /**
+   * Apply a fetched/cached plan result to state (MTD, RAW, source, date, month).
+   * Used by both the cache-first path and the background refresh path.
+   */
+  const applyPlanData = useCallback((result) => {
+    setMtdData(parseMTDData(result.mtd, getCurrentMonthYear()))
+    setSelectedMonthYear(getCurrentMonthYear())
+    const planDaily = parseRawDailyData(result.raw)
+    setRawDaily(planDaily)
+    setSource(result.source)
+    setLastSync(result.timestamp)
+    const planDates = planDaily.dates || []
+    setSelectedDate(planDates.length > 0
+      ? (findLatestDataDate(planDaily) || findClosestDate(planDates, getTodayStr()))
+      : getTodayStr())
+  }, [])
+
   const handlePlanChange = useCallback(async (newPlan) => {
     if (newPlan === activePlan) return
+    planChangeRef.current = newPlan
     setActivePlan(newPlan)
-    localStorage.setItem('gvsi_active_plan', newPlan)
-    setMtdData(null); setRawDaily(null); setLoading(true); setError(null)
+    setError(null)
+
+    // 1) Cache-first: if this plan's data is already cached, render it
+    //    instantly and refresh in the background — no loading skeleton on
+    //    plan switch.
+    let cached = null
+    try {
+      cached = await getCachedData(newPlan)
+    } catch { /* ignore */ }
+
+    const hasCached = cached && (cached.mtd?.rows?.length > 0 || cached.raw?.rows?.length > 0)
+    if (hasCached) {
+      if (planChangeRef.current !== newPlan) return
+      applyPlanData(cached)
+    } else {
+      setMtdData(null); setRawDaily(null); setLoading(true)
+    }
+
+    // 2) Background refresh: fetch fresh data and swap it in when it arrives.
     try {
       const result = await fetchAllData(newPlan)
-      setMtdData(parseMTDData(result.mtd, getCurrentMonthYear()))
-      setSelectedMonthYear(getCurrentMonthYear())
-      const planDaily = parseRawDailyData(result.raw)
-      setRawDaily(planDaily)
-      setSource(result.source); setLastSync(result.timestamp)
-      const planDates = planDaily.dates || []
-      setSelectedDate(planDates.length > 0
-        ? (findLatestDataDate(planDaily) || findClosestDate(planDates, getTodayStr()))
-        : getTodayStr())
+      if (planChangeRef.current !== newPlan) return
+      applyPlanData(result)
     } catch (err) {
+      if (planChangeRef.current !== newPlan) return
       setError(err.message)
-      const cached = await getCachedData(newPlan)
-      if (cached.mtd) {
-        setMtdData(parseMTDData(cached.mtd))
-        setRawDaily(parseRawDailyData(cached.raw))
-        setSource(cached.source); setLastSync(cached.timestamp)
-      }
-    } finally { setLoading(false); setIsSyncing(false) }
-  }, [activePlan])
+      const fallback = await getCachedData(newPlan)
+      if (fallback.mtd) applyPlanData(fallback)
+    } finally {
+      setLoading(false)
+      setIsSyncing(false)
+    }
+
+    // 3) Warm the caches of the other plans so future switches are instant.
+    prefetchAllPlans(newPlan).catch(() => {})
+  }, [activePlan, applyPlanData])
 
   const currentPlan = PLANS[activePlan] || PLANS[DEFAULT_PLAN]
 
   loadDataRef.current = loadData
 
-  // Initial load
+  // Persist shareable state (plan, date, month, view) to URL + localStorage.
+  // URL writes use replaceState so date-stepping never pollutes browser history.
+  useEffect(() => {
+    writeUrlState({ plan: activePlan, date: selectedDate, month: selectedMonthYear, view })
+    try {
+      localStorage.setItem(STATE_STORAGE_KEYS.plan, activePlan)
+      localStorage.setItem(STATE_STORAGE_KEYS.date, selectedDate)
+      localStorage.setItem(STATE_STORAGE_KEYS.month, selectedMonthYear)
+      localStorage.setItem(STATE_STORAGE_KEYS.view, view)
+    } catch { /* ignore quota / private-mode errors */ }
+  }, [activePlan, selectedDate, selectedMonthYear, view])
+
+  // Initial load + warm the caches of the other plans in the background
   useEffect(() => {
     loadData()
+    prefetchAllPlans(activePlan).catch(() => {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tick every 30s to update "time ago" display
