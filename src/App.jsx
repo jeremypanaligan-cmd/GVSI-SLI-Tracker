@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { fetchAllData, getCachedData, prefetchAllPlans } from './utils/dataFetcher'
 import {
   parseMTDData, extractExecutiveMetrics,
   parseRawDailyData, getTodayStr, findClosestDate,
   getCurrentMonthYear, findLatestDataDate,
+  buildDailyTrend, buildSeriesFromBlocks, summarizeSeries,
+  computeMoMDelta,
 } from './utils/dataProcessor'
 import ExecutiveOverview from './components/ExecutiveOverview'
 import DailyTable from './components/DailyTable'
@@ -13,6 +15,7 @@ import ThemeToggle from './components/ThemeToggle'
 import PlanSelector from './components/PlanSelector'
 import { PLANS, DEFAULT_PLAN } from './config/plans'
 import PWAInstallBanner from './components/PWAInstallBanner'
+import ExecutiveReportModal from './components/ExecutiveReportModal'
 import { exportRawDataCSV } from './utils/exportCSV'
 import { readUrlState, writeUrlState, STATE_STORAGE_KEYS } from './utils/urlState'
 
@@ -86,6 +89,7 @@ export default function App() {
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
   const [tick, setTick] = useState(0)
   const [activePlan, setActivePlan] = useState(initialPlan)
+  const [reportOpen, setReportOpen] = useState(false)
 
   const loadDataRef = useRef(null)
   // Guards against race conditions when the user rapidly switches plans: only
@@ -272,6 +276,37 @@ export default function App() {
   const latestDataDate = findLatestDataDate(rawDaily)
   const executiveMetrics = extractExecutiveMetrics(mtdData, dailyBlock)
 
+  // Phase 2 — F1 trend analytics
+  // MoM: current MTD achievement % vs the previous available month (if any)
+  const momDelta = useMemo(() => computeMoMDelta(mtdData), [mtdData])
+
+  // 7-day overall trends per daily metric (keyed by RAW overallTotal field)
+  const dailyTrends = useMemo(() => {
+    if (!rawDaily || !selectedDate) return null
+    const keys = ['bf', 'inc', 'completedFromTotal', 'completedFromRjo',
+      'rjoIncoming', 'rjoRedispatched', 'totalRjo', 'totalCompleted', 'carryOver']
+    const out = {}
+    for (const k of keys) out[k] = buildDailyTrend(rawDaily, selectedDate, k, 7)
+    return out
+  }, [rawDaily, selectedDate])
+
+  // 7-day total-completed trend per area + OVER ALL (for the Provincial table)
+  const areaTrends = useMemo(() => {
+    if (!rawDaily || !selectedDate) return null
+    const names = (dailyBlock?.areas || []).map((a) => a.area)
+    const out = {}
+    for (const nm of names) {
+      const s = summarizeSeries(buildSeriesFromBlocks(
+        rawDaily, selectedDate, 'totalCompleted', 7,
+        (b) => (b?.areas || []).find((a) => a.area === nm),
+      ))
+      if (s) out[nm] = s
+    }
+    const overall = summarizeSeries(buildSeriesFromBlocks(rawDaily, selectedDate, 'totalCompleted', 7))
+    if (overall) out['OVER ALL TOTAL'] = overall
+    return out
+  }, [rawDaily, selectedDate, dailyBlock])
+
   // When month changes, re-parse MTD data from cache
   const handleMonthChange = useCallback(async (newMonth) => {
     setSelectedMonthYear(newMonth)
@@ -334,6 +369,19 @@ export default function App() {
             <PlanSelector activePlan={activePlan} onPlanChange={handlePlanChange} isSyncing={isSyncing} />
             <ThemeToggle />
 
+            {/* Report (print / PDF) button */}
+            <button
+              onClick={() => setReportOpen(true)}
+              disabled={!executiveMetrics}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Generate executive report (print / PDF)"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="hidden sm:inline">Report</span>
+            </button>
+
             {/* Export CSV button */}
             <button
               onClick={() => exportRawDataCSV(rawDaily, activePlan)}
@@ -391,6 +439,8 @@ export default function App() {
             selectedMonthYear={selectedMonthYear}
             availableMonths={mtdData?.availableMonths || []}
             onGoToDetail={() => setView('daily')}
+            momDelta={momDelta}
+            dailyTrends={dailyTrends}
           />
         ) : (
           <div className="h-full flex flex-col">
@@ -422,7 +472,7 @@ export default function App() {
 
             {/* Daily table */}
             <div className="flex-1 overflow-auto">
-              <DailyTable dateData={dailyBlock} />
+              <DailyTable dateData={dailyBlock} refDate={selectedDate || latestDataDate} areaTrends={areaTrends} />
             </div>
           </div>
         )}
@@ -430,6 +480,20 @@ export default function App() {
 
       {/* PWA Install Banner */}
       <PWAInstallBanner />
+
+      {/* Executive Report (print / PDF) */}
+      {reportOpen && (
+        <ExecutiveReportModal
+          plan={currentPlan}
+          metrics={executiveMetrics}
+          selectedDate={selectedDate}
+          selectedMonthYear={selectedMonthYear}
+          areas={mtdData?.areas || []}
+          latestDataDate={latestDataDate}
+          momDelta={momDelta}
+          onClose={() => setReportOpen(false)}
+        />
+      )}
 
       {/* Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-800/60 bg-white/60 dark:bg-[#0B0F17]/60 backdrop-blur-xl">

@@ -4,6 +4,57 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
+## [1.6.0] — 2026-09-08
+
+### 📈 Run-Rate Projection & Health Alerts (Phase 1 — Tasks 5–7, completed)
+
+**`src/utils/dataProcessor.js`** — new projection math:
+- `projectRunRate(totalCompleted, target, refDateStr)` — `projected = totalCompleted / daysElapsed × daysInMonth` plus `daysElapsed`, `daysInMonth`, `remainingDays`, `requiredDaily`, current & projected percentages
+- Pace classification: **on-pace** (projected ≥ target) / **behind** (≥ 80% of target) / **critical** (otherwise); days-elapsed derives from the latest **data** date (not calendar today)
+- Guards: empty/invalid inputs return `null`; **target ≤ 0 returns `null`** — areas without a set target no longer show a misleading "On pace" badge
+- `computeAreaPace(areaEntry, refDateStr)` wrapper + `getPaceBadgeStyle(pace)` badge classes
+
+**`src/components/ExecutiveOverview.jsx`** — projection UI:
+- Pace pill beside the achievement badge (On pace / Behind pace / Critical)
+- `Projected month-end: 2,657 (152% of target)` line under the hero score
+- Total Completed card shows `Projected: 2,657`; To Go card shows `Need 49/day for 23 days`
+
+**`src/components/DailyTable.jsx`** — new **PACE** column in the Provincial Breakdown (per area + OVER ALL TOTAL), driven by a `refDate` prop (selected date)
+
+### 📊 Trend Analytics (Phase 2 — F1, completed)
+
+**`src/utils/dataProcessor.js`** — trend math utilities:
+- `buildSeriesFromBlocks` / `summarizeSeries` / `buildDailyTrend` — chronological 7-day windows of any RAW metric, day-over-day + period deltas, NaN-safe
+- `computeMoMDelta(mtdData)` — achievement % vs the previous available MTD month; returns `null` until a second month section exists (future-ready)
+- `parseMTDData` now also exports `overallByMonth` (every month's OVER ALL TOTAL) to feed MoM deltas
+
+**New file: `src/components/Sparkline.jsx`** — reusable inline SVG sparkline (area fill + line, up/down coloring)
+
+**`src/components/ExecutiveOverview.jsx`** — momentum visible everywhere:
+- MoM delta chip beside the achievement rate (`▲ +6.8 pts vs August`) once MTD holds a prior month
+- 7-day sparkline + day-over-day delta on every Daily To-Date card (BF, INC, COMP ABL, COMP RJO, RJO, RJO FPMos, TOTAL RJO, Completed, CO) — e.g. `INC +90 (115%)`
+
+**`src/components/DailyTable.jsx`** — new **7D TREND** column (sparkline + delta per area row and OVER ALL TOTAL)
+
+**`src/App.jsx`** — computes `momDelta`, `dailyTrends`, `areaTrends` via `useMemo` and passes them down
+
+### 🖨️ One-Click Executive Report (Phase 2 — F3, completed)
+
+**New file: `src/components/ExecutiveReportModal.jsx`** — print/PDF-ready C-suite one-pager (portaled to `document.body`):
+- Brand header (SLI badge, plan name, month/year, data-as-of, generated timestamp)
+- MTD KPI grid (Achievement Rate + MoM delta, Total Completed / target, Total Incoming, To Go)
+- Daily snapshot grid for the selected date; Provincial standing table (top movers + stragglers w/ pace); GVSI Dev footer
+
+**`src/App.jsx`** — new **Report** header button (document icon) next to Export
+
+**`src/index.css`** — `@media print` rules (body gets `report-open` while the modal is up):
+- Hides the whole `#root` shell (not just children) so the empty container can't push the report to a second page
+- Forces a white page during print (dark-mode grid background can't leak onto paper)
+- `break-inside: avoid` on report blocks and table rows
+- Pace badges on the sheet use **light-only** colors (`REPORT_PACE_STYLE`) so they stay legible on white paper even when the app is in dark mode
+
+---
+
 ## [1.5.0] — 2026-09-08
 
 ### 🗺️ Roadmap Document

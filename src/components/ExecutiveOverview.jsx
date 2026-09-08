@@ -1,7 +1,8 @@
-import { getBadgeStyle, formatNumber, getTodayStr } from '../utils/dataProcessor'
+import { getBadgeStyle, formatNumber, getTodayStr, projectRunRate, getPaceBadgeStyle } from '../utils/dataProcessor'
 import DatePicker from './DatePicker'
+import Sparkline from './Sparkline'
 
-export default function ExecutiveOverview({ metrics, selectedDate, availableDates, latestDataDate, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail, plan }) {
+export default function ExecutiveOverview({ metrics, selectedDate, availableDates, latestDataDate, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail, plan, momDelta, dailyTrends }) {
   if (!metrics) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
@@ -23,8 +24,17 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
   const progressPct = mtd.pct !== null && !isNaN(mtd.pct) ? Math.min(mtd.pct, 100) : 0
   const dailyCompleted = daily?.totalCompleted ?? 0
 
+  // Run-rate projection (Phase 1 — Task 6)
+  const projection = (mtd.totalCompleted != null && mtd.target != null && !isNaN(mtd.totalCompleted) && !isNaN(mtd.target))
+    ? projectRunRate(mtd.totalCompleted, mtd.target, latestDataDate || getTodayStr())
+    : null
+  const paceBadge = projection ? getPaceBadgeStyle(projection.pace) : null
+
   const pc = plan?.accentClasses || {}
 
+  // Phase 2 — F1 trend analytics
+  const t = (key) => (dailyTrends && dailyTrends[key]) || null
+  const isUp = (v) => v && v.dayDelta != null && v.dayDelta > 0
   return (
     <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-5 space-y-5">
 
@@ -80,12 +90,30 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
                     {mtdBadge.label}
                   </span>
                 )}
+                {paceBadge && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${paceBadge.bg} ${paceBadge.color} ${paceBadge.border} self-center`}>
+                    {paceBadge.label}
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2">
                 {mtd.pct !== null && !isNaN(mtd.pct)
                   ? mtd.pct >= 100 ? (<span className="inline-flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg> Target achieved</span>) : `${(100 - mtd.pct).toFixed(1)}% gap remaining`
                   : 'Awaiting data'}
+                {momDelta && (
+                  <span className={`inline-flex items-center gap-1 ml-2 text-[11px] font-semibold ${momDelta.improved ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`} title={`vs ${momDelta.prevMonth} achievement`}>
+                    {momDelta.improved
+                      ? <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+                      : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" /></svg>}
+                    {momDelta.deltaPts >= 0 ? '+' : ''}{momDelta.deltaPts.toFixed(1)} pts vs {momDelta.prevMonth.replace(/ \d{4}$/, '')}
+                  </span>
+                )}
               </p>
+              {projection && (
+                <p className={`text-[11px] font-semibold mt-1 ${paceBadge?.color || 'text-slate-500 dark:text-slate-400'}`}>
+                  Projected month-end: {fmt(Math.round(projection.projected))} ({projection.projectedPct.toFixed(0)}% of target)
+                </p>
+              )}
             </div>
             {/* Progress Bar */}
             <div className="flex-1 max-w-xs">
@@ -133,6 +161,11 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
             <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
               of <span className="font-semibold text-slate-600 dark:text-slate-300">{fmt(mtd.target)}</span> target
             </p>
+            {projection && (
+              <p className={`text-[11px] font-semibold mt-1 ${paceBadge?.color || 'text-slate-500 dark:text-slate-400'}`}>
+                Projected: {fmt(Math.round(projection.projected))}
+              </p>
+            )}
           </div>
 
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between">
@@ -163,7 +196,9 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
             </div>
             <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
               {mtd.toGo > 0
-                ? <span className="font-semibold text-amber-600 dark:text-amber-400">remaining installations</span>
+                ? (projection && projection.requiredDaily > 0
+                    ? <span className="font-semibold text-amber-600 dark:text-amber-400">Need {fmt(Math.ceil(projection.requiredDaily))}/day for {projection.remainingDays} days</span>
+                    : <span className="font-semibold text-amber-600 dark:text-amber-400">remaining installations</span>)
                 : <span className="font-semibold text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg> Target reached!</span>
               }
             </p>
@@ -194,18 +229,18 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
         {daily ? (
           <div className="flex flex-wrap items-stretch justify-center gap-3">
             {/* LEFT GROUP: BF + INC */}
-            <DailyMetricCard label="BF" value={fmt(daily.bf)} icon={<BFIcon />} subtitle="Brought forward"  />
-            <DailyMetricCard label="INC" value={fmt(daily.inc)} icon={<INCIcon />} subtitle="Incoming" />
+            <DailyMetricCard label="BF" value={fmt(daily.bf)} icon={<BFIcon />} subtitle="Brought forward" trend={t('bf')} />
+            <DailyMetricCard label="INC" value={fmt(daily.inc)} icon={<INCIcon />} subtitle="Incoming" trend={t('inc')} />
 
             {/* VERTICAL DIVIDER */}
             <div className="hidden sm:flex w-px bg-slate-200 dark:bg-slate-700/60 self-stretch my-1 mx-0.5" />
 
             {/* RIGHT GROUP: COMP ABL + COMP RJO + RJO INCOMING + RJO FPMos + TOTAL RJO */}
-            <DailyMetricCard label="COMP ABL" value={fmt(daily.activeBacklog)} icon={<BacklogIcon />} subtitle="BF + INC" />
-            <DailyMetricCard label="COMP RJO" value={fmt(daily.completedFromRjo)} icon={<RJOIcon />} subtitle="From previous months" />
-            <DailyMetricCard label="RJO" value={fmt(daily.rjoIncoming)} icon={<RJOIcon2 />} subtitle="Current month" />
-            <DailyMetricCard label="RJO FPMos" value={fmt(daily.rjoRedispatched)} icon={<RJOIcon2 />} subtitle="From previous months" />
-            <DailyMetricCard label="TOTAL RJO" value={fmt(daily.totalRjo)} icon={<RJOIcon />} subtitle="RJO + RJO FPMos"  />
+            <DailyMetricCard label="COMP ABL" value={fmt(daily.activeBacklog)} icon={<BacklogIcon />} subtitle="BF + INC" trend={t('completedFromTotal')} />
+            <DailyMetricCard label="COMP RJO" value={fmt(daily.completedFromRjo)} icon={<RJOIcon />} subtitle="From previous months" trend={t('completedFromRjo')} />
+            <DailyMetricCard label="RJO" value={fmt(daily.rjoIncoming)} icon={<RJOIcon2 />} subtitle="Current month" trend={t('rjoIncoming')} />
+            <DailyMetricCard label="RJO FPMos" value={fmt(daily.rjoRedispatched)} icon={<RJOIcon2 />} subtitle="From previous months" trend={t('rjoRedispatched')} />
+            <DailyMetricCard label="TOTAL RJO" value={fmt(daily.totalRjo)} icon={<RJOIcon />} subtitle="RJO + RJO FPMos" trend={t('totalRjo')} />
 
             {/* TOTAL COMPLETED — Highlighted */}
             <div className={`rounded-2xl border-2 ${pc.badge || 'border-teal-300 dark:border-teal-600'} bg-gradient-to-br from-teal-50 to-teal-100/50 dark:from-teal-950/40 dark:to-teal-900/20 p-4 relative overflow-hidden min-w-[140px] flex-1 sm:flex-none sm:w-[180px]`}>
@@ -216,9 +251,12 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
               </div>
               <span className={`text-2xl sm:text-3xl font-black tracking-tight relative ${pc.text || 'text-teal-700 dark:text-teal-300'}`}>{fmt(dailyCompleted)}</span>
               <p className={`text-[10px] mt-1 relative font-medium ${pc.text || 'text-teal-500/70 dark:text-teal-400/50'}`}>INC + BF + CRJO</p>
+              {t('totalCompleted') && t('totalCompleted').values.length >= 2 && (
+                <CardTrend trend={t('totalCompleted')} tone="light" />
+              )}
             </div>
 
-            <DailyMetricCard label="CO" value={fmt(daily.carryOver)} icon={<COIcon />} subtitle="Carry Over" />
+            <DailyMetricCard label="CO" value={fmt(daily.carryOver)} icon={<COIcon />} subtitle="Carry Over" trend={t('carryOver')} />
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 p-8 text-center">
@@ -247,7 +285,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
   )
 }
 
-function DailyMetricCard({ label, value, icon, subtitle }) {
+function DailyMetricCard({ label, value, icon, subtitle, trend }) {
   return (
     <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-4 hover:shadow-md transition-shadow duration-200 min-w-[120px] flex-1 sm:flex-none sm:w-[150px]">
       <div className="flex items-center gap-2 mb-2">
@@ -256,6 +294,34 @@ function DailyMetricCard({ label, value, icon, subtitle }) {
       </div>
       <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">{value}</span>
       {subtitle && <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 font-medium italic">{subtitle}</p>}
+      {trend && trend.values.length >= 2 && <CardTrend trend={trend} />}
+    </div>
+  )
+}
+
+/**
+ * Compact sparkline + day-over-day delta used under daily metric values.
+ */
+function CardTrend({ trend, tone }) {
+  if (!trend || trend.values.length < 2) return null
+  const up = trend.dayDelta != null && trend.dayDelta > 0
+  const flat = trend.dayDelta != null && trend.dayDelta === 0
+  const dark = tone !== 'light'
+  return (
+    <div className="flex items-center justify-between gap-2 mt-1.5">
+      <Sparkline data={trend.values} width={54} height={16} positive={up || flat} />
+      <span
+        className={`inline-flex items-center gap-0.5 text-[9px] font-bold shrink-0 ${
+          flat ? (dark ? 'text-slate-500 dark:text-slate-400' : 'text-teal-700/80 dark:text-teal-300/80')
+            : up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+        }`}
+        title={`7-day trend — ${trend.values.join(' → ')}`}
+      >
+        {flat ? '—' : up
+          ? <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>
+          : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>}
+        {trend.dayDelta > 0 ? '+' : ''}{trend.dayDelta}{trend.dayPct != null && Math.abs(trend.dayPct) >= 0.05 ? ` (${Math.abs(trend.dayPct).toFixed(0)}%)` : ''}
+      </span>
     </div>
   )
 }

@@ -199,9 +199,16 @@ export function parseMTDData(mtdData, selectedMonthYear) {
   const data = sections[targetMonth] || sections[currentMonthYear] || sections[months[months.length - 1]]
   if (!data) return null
 
+  // Expose every month's OVER ALL TOTAL (for MoM deltas in trend analytics).
+  const overallByMonth = {}
+  for (const mo of months) {
+    overallByMonth[mo] = sections[mo]?.overallTotal || null
+  }
+
   return {
     ...data,
     availableMonths: months,
+    overallByMonth,
     selectedMonthYear: sections[targetMonth] ? targetMonth : (sections[currentMonthYear] ? currentMonthYear : months[months.length - 1]),
   }
 }
@@ -540,4 +547,198 @@ export function findClosestDate(dates, targetDateStr) {
   }
 
   return closest
+}
+
+// ==================== RUN-RATE PROJECTION ====================
+
+/**
+ * Compute a month-end run-rate projection and pace status.
+ *
+ *   projected = totalCompleted / daysElapsed × daysInMonth
+ *
+ * Pace flags:
+ *   on-pace   → projected >= target
+ *   behind    → projected >= 80% of target
+ *   critical  → otherwise
+ *
+ * @param {number|string} totalCompleted - current MTD completions
+ * @param {number|string} target - monthly target
+ * @param {string} refDateStr - latest data date in "September 6, 2026" format
+ *                              (days-elapsed is derived from this, not calendar today)
+ * @returns {object|null} projection, or null when inputs are unusable
+ */
+export function projectRunRate(totalCompleted, target, refDateStr) {
+  const tc = cleanNumber(totalCompleted)
+  const tgt = cleanNumber(target)
+  // No usable target (blank or 0) → no meaningful projection/pace
+  if (isNaN(tc) || isNaN(tgt) || tgt <= 0) return null
+
+  const ref = parseDisplayDate(refDateStr) || new Date()
+  const year = ref.getFullYear()
+  const month = ref.getMonth()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const daysElapsed = Math.min(Math.max(ref.getDate(), 1), daysInMonth)
+
+  const rate = tc / daysElapsed
+  const projected = rate * daysInMonth
+  const remainingDays = Math.max(daysInMonth - daysElapsed, 0)
+  const requiredDaily = tc < tgt && remainingDays > 0 ? (tgt - tc) / remainingDays : 0
+  const pct = (tc / tgt) * 100
+  const projectedPct = (projected / tgt) * 100
+
+  let pace = 'on-pace'
+  if (projected < tgt) {
+    pace = projected >= tgt * 0.8 ? 'behind' : 'critical'
+  }
+
+  return {
+    totalCompleted: tc,
+    target: tgt,
+    daysElapsed,
+    daysInMonth,
+    rate,
+    projected,
+    remainingDays,
+    requiredDaily,
+    pct,
+    projectedPct,
+    pace,
+  }
+}
+
+/**
+ * Convenience wrapper for a single MTD/daily area entry.
+ * Reads lastMtd (MTD section) or mtd (daily block) as the current total.
+ *
+ * @param {object} areaEntry - entry with lastMtd|mtd and target fields
+ * @param {string} refDateStr - latest data date
+ * @returns {object|null} projection, or null when unusable
+ */
+export function computeAreaPace(areaEntry, refDateStr) {
+  if (!areaEntry) return null
+  const total = areaEntry.lastMtd !== undefined && areaEntry.lastMtd !== null
+    ? areaEntry.lastMtd
+    : areaEntry.mtd
+  return projectRunRate(total, areaEntry.target, refDateStr)
+}
+
+/**
+ * Badge classes for a pace status (matches getBadgeStyle conventions).
+ * @param {string} pace - 'on-pace' | 'behind' | 'critical'
+ */
+export function getPaceBadgeStyle(pace) {
+  switch (pace) {
+    case 'on-pace':
+      return { color: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-100 dark:bg-emerald-900/60', border: 'border-emerald-400 dark:border-emerald-500/40', label: 'On pace', pulse: true }
+    case 'behind':
+      return { color: 'text-amber-700 dark:text-amber-300', bg: 'bg-amber-100 dark:bg-amber-900/60', border: 'border-amber-400 dark:border-amber-500/40', label: 'Behind pace' }
+    case 'critical':
+      return { color: 'text-red-700 dark:text-red-300', bg: 'bg-red-100 dark:bg-red-900/60', border: 'border-red-400 dark:border-red-500/40', label: 'Critical' }
+    default:
+      return { color: 'text-slate-400', bg: 'bg-slate-100 dark:bg-slate-800', label: '—' }
+  }
+}
+
+// ==================== TREND ANALYTICS (Phase 2 — F1) ====================
+
+/**
+ * Return a chronological slice of the last `days` dates ending at endDateStr.
+ * If endDateStr is missing from the dataset, falls back to the newest date.
+ */
+function getSeriesWindow(rawDaily, endDateStr, days = 7) {
+  const dates = rawDaily?.dates || []
+  if (dates.length === 0) return []
+  let idx = dates.indexOf(endDateStr)
+  if (idx === -1) idx = dates.length - 1
+  const start = Math.max(0, idx - days + 1)
+  return dates.slice(start, idx + 1)
+}
+
+/**
+ * Pull a numeric value for `fieldKey` from the last `days` blocks of a raw daily
+ * dataset, ending at endDateStr. `pickBlock` selects which sub-object inside each
+ * date's block the value lives on (defaults to the block's overallTotal).
+ *
+ * Returns { dates: string[], values: number[] } — values are the RAW figures
+ * (may be NaN for missing cells); alignment matches `dates`.
+ */
+export function buildSeriesFromBlocks(rawDaily, endDateStr, fieldKey, days = 7, pickBlock = (b) => b?.overallTotal) {
+  const windowDates = getSeriesWindow(rawDaily, endDateStr, days)
+  const out = { dates: windowDates, values: [] }
+  for (const d of windowDates) {
+    const block = rawDaily?.blocks?.[d]
+    const src = pickBlock(block)
+    out.values.push(src ? cleanNumber(src[fieldKey]) : NaN)
+  }
+  return out
+}
+
+/**
+ * Summarize a series (from buildSeriesFromBlocks) into trend stats.
+ * All deltas are computed against the previous point (day-over-day).
+ *
+ * @returns {null|{
+ *   values, dates, last, prev, dayDelta, dayPct, periodDelta, periodPct, min, max
+ * }}
+ */
+export function summarizeSeries({ dates, values }) {
+  const nums = (values || []).filter((v) => typeof v === 'number' && !isNaN(v))
+  if (nums.length === 0) return null
+  const last = nums[nums.length - 1]
+  const prev = nums.length > 1 ? nums[nums.length - 2] : null
+  const first = nums[0]
+  const dayDelta = prev !== null ? last - prev : null
+  const periodDelta = last - first
+  const dayPct = prev ? (dayDelta / prev) * 100 : null
+  const periodPct = first ? (periodDelta / first) * 100 : null
+  return {
+    values: nums,
+    dates,
+    last,
+    prev,
+    first,
+    dayDelta,
+    dayPct,
+    periodDelta,
+    periodPct,
+    min: Math.min(...nums),
+    max: Math.max(...nums),
+  }
+}
+
+/**
+ * Convenience: build + summarize an overall (summed) trend for one RAW metric.
+ * e.g. buildDailyTrend(rawDaily, selectedDate, 'totalCompleted')
+ */
+export function buildDailyTrend(rawDaily, endDateStr, fieldKey, days = 7) {
+  if (!rawDaily) return null
+  return summarizeSeries(buildSeriesFromBlocks(rawDaily, endDateStr, fieldKey, days))
+}
+
+/**
+ * Trend delta between the selected MTD month and the previous available month
+ * (from the MTD sheet's month sections). Compares achievement % (LAST %).
+ *
+ * @param {Object} mtdData - parsed MTD data (must include overallByMonth)
+ * @returns {null|{ prevMonth, deltaPts, prevPct, curPct, improved }}
+ */
+export function computeMoMDelta(mtdData) {
+  if (!mtdData || !mtdData.availableMonths || mtdData.availableMonths.length < 2) return null
+  const months = mtdData.availableMonths
+  const selIdx = months.indexOf(mtdData.selectedMonthYear)
+  if (selIdx <= 0) return null
+  const prevMonth = months[selIdx - 1]
+  const cur = mtdData.overallByMonth?.[mtdData.selectedMonthYear]
+  const prev = mtdData.overallByMonth?.[prevMonth]
+  if (!cur || !prev) return null
+  const curPct = cleanNumber(cur.lastPct)
+  const prevPct = cleanNumber(prev.lastPct)
+  if (isNaN(curPct) || isNaN(prevPct)) return null
+  return {
+    prevMonth,
+    curPct,
+    prevPct,
+    deltaPts: curPct - prevPct,
+    improved: curPct >= prevPct,
+  }
 }

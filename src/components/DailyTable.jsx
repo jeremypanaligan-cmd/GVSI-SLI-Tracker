@@ -8,7 +8,8 @@
  *   | RJO INCOMING | RJO RD | TOTAL RJO | Carry Over | MTD | TARGET | %
  */
 import { useState, useMemo } from 'react'
-import { formatNumber, getBadgeStyle } from '../utils/dataProcessor'
+import { formatNumber, getBadgeStyle, computeAreaPace, getPaceBadgeStyle } from '../utils/dataProcessor'
+import Sparkline from './Sparkline'
 
 const COLUMNS = [
   { key: 'area', label: 'AREA', sticky: true, sortable: true },
@@ -25,6 +26,8 @@ const COLUMNS = [
   { key: 'mtd', label: 'MTD', align: 'right', bold: true, sortable: true },
   { key: 'target', label: 'TARGET', align: 'right', sortable: true },
   { key: 'pct', label: '%', align: 'center', highlight: true, sortable: true },
+  { key: 'pace', label: 'PACE', align: 'center', sortable: false },
+  { key: 'trend', label: '7D TREND', align: 'center', sortable: false },
 ]
 
 function Td({ children, align = 'left', bold = false, highlight = false, className = '', sticky = false, bgColor = '' }) {
@@ -49,6 +52,44 @@ function PctBadge({ value }) {
   )
 }
 
+function PaceBadge({ entry, refDate }) {
+  const proj = refDate ? computeAreaPace(entry, refDate) : null
+  if (!proj) return <span className="text-slate-300 dark:text-slate-600">—</span>
+  const badge = getPaceBadgeStyle(proj.pace)
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badge.bg} ${badge.color} ${badge.border}`}>
+      {badge.pulse && <span className="w-1.5 h-1.5 rounded-full mr-1 bg-emerald-500 animate-pulse" />}
+      {badge.label}
+    </span>
+  )
+}
+
+function TrendCell({ areaName, areaTrends, overall }) {
+  const tr = areaTrends && areaTrends[areaName]
+  if (!tr || tr.values.length < 2) {
+    return <span className="text-slate-300 dark:text-slate-600">—</span>
+  }
+  const up = tr.dayDelta > 0
+  const flat = tr.dayDelta === 0
+  return (
+    <div className="flex items-center justify-end gap-1.5">
+      <Sparkline
+        data={tr.values}
+        width={54}
+        height={16}
+        positive={up || flat}
+        strokeClass={overall ? 'text-teal-600 dark:text-teal-300' : undefined}
+      />
+      <span
+        className={`inline-flex items-center text-[10px] font-semibold shrink-0 ${flat ? 'text-slate-400 dark:text-slate-500' : up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}
+        title={`7-day completions: ${tr.values.join(' → ')}`}
+      >
+        {flat ? '±0' : up ? `+${tr.dayDelta}` : tr.dayDelta}
+      </span>
+    </div>
+  )
+}
+
 function SortIcon({ active, direction }) {
   if (!active) {
     return (
@@ -64,7 +105,7 @@ function SortIcon({ active, direction }) {
   )
 }
 
-export default function DailyTable({ dateData }) {
+export default function DailyTable({ dateData, refDate, areaTrends }) {
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
 
@@ -149,6 +190,8 @@ export default function DailyTable({ dateData }) {
               <Td align="right" bold>{formatNumber(entry.mtd)}</Td>
               <Td align="right">{formatNumber(entry.target)}</Td>
               <Td align="center"><PctBadge value={entry.pct} /></Td>
+              <Td align="center"><PaceBadge entry={entry} refDate={refDate} /></Td>
+              <Td align="center"><TrendCell areaName={entry.area} areaTrends={areaTrends} /></Td>
             </tr>
           ))}
 
@@ -171,6 +214,8 @@ export default function DailyTable({ dateData }) {
               <Td align="right" bold>{formatNumber(dateData.overallTotal.mtd)}</Td>
               <Td align="right">{formatNumber(dateData.overallTotal.target)}</Td>
               <Td align="center"><PctBadge value={dateData.overallTotal.pct} /></Td>
+              <Td align="center"><PaceBadge entry={dateData.overallTotal} refDate={refDate} /></Td>
+              <Td align="center"><TrendCell areaName="OVER ALL TOTAL" areaTrends={areaTrends} overall /></Td>
             </tr>
           )}
         </tbody>
