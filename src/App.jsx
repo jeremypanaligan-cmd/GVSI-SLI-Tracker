@@ -456,7 +456,7 @@ export default function App() {
                 Back to Executive Summary
               </button>
 
-              <div className="relative flex items-center gap-3">
+              <div className="relative flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
                 <DatePicker
                   dates={availableDates}
                   selectedDate={selectedDate}

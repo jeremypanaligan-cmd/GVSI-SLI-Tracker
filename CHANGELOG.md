@@ -4,6 +4,48 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
+## [1.6.1] — 2026-09-09
+
+### 📲 PWA Install Banner Restored on Mobile
+
+**`src/components/PWAInstallBanner.jsx`** — the install prompt relied entirely on the
+`beforeinstallprompt` event, which never fires on iOS and is suppressed on Android
+Chrome until engagement criteria are met (or after its native mini-infobar is
+dismissed). Rebuilt so the install option never silently disappears:
+- **iOS Safari fallback:** always shows a 3-step Share → Add to Home Screen guide
+  (no `beforeinstallprompt` support on iOS)
+- **Android fallback:** if Chrome never fires the prompt within 4s, shows manual
+  steps (⋮ menu → Install app / Add to Home screen)
+- **Faster re-show:** "Not now" dismiss expiry shortened from 7 days → 3 days
+- Desktop behavior unchanged (uses the browser's own install icon)
+
+**`public/manifest.json`** — added `id` and `display_override`
+(`["standalone", "minimal-ui", "browser"]`) so Android Chrome recognizes the app
+as installable sooner and fires `beforeinstallprompt` more reliably.
+
+**`index.html`** — removed `user-scalable=no` / `maximum-scale=1.0` viewport lock
+(no impact on screenshots — web pages cannot block OS screenshots — but restores
+pinch-zoom and accessibility gestures); added `apple-mobile-web-app-title`.
+
+**Version bump:** 1.6.0 → 1.6.1; service worker caches refreshed to
+`gvsi-sli-v15` / `gvsi-sli-data-v11` so installed clients fetch the new banner,
+manifest, and index.html immediately.
+
+### 📱 Mobile Header Overflow Fix
+
+**`src/components/ExecutiveOverview.jsx`** — the DAILY TO-DATE section header
+(title + "Latest available" badge + date navigation) used a single non-wrapping
+row, overflowing on narrow phones. The header now uses `flex-wrap` with `gap-y-2`
+so the date controls wrap onto their own (right-aligned) line when space runs
+out instead of clipping.
+
+**`src/App.jsx`** — Provincial Breakdown control bar: the DatePicker + "Last
+sync" text sat in a non-wrapping flex row that overflowed below ~350px
+viewports; the container now uses `flex-wrap` + `justify-end` so the sync
+stamp wraps onto its own line on narrow phones.
+
+---
+
 ## [1.6.0] — 2026-09-08
 
 ### 📈 Run-Rate Projection & Health Alerts (Phase 1 — Tasks 5–7, completed)

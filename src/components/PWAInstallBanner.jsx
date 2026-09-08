@@ -1,42 +1,54 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const DISMISS_KEY = 'gvsi_pwa_install_dismissed'
-const DISMISS_EXPIRY = 7 * 24 * 60 * 60 * 1000 // 7 days
+const DISMISS_EXPIRY = 3 * 24 * 60 * 60 * 1000 // 3 days — short enough that the banner returns soon
+
+const UA = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : ''
+const IS_IOS = /iphone|ipad|ipod/i.test(UA)
+const IS_ANDROID = /android/i.test(UA)
+
+function isStandaloneMode() {
+  if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true
+  if (typeof navigator !== 'undefined' && navigator.standalone) return true
+  return false
+}
 
 export default function PWAInstallBanner() {
   const [deferredPrompt, setDeferredPrompt] = useState(null)
   const [showBanner, setShowBanner] = useState(false)
   const [isInstalled, setIsInstalled] = useState(false)
+  const promptArrived = useRef(false)
 
   useEffect(() => {
-    // Check if already installed (standalone mode)
-    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+    // Already installed / running as an app
+    if (isStandaloneMode()) {
       setIsInstalled(true)
       return
     }
 
-    // Check if previously dismissed
+    // Respect "Not now" within the expiry window
     try {
       const dismissed = localStorage.getItem(DISMISS_KEY)
-      if (dismissed) {
-        const dismissedAt = parseInt(dismissed, 10)
-        if (Date.now() - dismissedAt < DISMISS_EXPIRY) {
-          return // Still within dismiss period
-        }
-      }
+      if (dismissed && Date.now() - parseInt(dismissed, 10) < DISMISS_EXPIRY) return
     } catch { /* ignore */ }
 
-    // Listen for beforeinstallprompt
-    const handler = (e) => {
-      e.preventDefault()
-      setDeferredPrompt(e)
-      // Show banner after a short delay for better UX
-      setTimeout(() => setShowBanner(true), 2000)
+    // ── iOS Safari ──
+    // beforeinstallprompt is NOT supported on iOS. The only install route is
+    // the Share → Add to Home Screen menu, so always offer manual steps.
+    if (IS_IOS) {
+      const t = setTimeout(() => setShowBanner(true), 2000)
+      return () => clearTimeout(t)
     }
 
+    // ── Android Chrome / desktop ──
+    const handler = (e) => {
+      e.preventDefault()
+      promptArrived.current = true
+      setDeferredPrompt(e)
+      setTimeout(() => setShowBanner(true), 1500)
+    }
     window.addEventListener('beforeinstallprompt', handler)
 
-    // Check if already installed via appinstalled event
     const installedHandler = () => {
       setIsInstalled(true)
       setShowBanner(false)
@@ -44,9 +56,21 @@ export default function PWAInstallBanner() {
     }
     window.addEventListener('appinstalled', installedHandler)
 
+    // ── Android fallback ──
+    // Chrome only fires beforeinstallprompt after engagement criteria are met
+    // (and suppresses it for a while if its own mini-infobar was dismissed).
+    // Never let the install option silently vanish: offer manual steps.
+    let fallbackTimer = null
+    if (IS_ANDROID) {
+      fallbackTimer = setTimeout(() => {
+        if (!promptArrived.current) setShowBanner(true)
+      }, 4000)
+    }
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handler)
       window.removeEventListener('appinstalled', installedHandler)
+      if (fallbackTimer) clearTimeout(fallbackTimer)
     }
   }, [])
 
@@ -69,8 +93,12 @@ export default function PWAInstallBanner() {
     } catch { /* ignore */ }
   }
 
-  // Don't show if installed or no prompt available
-  if (isInstalled || !showBanner || !deferredPrompt) return null
+  // Don't show when installed, dismissed, or not yet eligible
+  if (isInstalled || !showBanner) return null
+
+  // Manual-instructions mode: no install prompt is available (iOS, or Android
+  // where Chrome hasn't fired beforeinstallprompt yet).
+  const manualMode = !deferredPrompt
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 p-3 sm:p-4 animate-slide-up">
@@ -86,22 +114,64 @@ export default function PWAInstallBanner() {
               <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-0.5">
                 Install GVSI SLI Tracker
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-                Add to your home screen for quick access and offline support.
-              </p>
+
+              {manualMode ? (
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                    Your browser didn't show the automatic prompt — here's how to add it manually:
+                  </p>
+                  {IS_IOS ? (
+                    <ol className="text-xs text-slate-600 dark:text-slate-300 space-y-1">
+                      <li className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 dark:text-slate-400 flex-shrink-0">1</span>
+                        Tap the <b>Share</b> button in Safari <span className="text-teal-600 dark:text-teal-400">(□↑)</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 dark:text-slate-400 flex-shrink-0">2</span>
+                        Tap <b>Add to Home Screen</b>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 dark:text-slate-400 flex-shrink-0">3</span>
+                        Tap <b>Add</b> — it's now on your home screen
+                      </li>
+                    </ol>
+                  ) : (
+                    <ol className="text-xs text-slate-600 dark:text-slate-300 space-y-1">
+                      <li className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 dark:text-slate-400 flex-shrink-0">1</span>
+                        Tap the menu <b>⋮</b> in the top-right of Chrome
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 dark:text-slate-400 flex-shrink-0">2</span>
+                        Tap <b>Install app</b> or <b>Add to Home screen</b>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 dark:text-slate-400 flex-shrink-0">3</span>
+                        Tap <b>Install</b> — it's now on your home screen
+                      </li>
+                    </ol>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                  Add to your home screen for quick access and offline support.
+                </p>
+              )}
 
               <div className="flex items-center gap-2">
-                <button
-                  onClick={handleInstall}
-                  className="px-4 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 active:bg-teal-700 text-white text-xs font-semibold transition-all duration-200 shadow-md shadow-teal-600/20"
-                >
-                  Install App
-                </button>
+                {!manualMode && (
+                  <button
+                    onClick={handleInstall}
+                    className="px-4 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 active:bg-teal-700 text-white text-xs font-semibold transition-all duration-200 shadow-md shadow-teal-600/20"
+                  >
+                    Install App
+                  </button>
+                )}
                 <button
                   onClick={handleDismiss}
                   className="px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium transition"
                 >
-                  Not now
+                  {manualMode ? 'Got it' : 'Not now'}
                 </button>
               </div>
             </div>

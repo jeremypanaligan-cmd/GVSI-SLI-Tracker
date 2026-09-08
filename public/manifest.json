@@ -2,9 +2,11 @@
   "name": "SLI Tracker — Gallopvision Services, Inc.",
   "short_name": "SLI Tracker",
   "description": "Service Line Installation Daily Tracking Dashboard by GVSI Dev",
+  "id": ".",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "background_color": "#0B0F17",
   "theme_color": "#0d9488",
   "orientation": "any",
@@ -15,39 +17,39 @@
   },
   "icons": [
     {
-      "src": "icon-48.png?v=1.6.0",
+      "src": "icon-48.png?v=1.6.1",
       "sizes": "48x48",
       "type": "image/png"
     },
     {
-      "src": "icon-96.png?v=1.6.0",
+      "src": "icon-96.png?v=1.6.1",
       "sizes": "96x96",
       "type": "image/png"
     },
     {
-      "src": "icon-192.png?v=1.6.0",
+      "src": "icon-192.png?v=1.6.1",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "icon-192.png?v=1.6.0",
+      "src": "icon-192.png?v=1.6.1",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "icon-512.png?v=1.6.0",
+      "src": "icon-512.png?v=1.6.1",
       "sizes": "512x512",
       "type": "image/png"
     },
     {
-      "src": "icon-512.png?v=1.6.0",
+      "src": "icon-512.png?v=1.6.1",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "favicon.svg?v=1.6.0",
+      "src": "favicon.svg?v=1.6.1",
       "sizes": "any",
       "type": "image/svg+xml"
     }
