@@ -34,10 +34,12 @@ manifest, and index.html immediately.
 ### 📱 Mobile Header Overflow Fix
 
 **`src/components/ExecutiveOverview.jsx`** — the DAILY TO-DATE section header
-(title + "Latest available" badge + date navigation) used a single non-wrapping
-row, overflowing on narrow phones. The header now uses `flex-wrap` with `gap-y-2`
-so the date controls wrap onto their own (right-aligned) line when space runs
-out instead of clipping.
+(title + "Latest available" badge + date navigation) previously sat in one row
+(and later relied on `flex-wrap`, which still clipped on ~400px phones where it
+barely fit). The header now **forces a stacked layout on mobile**
+(`flex-col sm:flex-row`): title on line 1, the date controls right-aligned on
+line 2 (`self-end`) below `sm`, and side-by-side only on larger screens — so
+the texts can never overflow regardless of device width.
 
 **`src/App.jsx`** — Provincial Breakdown control bar: the DatePicker + "Last
 sync" text sat in a non-wrapping flex row that overflowed below ~350px

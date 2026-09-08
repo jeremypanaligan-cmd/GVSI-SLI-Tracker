@@ -207,13 +207,13 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
 
       {/* DAILY TO-DATE PORTION */}
       <section>
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-x-3 gap-y-2 mb-3">
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-5 rounded-full bg-gradient-to-b from-violet-500 to-violet-600" />
             <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Daily To-Date</h2>
           </div>
           {availableDates && availableDates.length > 0 && (
-            <div className="relative ml-auto sm:ml-0">
+            <div className="relative self-end sm:self-auto">
               <DatePicker
                 dates={availableDates}
                 selectedDate={selectedDate}
