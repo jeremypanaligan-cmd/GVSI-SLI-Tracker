@@ -9,11 +9,12 @@ import {
 } from './utils/dataProcessor'
 import ExecutiveOverview from './components/ExecutiveOverview'
 import DailyTable from './components/DailyTable'
+import CompareView from './components/CompareView'
 import DatePicker from './components/DatePicker'
 import SyncIcon from './components/SyncIcon'
 import ThemeToggle from './components/ThemeToggle'
 import PlanSelector from './components/PlanSelector'
-import { PLANS, DEFAULT_PLAN } from './config/plans'
+import { PLANS, PLAN_ORDER, DEFAULT_PLAN } from './config/plans'
 import PWAInstallBanner from './components/PWAInstallBanner'
 import ExecutiveReportModal from './components/ExecutiveReportModal'
 import { exportRawDataCSV } from './utils/exportCSV'
@@ -57,7 +58,7 @@ const initialUrlState = readUrlState()
 
 function initialView() {
   const v = initialUrlState.view || storageGet(STATE_STORAGE_KEYS.view)
-  return v === 'daily' ? 'daily' : 'executive'
+  return v === 'daily' || v === 'compare' ? v : 'executive'
 }
 
 function initialDate() {
@@ -90,6 +91,7 @@ export default function App() {
   const [tick, setTick] = useState(0)
   const [activePlan, setActivePlan] = useState(initialPlan)
   const [reportOpen, setReportOpen] = useState(false)
+  const [compareData, setCompareData] = useState(null)
 
   const loadDataRef = useRef(null)
   // Guards against race conditions when the user rapidly switches plans: only
@@ -258,6 +260,14 @@ export default function App() {
     }
   }, [lastSync])
 
+  // Open a plan from Compare mode → switch to that plan's executive view
+  const handleOpenPlan = useCallback((planId) => {
+    setView('executive')
+    if (planId !== activePlan) {
+      handlePlanChange(planId)
+    }
+  }, [activePlan, handlePlanChange])
+
   // Online/offline detection
   useEffect(() => {
     const goOnline = () => setIsOnline(true)
@@ -316,6 +326,70 @@ export default function App() {
     }
   }, [])
 
+  /**
+   * Build a CompareView entry for one plan result: parsed MTD + RAW.
+   * `mtdCsv` keeps the raw CSV structure so the month picker can re-parse
+   * for a different month without refetching.
+   */
+  const makeCompareEntry = useCallback((result) => ({
+    mtdCsv: result.mtd,
+    mtd: parseMTDData(result.mtd, selectedMonthYear),
+    raw: parseRawDailyData(result.raw),
+    source: result.source,
+    timestamp: result.timestamp,
+  }), [selectedMonthYear])
+
+  /**
+   * Load ALL plans for Compare mode: cache-first for instant render, then
+   * background-refresh each plan and swap in fresh data when it arrives.
+   */
+  const loadCompareData = useCallback(async () => {
+    // 1) Cache-first — render immediately from warm caches (prefetch keeps them hot)
+    const entries = {}
+    for (const planId of PLAN_ORDER) {
+      try {
+        const cached = await getCachedData(planId)
+        entries[planId] = makeCompareEntry(cached)
+      } catch {
+        entries[planId] = { mtd: null, raw: null, source: 'none', timestamp: null }
+      }
+    }
+    setCompareData(entries)
+
+    // 2) Background refresh — fetch each plan fresh, update per plan
+    for (const planId of PLAN_ORDER) {
+      try {
+        const fresh = await fetchAllData(planId)
+        setCompareData(prev => ({
+          ...prev,
+          [planId]: makeCompareEntry(fresh),
+        }))
+      } catch { /* keep cached entry */ }
+    }
+  }, [makeCompareEntry])
+
+  // Enter Compare mode → load all plans (cache-first + refresh)
+  useEffect(() => {
+    if (view === 'compare') {
+      loadCompareData()
+    }
+  }, [view]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-parse compare data when the month picker changes while in Compare mode
+  useEffect(() => {
+    if (view === 'compare' && compareData) {
+      setCompareData(prev => {
+        if (!prev) return prev
+        const next = {}
+        for (const planId of PLAN_ORDER) {
+          const entry = prev[planId]
+          next[planId] = entry ? { ...entry, mtd: parseMTDData(entry.mtdCsv, selectedMonthYear) } : entry
+        }
+        return next
+      })
+    }
+  }, [selectedMonthYear]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const refreshCountdown = nextRefresh ? Math.max(0, Math.ceil((nextRefresh - Date.now()) / 1000)) : null
 
   // Data freshness
@@ -347,7 +421,7 @@ export default function App() {
                 <span className="text-teal-600 dark:text-teal-400">GVSI</span> SLI Tracker
               </h1>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:block tracking-wide">
-                Gallopvision Services, Inc. — {view === 'executive' ? 'Executive Overview' : `Daily Status — ${selectedDate || '…'}`}
+                Gallopvision Services, Inc. — {view === 'executive' ? 'Executive Overview' : view === 'compare' ? 'Portfolio Compare' : `Daily Status — ${selectedDate || '…'}`}
               </p>
             </div>
           </div>
@@ -367,6 +441,23 @@ export default function App() {
             )}
 
             <PlanSelector activePlan={activePlan} onPlanChange={handlePlanChange} isSyncing={isSyncing} />
+
+            {/* Compare mode toggle */}
+            <button
+              onClick={() => setView(view === 'compare' ? 'executive' : 'compare')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg border text-sm font-medium transition-all duration-200 ${
+                view === 'compare'
+                  ? 'border-violet-500/60 bg-violet-500/10 text-violet-600 dark:text-violet-300'
+                  : 'border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
+              }`}
+              title={view === 'compare' ? 'Back to single plan view' : 'Compare all service plans'}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+              <span className="hidden sm:inline">{view === 'compare' ? 'Single' : 'Compare'}</span>
+            </button>
+
             <ThemeToggle />
 
             {/* Report (print / PDF) button */}
@@ -428,6 +519,12 @@ export default function App() {
               Try Again
             </button>
           </div>
+        ) : view === 'compare' ? (
+          <CompareView
+            data={compareData}
+            selectedMonthYear={selectedMonthYear}
+            onOpenPlan={handleOpenPlan}
+          />
         ) : view === 'executive' ? (
           <ExecutiveOverview
             metrics={executiveMetrics}

@@ -46,6 +46,44 @@ sync" text sat in a non-wrapping flex row that overflowed below ~350px
 viewports; the container now uses `flex-wrap` + `justify-end` so the sync
 stamp wraps onto its own line on narrow phones.
 
+**`src/components/DailyTable.jsx`** — sticky AREA column polish: the pinned
+province column (already sticky since v1.6.0) had its own hover color that
+mismatched the row hover, leaving a visible seam while scrolling. Rows now
+carry `group` and the sticky cell uses `group-hover` so the pinned cell and
+the scrolling cells highlight together. Verified: AREA stays pinned at
+`left: 0` through the full 924px horizontal scroll.
+
+---
+
+## [1.7.0] — 2026-09-09
+
+### 📊 Phase 3 — Portfolio Compare Mode (F4)
+
+**New `src/components/CompareView.jsx`** — renders all three service plans
+(FIBERX / BIDA / SME) side-by-side:
+- One card per plan in its accent color: achievement rate + HIT/MISS/LAG
+  badge + pace pill, projected month-end, total completed (of target),
+  to go, total incoming, mini progress bar
+- **PORTFOLIO TOTALS** card below: achievement %, total completed, target,
+  to go, and total incoming summed across all plans
+- "Open {plan}" button on each card jumps straight to that plan's executive
+  view
+
+**`src/App.jsx`** — new `compare` view:
+- Header **Compare toggle** button (active state violet) next to the plan
+  selector; toggles Single ↔ Compare
+- Compare data loads **cache-first** (instant render from warm caches,
+  thanks to Phase 1 prefetch) then background-refreshes each plan
+- `?view=compare` persists in the URL / localStorage like the other views;
+  month picker re-parses all plans without refetching
+
+**`src/components/DailyTable.jsx`** — Provincial Breakdown toolbar:
+- **Area search box** (case-insensitive substring filter, with clear button)
+- **Pace filter chips** (All / On pace / Behind / Critical) using the
+  existing run-rate pace flags
+- "X of Y areas" live counter; OVER ALL TOTAL row always stays visible;
+  friendly no-match state
+
 ---
 
 ## [1.6.0] — 2026-09-08
