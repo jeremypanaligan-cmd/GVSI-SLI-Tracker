@@ -148,6 +148,17 @@ Files: `DatePicker.jsx`, `DailyTable.jsx`.
 
 ---
 
+## 10. SLA Table — Mobile Card List ✅ DONE
+
+Installation SLA Breakdown now uses the same two-line card list on
+mobile as the Provincial Breakdown (province + `≤24h`/`≤72h`/`>72h`
+color-coded buckets | TOTAL), with OVERALL TOTAL pinned as a teal card;
+desktop keeps the full sortable table.
+
+Files: `AgingReport.jsx`.
+
+---
+
 ## Backlog / Stretch (not prioritized)
 
 - Export run-rate projections to the MTD sheet via Apps Script (pace flags in the sheet)

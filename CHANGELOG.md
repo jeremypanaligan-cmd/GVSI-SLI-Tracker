@@ -172,6 +172,20 @@ arrow at a time:
 - Existing `< Month Year >` arrows, day grid, and mobile modal all
   unchanged
 
+### 📱 Installation SLA Breakdown — Mobile Card List
+
+**`src/components/AgingReport.jsx`** — the SLA table now uses the same
+two-line card list on mobile (< sm) as the Provincial Breakdown:
+- **Left:** province name (bold) + color-coded buckets
+  (`≤24h` green / `≤72h` amber / `>72h` red)
+- **Right:** TOTAL (bold) with a "Total" subtext
+- OVERALL TOTAL pinned as a teal card at the bottom; search applies to
+  both layouts
+- Desktop (sm+) keeps the full sortable table unchanged
+  (`hidden sm:block`)
+
+---
+
 ### 📱 Mobile Date Bar & Card Readability Polish
 
 **`src/components/DatePicker.jsx`** — the "Latest available" badge no

@@ -47,6 +47,40 @@ function SortIcon({ active, direction }) {
   )
 }
 
+/**
+ * Mobile card row (two-line style, < sm): mirrors the Provincial Breakdown
+ * card list — province + color-coded SLA buckets on the left, TOTAL on the
+ * right. OVERALL TOTAL stays pinned as a teal card.
+ */
+function MobileRow({ row, overall }) {
+  return (
+    <div className={`flex items-center justify-between gap-3 px-3.5 py-3 ${overall ? 'bg-teal-50 dark:bg-teal-950/40' : ''}`}>
+      <div className="min-w-0">
+        <p className={`text-sm truncate ${overall ? 'font-black text-teal-700 dark:text-teal-300' : 'font-bold text-slate-800 dark:text-slate-100'}`}>
+          {overall ? 'OVERALL TOTAL' : row.province}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1 text-xs">
+          <span className="text-emerald-600 dark:text-emerald-400">
+            <span className="font-bold">≤24h</span> {formatNumber(row.le24)}
+          </span>
+          <span className="text-amber-600 dark:text-amber-400">
+            <span className="font-bold">≤72h</span> {formatNumber(row.le72)}
+          </span>
+          <span className="text-rose-600 dark:text-rose-400">
+            <span className="font-bold">&gt;72h</span> {formatNumber(row.gt72)}
+          </span>
+        </div>
+      </div>
+      <div className="text-right shrink-0">
+        <p className={`text-base font-black tabular-nums leading-tight ${overall ? 'text-teal-700 dark:text-teal-300' : 'text-slate-800 dark:text-slate-100'}`}>
+          {formatNumber(row.total)}
+        </p>
+        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Total</p>
+      </div>
+    </div>
+  )
+}
+
 function StatCard({ label, value, sub, tone }) {
   const tones = {
     green: 'border-emerald-200 dark:border-emerald-700/40 bg-emerald-50/60 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300',
@@ -184,7 +218,25 @@ export default function AgingReport({ data }) {
           )}
         </div>
 
-        <div className="w-full overflow-x-auto">
+        {/* Mobile card list (< sm) — two-line rows */}
+        <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-800/40">
+          {filteredRows.map((r) => (
+            <MobileRow key={r.province} row={r} />
+          ))}
+
+          {overall && (
+            <MobileRow row={overall} overall />
+          )}
+
+          {filteredRows.length === 0 && (
+            <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+              No provinces match “{search}”.
+            </div>
+          )}
+        </div>
+
+        {/* Desktop table (sm+) */}
+        <div className="hidden sm:block w-full overflow-x-auto">
           <table className="w-full border-collapse" style={{ minWidth: '640px' }}>
             <thead>
               <tr className="bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700/50">
