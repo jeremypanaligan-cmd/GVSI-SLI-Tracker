@@ -157,6 +157,21 @@ with the plan selector + all actions.
 bottom tab bar on mobile (`pb-[68px] sm:pb-4`) so it never covers the
 nav; desktop unchanged.
 
+### 📅 DatePicker Quick Jump (UI TODO #5)
+
+**`src/components/DatePicker.jsx`** — no more clicking through months one
+arrow at a time:
+- The **month/year label is now a button** (with ▾ chevron) that opens a
+  quick month/year selector: a year stepper (◀ year ▶) plus a 12-month
+  grid; picking a month jumps the calendar straight there, with the
+  current view month highlighted
+- New **Today** button in the calendar header — jumps to the current
+  month/year and, when today has data, selects it and closes (URL state
+  updates immediately); otherwise it just lands the view on the current
+  month so nearby dates are one tap away
+- Existing `< Month Year >` arrows, day grid, and mobile modal all
+  unchanged
+
 ---
 
 ## [1.6.0] — 2026-09-08

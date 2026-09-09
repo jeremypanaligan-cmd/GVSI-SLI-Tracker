@@ -76,7 +76,7 @@ state; grid unchanged on sm+.
 
 ---
 
-## 5. DatePicker Quick Jump
+## 5. DatePicker Quick Jump ✅ DONE
 
 **Problem:** navigating back to the current month from an old date requires many
 clicks.
@@ -85,6 +85,10 @@ clicks.
 keep the existing `< Month Year >` arrows.
 
 **Effort:** Low. Files: `DatePicker.jsx`.
+
+**✅ Landed:** month/year label opens a quick selector (year stepper +
+12-month grid, current month highlighted); Today button jumps to the
+current month and selects today when it has data.
 
 ---
 

@@ -39,6 +39,8 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate, lat
     const now = new Date()
     return { year: now.getFullYear(), month: now.getMonth() }
   })
+  const [quickSelectOpen, setQuickSelectOpen] = useState(false)
+  const [quickYear, setQuickYear] = useState(null)
   const ref = useRef(null)
 
   // Build lookup sets
@@ -94,6 +96,19 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate, lat
   const goPrev = () => { if (hasPrev) onSelect(dates[currentIndex - 1]) }
   const goNext = () => { if (hasNext) onSelect(dates[currentIndex + 1]) }
 
+  // Quick jump: move the calendar to the current month and select today when
+  // it has data (otherwise just land the view on the current month).
+  const goToday = () => {
+    const now = new Date()
+    setViewMonth({ year: now.getFullYear(), month: now.getMonth() })
+    setQuickSelectOpen(false)
+    const todayStr = `${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`
+    if (dates.includes(todayStr)) {
+      onSelect(todayStr)
+      setOpen(false)
+    }
+  }
+
   // Calendar grid
   const { year, month } = viewMonth
   const daysInMonth = getDaysInMonth(year, month)
@@ -109,23 +124,35 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate, lat
   // --- Shared calendar panel content ---
   const CalendarPanel = ({ isModal }) => (
     <div className={`bg-white dark:bg-slate-800/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl ${isModal ? 'w-[90vw] max-w-[360px] p-5 sm:p-4' : 'w-[300px] p-4'}`}>
-      {/* Month/Year header: < Month Year > [X if modal] */}
-      <div className="flex items-center justify-between mb-3">
+      {/* Month/Year header: < Month Year ▾ > [Today] [X if modal] */}
+      <div className="relative flex items-center justify-between mb-3 gap-1">
         <button
           onClick={() => setViewMonth(v => {
             let m = v.month - 1, y = v.year
             if (m < 0) { m = 11; y-- }
             return { year: y, month: m }
           })}
-          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition text-slate-600 dark:text-slate-400"
+          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition text-slate-600 dark:text-slate-400 shrink-0"
+          aria-label="Previous month"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+
+        {/* Month/year label — opens the quick month/year select */}
+        <button
+          onClick={() => setQuickSelectOpen(o => !o)}
+          className="flex items-center gap-1 text-sm font-semibold text-slate-800 dark:text-slate-200 hover:text-teal-600 dark:hover:text-teal-400 px-1 py-0.5 rounded-lg transition shrink-0"
+          aria-expanded={quickSelectOpen}
+          aria-label="Select month and year"
+        >
           {MONTHS[month]} {year}
-        </span>
+          <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform ${quickSelectOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
         <div className="flex items-center gap-1">
           <button
             onClick={() => setViewMonth(v => {
@@ -133,16 +160,27 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate, lat
               if (m > 11) { m = 0; y++ }
               return { year: y, month: m }
             })}
-            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition text-slate-600 dark:text-slate-400"
+            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition text-slate-600 dark:text-slate-400 shrink-0"
+            aria-label="Next month"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
           </button>
+
+          {/* Today quick jump */}
+          <button
+            onClick={goToday}
+            className="h-7 px-2 rounded-lg text-[11px] font-semibold text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/30 transition shrink-0"
+            title="Jump to today"
+          >
+            Today
+          </button>
+
           {isModal && (
             <button
               onClick={() => setOpen(false)}
-              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition text-slate-400 dark:text-slate-500"
+              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition text-slate-400 dark:text-slate-500 shrink-0"
               aria-label="Close calendar"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -151,6 +189,59 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate, lat
             </button>
           )}
         </div>
+
+        {/* Quick month/year select dropdown */}
+        {quickSelectOpen && (() => {
+          const qYear = quickYear != null ? quickYear : year
+          return (
+            <div className="absolute left-0 right-0 top-full mt-2 z-20 bg-white dark:bg-slate-800/95 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-2xl p-3">
+              {/* Year stepper */}
+              <div className="flex items-center justify-between mb-2">
+                <button
+                  onClick={() => setQuickYear(qYear - 1)}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition text-slate-600 dark:text-slate-400"
+                  aria-label="Previous year"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{qYear}</span>
+                <button
+                  onClick={() => setQuickYear(qYear + 1)}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition text-slate-600 dark:text-slate-400"
+                  aria-label="Next year"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Month grid */}
+              <div className="grid grid-cols-3 gap-1">
+                {MONTHS.map((m, i) => {
+                  const isCurrent = viewMonth.month === i && viewMonth.year === qYear
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => {
+                        setViewMonth({ year: qYear, month: i })
+                        setQuickSelectOpen(false)
+                      }}
+                      className={`px-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${isCurrent
+                        ? 'bg-teal-500 text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {m.slice(0, 3)}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       {/* Day-of-week headers */}
@@ -241,7 +332,7 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate, lat
 
       {/* Calendar toggle button */}
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => { setOpen(o => !o); setQuickSelectOpen(false) }}
         className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 focus:outline-none focus:ring-2 focus:ring-teal-500/40 transition cursor-pointer min-w-0 max-w-[130px] sm:max-w-none justify-between"
       >
         <span className="truncate">{formatDisplay(selectedDate)}</span>
