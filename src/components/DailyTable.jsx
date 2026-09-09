@@ -18,30 +18,35 @@ const PACE_FILTERS = [
   { value: 'critical', label: 'Critical' },
 ]
 
+// PACE / 7D TREND are placed before the right-sticky group so the pinned
+// MTD · TARGET · % columns never cover them when scrolling.
 const COLUMNS = [
-  { key: 'area', label: 'AREA', sticky: true, sortable: true },
-  { key: 'bf', label: 'BF', align: 'right', sortable: true },
-  { key: 'inc', label: 'INC', align: 'right', sortable: true },
-  { key: 'totalJo', label: 'TTL JO', align: 'right', bold: true, sortable: true },
-  { key: 'completedFromTotal', label: 'COMP TTL', align: 'right', sortable: true },
-  { key: 'completedFromRjo', label: 'COMP RJO', align: 'right', sortable: true },
-  { key: 'totalCompleted', label: 'TTL COMP', align: 'right', bold: true, sortable: true },
-  { key: 'rjoIncoming', label: 'RJO INC', align: 'right', sortable: true },
-  { key: 'rjoRedispatched', label: 'RJO FPMos', align: 'right', sortable: true },
-  { key: 'totalRjo', label: 'TTL RJO', align: 'right', bold: true, sortable: true },
-  { key: 'carryOver', label: 'CO', align: 'right', sortable: true },
-  { key: 'mtd', label: 'MTD', align: 'right', bold: true, sortable: true },
-  { key: 'target', label: 'TARGET', align: 'right', sortable: true },
-  { key: 'pct', label: '%', align: 'center', highlight: true, sortable: true },
-  { key: 'pace', label: 'PACE', align: 'center', sortable: false },
-  { key: 'trend', label: '7D TREND', align: 'center', sortable: false },
+  { key: 'area', label: 'AREA', sticky: true, sortable: true, width: 150 },
+  { key: 'bf', label: 'BF', align: 'right', sortable: true, width: 72 },
+  { key: 'inc', label: 'INC', align: 'right', sortable: true, width: 72 },
+  { key: 'totalJo', label: 'TTL JO', align: 'right', bold: true, sortable: true, width: 80 },
+  { key: 'completedFromTotal', label: 'COMP TTL', align: 'right', sortable: true, width: 96 },
+  { key: 'completedFromRjo', label: 'COMP RJO', align: 'right', sortable: true, width: 96 },
+  { key: 'totalCompleted', label: 'TTL COMP', align: 'right', bold: true, sortable: true, width: 100 },
+  { key: 'rjoIncoming', label: 'RJO INC', align: 'right', sortable: true, width: 88 },
+  { key: 'rjoRedispatched', label: 'RJO FPMos', align: 'right', sortable: true, width: 100 },
+  { key: 'totalRjo', label: 'TTL RJO', align: 'right', bold: true, sortable: true, width: 84 },
+  { key: 'carryOver', label: 'CO', align: 'right', sortable: true, width: 68 },
+  { key: 'pace', label: 'PACE', align: 'center', sortable: false, width: 104 },
+  { key: 'trend', label: '7D TREND', align: 'center', sortable: false, width: 112 },
+  // Right-sticky group: MTD · TARGET · % stay visible while scrolling.
+  // stickyRight = px offset from the container's right edge (width of the
+  // columns to their right).
+  { key: 'mtd', label: 'MTD', align: 'right', bold: true, sortable: true, stickyRight: 180, width: 88 },
+  { key: 'target', label: 'TARGET', align: 'right', sortable: true, stickyRight: 84, width: 96 },
+  { key: 'pct', label: '%', align: 'center', highlight: true, sortable: true, stickyRight: 0, width: 84 },
 ]
 
-function Td({ children, align = 'left', bold = false, highlight = false, className = '', sticky = false, bgColor = '' }) {
+function Td({ children, align = 'left', bold = false, highlight = false, className = '', sticky = false, stickyRight, bgColor = '', width }) {
   const alignClass = align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''
   return (
-    <td className={`px-3 py-2.5 text-sm whitespace-nowrap ${alignClass} ${bold ? 'font-bold' : 'font-medium'} ${className} ${sticky ? 'sticky left-0 z-[15] border-r border-slate-200 dark:border-slate-700/40 group-hover:bg-slate-50 dark:group-hover:bg-slate-800' : ''} ${bgColor}`}
-      style={sticky ? { minWidth: '150px' } : undefined}
+    <td className={`px-3 py-2.5 text-sm whitespace-nowrap ${alignClass} ${bold ? 'font-bold' : 'font-medium'} ${className} ${sticky ? 'sticky left-0 z-[15] border-r border-slate-200 dark:border-slate-700/40 group-hover:bg-slate-50 dark:group-hover:bg-slate-800' : ''} ${stickyRight !== undefined ? 'sticky right-0 z-[15] border-l border-slate-200 dark:border-slate-700/40 shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.35)] dark:shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.6)] group-hover:bg-slate-50 dark:group-hover:bg-slate-800' : ''} ${bgColor}`}
+      style={sticky ? { minWidth: '150px' } : stickyRight !== undefined ? { minWidth: `${width}px`, width: `${width}px`, right: `${stickyRight}px` } : width ? { minWidth: `${width}px`, width: `${width}px` } : undefined}
     >
       {children}
     </td>
@@ -274,9 +279,11 @@ export default function DailyTable({ dateData, refDate, areaTrends }) {
                 className={`px-3 py-3 text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-colors ${
                   col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''
                 } ${col.sticky ? 'sticky left-0 bg-slate-100 dark:bg-[#111c2e] z-20 border-r border-slate-200 dark:border-slate-700/40' : ''} ${
+                  col.stickyRight !== undefined ? 'sticky right-0 bg-slate-100 dark:bg-[#111c2e] z-20 border-l border-slate-200 dark:border-slate-700/40 shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.35)] dark:shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.6)]' : ''
+                } ${
                   col.sortable ? 'cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700/60 text-slate-600 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400'
                 }`}
-                style={col.sticky ? { minWidth: '140px' } : undefined}
+                style={col.sticky ? { minWidth: '140px' } : col.stickyRight !== undefined ? { minWidth: `${col.width}px`, width: `${col.width}px`, right: `${col.stickyRight}px` } : { minWidth: `${col.width}px`, width: `${col.width}px` }}
               >
                 <span className="inline-flex items-center">
                   {col.label}
@@ -306,11 +313,11 @@ export default function DailyTable({ dateData, refDate, areaTrends }) {
               <Td align="right">{formatNumber(entry.rjoRedispatched)}</Td>
               <Td align="right" bold>{formatNumber(entry.totalRjo)}</Td>
               <Td align="right">{formatNumber(entry.carryOver)}</Td>
-              <Td align="right" bold>{formatNumber(entry.mtd)}</Td>
-              <Td align="right">{formatNumber(entry.target)}</Td>
-              <Td align="center"><PctBadge value={entry.pct} /></Td>
               <Td align="center"><PaceBadge entry={entry} refDate={refDate} /></Td>
               <Td align="center"><TrendCell areaName={entry.area} areaTrends={areaTrends} /></Td>
+              <Td align="right" bold stickyRight={180} width={88} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}>{formatNumber(entry.mtd)}</Td>
+              <Td align="right" stickyRight={84} width={96} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}>{formatNumber(entry.target)}</Td>
+              <Td align="center" stickyRight={0} width={84} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}><PctBadge value={entry.pct} /></Td>
             </tr>
           ))}
 
@@ -330,11 +337,11 @@ export default function DailyTable({ dateData, refDate, areaTrends }) {
               <Td align="right">{formatNumber(dateData.overallTotal.rjoRedispatched)}</Td>
               <Td align="right" bold>{formatNumber(dateData.overallTotal.totalRjo)}</Td>
               <Td align="right">{formatNumber(dateData.overallTotal.carryOver)}</Td>
-              <Td align="right" bold>{formatNumber(dateData.overallTotal.mtd)}</Td>
-              <Td align="right">{formatNumber(dateData.overallTotal.target)}</Td>
-              <Td align="center"><PctBadge value={dateData.overallTotal.pct} /></Td>
               <Td align="center"><PaceBadge entry={dateData.overallTotal} refDate={refDate} /></Td>
               <Td align="center"><TrendCell areaName="OVER ALL TOTAL" areaTrends={areaTrends} overall /></Td>
+              <Td align="right" bold stickyRight={180} width={88} bgColor="bg-teal-50 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300">{formatNumber(dateData.overallTotal.mtd)}</Td>
+              <Td align="right" stickyRight={84} width={96} bgColor="bg-teal-50 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300">{formatNumber(dateData.overallTotal.target)}</Td>
+              <Td align="center" stickyRight={0} width={84} bgColor="bg-teal-50 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300"><PctBadge value={dateData.overallTotal.pct} /></Td>
             </tr>
           )}
 

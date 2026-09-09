@@ -1,5 +1,5 @@
-const CACHE_NAME = 'gvsi-sli-v15'
-const DATA_CACHE = 'gvsi-sli-data-v11'
+const CACHE_NAME = 'gvsi-sli-v16'
+const DATA_CACHE = 'gvsi-sli-data-v12'
 const BASE = '/GVSI-SLI-Tracker'
 
 const SHELL_ASSETS = [

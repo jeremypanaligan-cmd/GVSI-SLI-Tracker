@@ -92,15 +92,19 @@ current month and selects today when it has data.
 
 ---
 
-## 6. Table UX Hardening
+## 6. Table UX Hardening ✅ DONE
 
 **Problem:** numeric column widths shift between rows/sorts; the far-right
 columns (MTD / TARGET / %) scroll out of sight.
 
-**Solution:**
-- Fixed/consistent column widths so numbers stay aligned while sorting.
-- Optional **right-sticky** columns (MTD / TARGET) mirroring the AREA sticky
-  column, with a subtle left-fade so it is clear more columns exist.
+**Solution (landed):**
+- **Fixed column widths** — every column has a consistent `width`
+  (72–150px) so numbers stay aligned while sorting
+- **Right-sticky MTD · TARGET · % columns** — mirror the AREA sticky
+  column (offsets 180 / 84 / 0px) with a left shadow-fade; solid per-row
+  backgrounds keep them opaque while the middle columns scroll
+- PACE and 7D TREND moved before the sticky group so they're never
+  covered; OVER ALL TOTAL row gets the same teal sticky treatment
 
 **Effort:** Medium. Files: `DailyTable.jsx`.
 

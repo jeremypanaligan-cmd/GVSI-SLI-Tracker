@@ -4,58 +4,7 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
-## [1.6.1] — 2026-09-09
-
-### 📲 PWA Install Banner Restored on Mobile
-
-**`src/components/PWAInstallBanner.jsx`** — the install prompt relied entirely on the
-`beforeinstallprompt` event, which never fires on iOS and is suppressed on Android
-Chrome until engagement criteria are met (or after its native mini-infobar is
-dismissed). Rebuilt so the install option never silently disappears:
-- **iOS Safari fallback:** always shows a 3-step Share → Add to Home Screen guide
-  (no `beforeinstallprompt` support on iOS)
-- **Android fallback:** if Chrome never fires the prompt within 4s, shows manual
-  steps (⋮ menu → Install app / Add to Home screen)
-- **Faster re-show:** "Not now" dismiss expiry shortened from 7 days → 3 days
-- Desktop behavior unchanged (uses the browser's own install icon)
-
-**`public/manifest.json`** — added `id` and `display_override`
-(`["standalone", "minimal-ui", "browser"]`) so Android Chrome recognizes the app
-as installable sooner and fires `beforeinstallprompt` more reliably.
-
-**`index.html`** — removed `user-scalable=no` / `maximum-scale=1.0` viewport lock
-(no impact on screenshots — web pages cannot block OS screenshots — but restores
-pinch-zoom and accessibility gestures); added `apple-mobile-web-app-title`.
-
-**Version bump:** 1.6.0 → 1.6.1; service worker caches refreshed to
-`gvsi-sli-v15` / `gvsi-sli-data-v11` so installed clients fetch the new banner,
-manifest, and index.html immediately.
-
-### 📱 Mobile Header Overflow Fix
-
-**`src/components/ExecutiveOverview.jsx`** — the DAILY TO-DATE section header
-(title + "Latest available" badge + date navigation) previously sat in one row
-(and later relied on `flex-wrap`, which still clipped on ~400px phones where it
-barely fit). The header now **forces a stacked layout on mobile**
-(`flex-col sm:flex-row`): title on line 1, the date controls right-aligned on
-line 2 (`self-end`) below `sm`, and side-by-side only on larger screens — so
-the texts can never overflow regardless of device width.
-
-**`src/App.jsx`** — Provincial Breakdown control bar: the DatePicker + "Last
-sync" text sat in a non-wrapping flex row that overflowed below ~350px
-viewports; the container now uses `flex-wrap` + `justify-end` so the sync
-stamp wraps onto its own line on narrow phones.
-
-**`src/components/DailyTable.jsx`** — sticky AREA column polish: the pinned
-province column (already sticky since v1.6.0) had its own hover color that
-mismatched the row hover, leaving a visible seam while scrolling. Rows now
-carry `group` and the sticky cell uses `group-hover` so the pinned cell and
-the scrolling cells highlight together. Verified: AREA stays pinned at
-`left: 0` through the full 924px horizontal scroll.
-
----
-
-## [1.7.0] — 2026-09-09
+## [1.8.0] — 2026-09-10
 
 ### 📊 Phase 3 — Portfolio Compare Mode (F4)
 
@@ -172,6 +121,22 @@ arrow at a time:
 - Existing `< Month Year >` arrows, day grid, and mobile modal all
   unchanged
 
+### 📊 Table UX Hardening (UI TODO #6)
+
+**`src/components/DailyTable.jsx`** — Provincial Breakdown table now
+handles wide data much better:
+- **Fixed column widths** — every column has a consistent `width`
+  (72–150px), so numbers stay perfectly aligned while sorting
+- **Right-sticky MTD · TARGET · % columns** — mirror the AREA sticky
+  column: they stay pinned to the right edge while the middle columns
+  scroll, with a subtle left shadow-fade signaling more columns exist
+  (offsets 180 / 84 / 0px); solid per-row backgrounds keep them opaque
+- PACE and 7D TREND moved before the sticky group so they are never
+  covered while scrolling
+- Same treatment on the OVER ALL TOTAL row (teal sticky cells)
+
+---
+
 ### 📱 Installation SLA Breakdown — Mobile Card List
 
 **`src/components/AgingReport.jsx`** — the SLA table now uses the same
@@ -252,6 +217,57 @@ persisted):
 - **SLA tab** added to the mobile bottom tab bar (5 tabs: FIBERX /
   BIDA / SME / **SLA** / Compare), teal when active
 - Header subtext shows "Installation SLA Breakdown" in this view
+
+---
+
+## [1.6.1] — 2026-09-09
+
+### 📲 PWA Install Banner Restored on Mobile
+
+**`src/components/PWAInstallBanner.jsx`** — the install prompt relied entirely on the
+`beforeinstallprompt` event, which never fires on iOS and is suppressed on Android
+Chrome until engagement criteria are met (or after its native mini-infobar is
+dismissed). Rebuilt so the install option never silently disappears:
+- **iOS Safari fallback:** always shows a 3-step Share → Add to Home Screen guide
+  (no `beforeinstallprompt` support on iOS)
+- **Android fallback:** if Chrome never fires the prompt within 4s, shows manual
+  steps (⋮ menu → Install app / Add to Home screen)
+- **Faster re-show:** "Not now" dismiss expiry shortened from 7 days → 3 days
+- Desktop behavior unchanged (uses the browser's own install icon)
+
+**`public/manifest.json`** — added `id` and `display_override`
+(`["standalone", "minimal-ui", "browser"]`) so Android Chrome recognizes the app
+as installable sooner and fires `beforeinstallprompt` more reliably.
+
+**`index.html`** — removed `user-scalable=no` / `maximum-scale=1.0` viewport lock
+(no impact on screenshots — web pages cannot block OS screenshots — but restores
+pinch-zoom and accessibility gestures); added `apple-mobile-web-app-title`.
+
+**Version bump:** 1.6.0 → 1.6.1; service worker caches refreshed to
+`gvsi-sli-v15` / `gvsi-sli-data-v11` so installed clients fetch the new banner,
+manifest, and index.html immediately.
+
+### 📱 Mobile Header Overflow Fix
+
+**`src/components/ExecutiveOverview.jsx`** — the DAILY TO-DATE section header
+(title + "Latest available" badge + date navigation) previously sat in one row
+(and later relied on `flex-wrap`, which still clipped on ~400px phones where it
+barely fit). The header now **forces a stacked layout on mobile**
+(`flex-col sm:flex-row`): title on line 1, the date controls right-aligned on
+line 2 (`self-end`) below `sm`, and side-by-side only on larger screens — so
+the texts can never overflow regardless of device width.
+
+**`src/App.jsx`** — Provincial Breakdown control bar: the DatePicker + "Last
+sync" text sat in a non-wrapping flex row that overflowed below ~350px
+viewports; the container now uses `flex-wrap` + `justify-end` so the sync
+stamp wraps onto its own line on narrow phones.
+
+**`src/components/DailyTable.jsx`** — sticky AREA column polish: the pinned
+province column (already sticky since v1.6.0) had its own hover color that
+mismatched the row hover, leaving a visible seam while scrolling. Rows now
+carry `group` and the sticky cell uses `group-hover` so the pinned cell and
+the scrolling cells highlight together. Verified: AREA stays pinned at
+`left: 0` through the full 924px horizontal scroll.
 
 ---
 
