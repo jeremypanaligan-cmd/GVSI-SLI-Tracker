@@ -172,6 +172,44 @@ arrow at a time:
 - Existing `< Month Year >` arrows, day grid, and mobile modal all
   unchanged
 
+### ⏱️ New Module — Installation SLA Breakdown (shared across plans)
+
+**`src/components/AgingReport.jsx`** (new) — reads the **COMPLETED AGING
+REPORT** tab (`A1:D15`, gid `1502867991`) and presents it as the
+**Installation SLA Breakdown**:
+- Four summary stat cards: **Total Aging**, **≤24 Hours** (green),
+  **≤72 Hours** (amber), **>72 HRS** (red) — each with its share of the
+  total
+- Sortable + searchable province table with a computed per-province
+  TOTAL column and the sheet's **OVERALL TOTAL** row pinned in a teal
+  footer row; SLA buckets are color-coded (compliant / mid / breach)
+
+**Plan-agnostic by design:** the module is shared across **FIBERX + BIDA
++ SME** — it always renders the same report regardless of the active
+plan, and the data source currently lives in the FIBERX sheet (badge
+"All Plans"). Add the tab to the other sheets later and it flows
+through the same pipeline.
+
+**`src/config/plans.js`** — each plan now has an `agingUrl` pointing at
+its COMPLETED AGING REPORT tab.
+
+**`src/utils/dataFetcher.js`** — `fetchAllData`/`getCachedData` now also
+fetch + cache the SLA report (always pulled from the FIBERX sheet,
+best-effort so a missing tab never fails the main MTD/RAW load); cache
+version bumped to **v7**.
+
+**`src/utils/dataProcessor.js`** — new `parseAgingReport()` maps the
+4-column sheet (PROVINCE / ≤24h / ≤72h / >72HRS) into structured rows
+plus the overall total.
+
+**`src/App.jsx`** — new `aging` view (`?view=aging`, URL/localStorage
+persisted):
+- **SLA action button** in the desktop header + mobile ⋮ overflow menu
+  (clock icon, toggles Back)
+- **SLA tab** added to the mobile bottom tab bar (5 tabs: FIBERX /
+  BIDA / SME / **SLA** / Compare), teal when active
+- Header subtext shows "Installation SLA Breakdown" in this view
+
 ---
 
 ## [1.6.0] — 2026-09-08

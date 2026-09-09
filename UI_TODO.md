@@ -106,6 +106,24 @@ columns (MTD / TARGET / %) scroll out of sight.
 
 ---
 
+## 7. Installation SLA Breakdown Module ✅ DONE
+
+New standalone module (shared across FIBERX + BIDA + SME) reading the
+**COMPLETED AGING REPORT** tab (PROVINCE / ≤24h / ≤72h / >72HRS):
+- Summary stat cards (Total Aging + 3 buckets with % share)
+- Sortable + searchable province table with per-province TOTAL and the
+  sheet's OVERALL TOTAL footer row
+- **Plan-agnostic:** always renders the same report regardless of the
+  active plan; data source currently lives in the FIBERX sheet
+- SLA action in the desktop header + mobile ⋮ menu; **SLA tab** added
+  to the mobile bottom bar (5 tabs)
+- Best-effort fetch — a missing tab never fails the main load
+
+Files: `AgingReport.jsx` (new), `plans.js`, `dataFetcher.js`,
+`dataProcessor.js`, `App.jsx`.
+
+---
+
 ## Backlog / Stretch (not prioritized)
 
 - Export run-rate projections to the MTD sheet via Apps Script (pace flags in the sheet)

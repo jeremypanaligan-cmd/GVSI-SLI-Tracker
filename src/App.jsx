@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { fetchAllData, getCachedData, prefetchAllPlans } from './utils/dataFetcher'
 import {
   parseMTDData, extractExecutiveMetrics,
-  parseRawDailyData, getTodayStr, findClosestDate,
+  parseRawDailyData, parseAgingReport, getTodayStr, findClosestDate,
   getCurrentMonthYear, findLatestDataDate,
   buildDailyTrend, buildSeriesFromBlocks, summarizeSeries,
   computeMoMDelta,
@@ -10,6 +10,7 @@ import {
 import ExecutiveOverview from './components/ExecutiveOverview'
 import DailyTable from './components/DailyTable'
 import CompareView from './components/CompareView'
+import AgingReport from './components/AgingReport'
 import DatePicker from './components/DatePicker'
 import SyncIcon from './components/SyncIcon'
 import ThemeToggle from './components/ThemeToggle'
@@ -59,7 +60,7 @@ const initialUrlState = readUrlState()
 
 function initialView() {
   const v = initialUrlState.view || storageGet(STATE_STORAGE_KEYS.view)
-  return v === 'daily' || v === 'compare' ? v : 'executive'
+  return v === 'daily' || v === 'compare' || v === 'aging' ? v : 'executive'
 }
 
 function initialDate() {
@@ -78,6 +79,7 @@ function initialPlan() {
 export default function App() {
   const [mtdData, setMtdData] = useState(null)
   const [rawDaily, setRawDaily] = useState(null)
+  const [agingData, setAgingData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [source, setSource] = useState('none')
@@ -116,6 +118,8 @@ export default function App() {
       const daily = parseRawDailyData(result.raw)
       setRawDaily(daily)
 
+      setAgingData(parseAgingReport(result.aging))
+
       setSource(result.source)
       setLastSync(result.timestamp)
 
@@ -136,6 +140,7 @@ export default function App() {
       if (cached.mtd) {
         setMtdData(parseMTDData(cached.mtd))
         setRawDaily(parseRawDailyData(cached.raw))
+        setAgingData(parseAgingReport(cached.aging))
         setSource(cached.source)
         setLastSync(cached.timestamp)
       }
@@ -154,6 +159,7 @@ export default function App() {
     setSelectedMonthYear(getCurrentMonthYear())
     const planDaily = parseRawDailyData(result.raw)
     setRawDaily(planDaily)
+    setAgingData(parseAgingReport(result.aging))
     setSource(result.source)
     setLastSync(result.timestamp)
     const planDates = planDaily.dates || []
@@ -181,7 +187,7 @@ export default function App() {
       if (planChangeRef.current !== newPlan) return
       applyPlanData(cached)
     } else {
-      setMtdData(null); setRawDaily(null); setLoading(true)
+      setMtdData(null); setRawDaily(null); setAgingData(null); setLoading(true)
     }
 
     // 2) Background refresh: fetch fresh data and swap it in when it arrives.
@@ -426,6 +432,20 @@ export default function App() {
       ),
     },
     {
+      key: 'aging',
+      active: view === 'aging',
+      disabled: !agingData,
+      title: 'View installation SLA breakdown (≤24h / ≤72h / >72hrs)',
+      onClick: () => setView(view === 'aging' ? 'executive' : 'aging'),
+      label: view === 'aging' ? 'Back' : 'SLA',
+      icon: (
+        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <circle cx="12" cy="13" r="8" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4l2.5 2.5M9 2h6" />
+        </svg>
+      ),
+    },
+    {
       key: 'report',
       active: false,
       disabled: !executiveMetrics,
@@ -541,7 +561,7 @@ export default function App() {
                 <span className="text-teal-600 dark:text-teal-400">GVSI</span> SLI Tracker
               </h1>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:block tracking-wide truncate">
-                Gallopvision Services, Inc. — {view === 'executive' ? 'Executive Overview' : view === 'compare' ? 'Portfolio Compare' : `Daily Status — ${selectedDate || '…'}`}
+                Gallopvision Services, Inc. — {view === 'executive' ? 'Executive Overview' : view === 'compare' ? 'Portfolio Compare' : view === 'aging' ? 'Installation SLA Breakdown' : `Daily Status — ${selectedDate || '…'}`}
               </p>
             </div>
           </div>
@@ -639,6 +659,10 @@ export default function App() {
             selectedMonthYear={selectedMonthYear}
             onOpenPlan={handleOpenPlan}
           />
+        ) : view === 'aging' ? (
+          <AgingReport
+            data={agingData}
+          />
         ) : view === 'executive' ? (
           <ExecutiveOverview
             metrics={executiveMetrics}
@@ -708,6 +732,18 @@ export default function App() {
               </button>
             )
           })}
+          <button
+            onClick={() => setView(view === 'aging' ? 'executive' : 'aging')}
+            className="relative flex-1 flex flex-col items-center justify-center gap-1 py-2.5 active:bg-slate-100 dark:active:bg-slate-800/60 transition-colors"
+            aria-label="Installation SLA breakdown"
+          >
+            <span className={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-b-full transition-colors ${view === 'aging' ? 'bg-teal-500' : 'bg-transparent'}`} />
+            <svg className={`w-5 h-5 ${view === 'aging' ? 'text-teal-500' : 'text-slate-400 dark:text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <circle cx="12" cy="13" r="8" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4l2.5 2.5M9 2h6" />
+            </svg>
+            <span className={`text-[10px] font-bold tracking-wide ${view === 'aging' ? 'text-teal-500' : 'text-slate-400 dark:text-slate-500'}`}>SLA</span>
+          </button>
           <button
             onClick={() => setView(view === 'compare' ? 'executive' : 'compare')}
             className="relative flex-1 flex flex-col items-center justify-center gap-1 py-2.5 active:bg-slate-100 dark:active:bg-slate-800/60 transition-colors"

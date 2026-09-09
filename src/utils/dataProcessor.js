@@ -468,6 +468,52 @@ export function parseRawDailyData(rawData) {
   return { dates, blocks }
 }
 
+// ==================== COMPLETED AGING REPORT PARSING ====================
+
+/**
+ * Parse the COMPLETED AGING REPORT tab (A1:D15) into structured rows.
+ * Sheet layout:
+ *   PROVINCE | ≤24hours | ≤72hours | >72HRS
+ *   (area rows...) + a final "total" row.
+ *
+ * @param {Object} agingData - { headers, rows, objects } from parseCSV
+ * @returns {null|{ headers, rows, overallTotal }}
+ */
+export function parseAgingReport(agingData) {
+  if (!agingData) return null
+  const rawArrays = agingData.rows || []
+  if (rawArrays.length === 0) return null
+
+  const rows = []
+  let overallTotal = null
+
+  for (const arr of rawArrays) {
+    const province = String(arr[0] || '').trim()
+    if (!province) continue
+
+    const le24 = toNum(arr[1])
+    const le72 = toNum(arr[2])
+    const gt72 = toNum(arr[3])
+    const entry = {
+      province,
+      le24,
+      le72,
+      gt72,
+      total: le24 + le72 + gt72,
+    }
+
+    if (province.toLowerCase() === 'total') {
+      overallTotal = entry
+    } else {
+      rows.push(entry)
+    }
+  }
+
+  if (rows.length === 0 && !overallTotal) return null
+
+  return { headers: agingData.headers || [], rows, overallTotal }
+}
+
 // ==================== DATE UTILITIES ====================
 
 /**
