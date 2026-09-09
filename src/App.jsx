@@ -95,6 +95,7 @@ export default function App() {
   const [compareData, setCompareData] = useState(null)
   const [toast, setToast] = useState(null)
   const toastTimerRef = useRef(null)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const loadDataRef = useRef(null)
   // Guards against race conditions when the user rapidly switches plans: only
@@ -497,6 +498,25 @@ export default function App() {
     </button>
   )
 
+  // Mobile overflow menu (⋮) — secondary actions that don't fit the clean
+  // brand row. Reuses the header action icons so mobile and desktop match.
+  const mobileMenuItems = [
+    {
+      key: 'sync',
+      label: isSyncing ? 'Syncing…' : 'Sync Data',
+      icon: <SyncIcon spinning={isSyncing} />,
+      onClick: () => loadData(true),
+      disabled: isSyncing,
+    },
+    ...headerActions.filter(a => a.key !== 'compare').map(a => ({
+      key: a.key,
+      label: a.label,
+      icon: a.icon,
+      onClick: a.onClick,
+      disabled: a.disabled,
+    })),
+  ]
+
   return (
     <div className="min-h-screen flex flex-col font-sans">
       {/* Sync overlay */}
@@ -555,18 +575,40 @@ export default function App() {
               {renderSyncButton('desktop')}
             </div>
 
-            <ThemeToggle />
-          </div>
-        </div>
+            {/* Mobile overflow menu (⋮) — secondary actions */}
+            <div className="relative sm:hidden">
+              <button
+                onClick={() => setMobileMenuOpen(o => !o)}
+                className="w-9 h-9 rounded-lg flex items-center justify-center bg-slate-200 hover:bg-slate-300 active:bg-slate-400 dark:bg-slate-800 dark:hover:bg-slate-700 dark:active:bg-slate-600 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-600 transition-all duration-200"
+                aria-label="More actions"
+                aria-expanded={mobileMenuOpen}
+              >
+                <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h.01M12 12h.01M19 12h.01" />
+                </svg>
+              </button>
 
-        {/* Tier 2 — mobile action strip (< sm): horizontally scrollable */}
-        <div className="sm:hidden w-full px-3 pb-2.5">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            <div className="shrink-0">
-              <PlanSelector activePlan={activePlan} onPlanChange={handlePlanChange} isSyncing={isSyncing} />
+              {mobileMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setMobileMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-2 z-50 w-48 rounded-xl border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-900 shadow-2xl py-1">
+                    {mobileMenuItems.map(item => (
+                      <button
+                        key={item.key}
+                        onClick={() => { item.onClick(); setMobileMenuOpen(false) }}
+                        disabled={item.disabled}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {item.icon}
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
-            {headerActions.map(a => renderHeaderAction(a, 'mobile'))}
-            {renderSyncButton('mobile')}
+
+            <ThemeToggle />
           </div>
         </div>
       </header>
@@ -647,6 +689,39 @@ export default function App() {
         )}
       </main>
 
+      {/* Mobile bottom tab bar — native app style (< sm) */}
+      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-[#0B0F17]/95 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800/60 pb-[env(safe-area-inset-bottom)]">
+        <div className="flex items-stretch">
+          {PLAN_ORDER.map((planId) => {
+            const plan = PLANS[planId]
+            const isActive = activePlan === planId && view !== 'compare'
+            return (
+              <button
+                key={planId}
+                onClick={() => handleOpenPlan(planId)}
+                className="relative flex-1 flex flex-col items-center justify-center gap-1 py-2.5 active:bg-slate-100 dark:active:bg-slate-800/60 transition-colors"
+                aria-label={`Open ${plan.fullName}`}
+              >
+                <span className={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-b-full transition-colors ${isActive ? plan.accentClasses.bg : 'bg-transparent'}`} />
+                <PlanGlyph planId={planId} className={`w-5 h-5 ${isActive ? plan.accentClasses.text : 'text-slate-400 dark:text-slate-500'}`} />
+                <span className={`text-[10px] font-bold tracking-wide ${isActive ? plan.accentClasses.text : 'text-slate-400 dark:text-slate-500'}`}>{plan.name}</span>
+              </button>
+            )
+          })}
+          <button
+            onClick={() => setView(view === 'compare' ? 'executive' : 'compare')}
+            className="relative flex-1 flex flex-col items-center justify-center gap-1 py-2.5 active:bg-slate-100 dark:active:bg-slate-800/60 transition-colors"
+            aria-label="Portfolio compare"
+          >
+            <span className={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-b-full transition-colors ${view === 'compare' ? 'bg-violet-500' : 'bg-transparent'}`} />
+            <svg className={`w-5 h-5 ${view === 'compare' ? 'text-violet-500' : 'text-slate-400 dark:text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            <span className={`text-[10px] font-bold tracking-wide ${view === 'compare' ? 'text-violet-500' : 'text-slate-400 dark:text-slate-500'}`}>Compare</span>
+          </button>
+        </div>
+      </nav>
+
       {/* PWA Install Banner */}
       <PWAInstallBanner />
 
@@ -674,6 +749,9 @@ export default function App() {
         </div>
       )}
 
+      {/* Bottom nav spacer (mobile) — keeps footer clear of the fixed tab bar */}
+      <div className="sm:hidden h-[68px]" />
+
       {/* Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-800/60 bg-white/60 dark:bg-[#0B0F17]/60 backdrop-blur-xl">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
@@ -694,6 +772,33 @@ export default function App() {
         </div>
       </footer>
     </div>
+  )
+}
+
+/** Per-plan glyphs for the mobile bottom tab bar. */
+function PlanGlyph({ planId, className }) {
+  if (planId === 'fiberx') {
+    return (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2 12h4l3-8 4 16 3-8h6" />
+      </svg>
+    )
+  }
+  if (planId === 'bida') {
+    return (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 2l10 5.5L12 13 2 7.5 12 2z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2 12.5l10 5.5 10-5.5" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2 17.5l10 5.5 10-5.5" />
+      </svg>
+    )
+  }
+  // SME
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <rect x="2" y="7" width="20" height="14" rx="2" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16" />
+    </svg>
   )
 }
 

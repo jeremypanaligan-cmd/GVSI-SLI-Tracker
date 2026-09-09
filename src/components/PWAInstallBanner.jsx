@@ -101,7 +101,7 @@ export default function PWAInstallBanner() {
   const manualMode = !deferredPrompt
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 p-3 sm:p-4 animate-slide-up">
+    <div className="fixed bottom-0 left-0 right-0 z-50 p-3 sm:p-4 pb-[68px] sm:pb-4 animate-slide-up">
       <div className="max-w-lg mx-auto">
         <div className="bg-white dark:bg-slate-900/95 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700/50 p-4 backdrop-blur-xl">
           <div className="flex items-start gap-3">

@@ -134,6 +134,29 @@ longer stack into a long vertical scroll; they now form a horizontal
   pill; dots are tappable and smooth-scroll to that plan
 - Desktop (sm+) keeps the original 2/3-column grid unchanged
 
+### 📱 Native-Style Mobile Bottom Tab Bar
+
+**`src/App.jsx`** — the mobile header is no longer a compressed action
+strip; navigation now lives in a **fixed bottom tab bar** (native app
+pattern, `< sm` only):
+- Four evenly-spaced tabs: **FIBERX / BIDA / SME / Compare** — each with a
+  per-plan glyph icon + label; active tab shows its plan accent color
+  (indigo / red / teal) or violet for Compare, plus a slim top indicator
+  bar; inactive tabs are muted slate
+- Plan tabs route to that plan's executive view (`handleOpenPlan`); the
+  Compare tab toggles Compare ↔ Executive
+- Safe-area bottom padding (`env(safe-area-inset-bottom)`) + a mobile
+  spacer keeps the footer clear of the fixed bar
+
+**Secondary actions** (Sync Data / Report / Export / Copy Link) moved into
+a **⋮ overflow menu** on the mobile brand row (reuses the same action
+icons; closes on outside tap). Desktop header is unchanged — single row
+with the plan selector + all actions.
+
+**`src/components/PWAInstallBanner.jsx`** — banner now floats above the
+bottom tab bar on mobile (`pb-[68px] sm:pb-4`) so it never covers the
+nav; desktop unchanged.
+
 ---
 
 ## [1.6.0] — 2026-09-08
