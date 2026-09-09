@@ -308,16 +308,6 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate, lat
 
   return (
     <div className="flex items-center gap-1.5 sm:gap-2" ref={ref}>
-      {/* Badge — shows ONLY on the single latest available date in the dataset */}
-      {isLatest && (
-        <span
-          className="inline-flex items-center max-w-[90px] sm:max-w-none text-[10px] font-medium px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/40 truncate shrink-0"
-          title="Latest date with available data"
-        >
-          Latest available
-        </span>
-      )}
-
       {/* Previous arrow */}
       <button
         onClick={goPrev}
@@ -357,6 +347,18 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate, lat
       <span className="text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-600 ml-0.5 sm:ml-1 hidden sm:inline shrink-0">
         {currentIndex + 1}/{dates.length}
       </span>
+
+      {/* Badge — shows ONLY on the single latest available date in the dataset.
+          Placed AFTER the picker on mobile so the date control never shifts;
+          desktop keeps it first via sm:order-first. */}
+      {isLatest && (
+        <span
+          className="sm:order-first inline-flex items-center max-w-[90px] sm:max-w-none text-[10px] font-medium px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/40 truncate shrink-0"
+          title="Latest date with available data"
+        >
+          Latest available
+        </span>
+      )}
 
       {/* Desktop: inline popover */}
       {open && (

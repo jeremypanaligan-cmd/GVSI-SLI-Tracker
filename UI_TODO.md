@@ -124,6 +124,30 @@ Files: `AgingReport.jsx` (new), `plans.js`, `dataFetcher.js`,
 
 ---
 
+## 8. Provincial Breakdown — Mobile Card List ✅ DONE
+
+Two-line card rows on mobile (< sm), Lumen Billing list style:
+- Left: province (bold) + pace badge + `MTD x · TGT y`
+- Right: achievement % (HIT/LAG/MISS colored) + `CO n`
+- OVER ALL TOTAL pinned as a teal card; search + pace chips apply to both
+  layouts; desktop keeps the full sortable table
+
+Files: `DailyTable.jsx`.
+
+---
+
+## 9. Mobile Date Bar & Card Readability ✅ DONE
+
+- "Latest available" badge moved AFTER the date picker on mobile
+  (`[<] [date] [>] [badge]`) so the date control never shifts; desktop
+  keeps badge-first via `sm:order-first`
+- Mobile card `MTD x · TGT y` enlarged to `text-xs` bold white for
+  low-vision readability
+
+Files: `DatePicker.jsx`, `DailyTable.jsx`.
+
+---
+
 ## Backlog / Stretch (not prioritized)
 
 - Export run-rate projections to the MTD sheet via Apps Script (pace flags in the sheet)

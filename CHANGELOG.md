@@ -172,6 +172,35 @@ arrow at a time:
 - Existing `< Month Year >` arrows, day grid, and mobile modal all
   unchanged
 
+### 📱 Mobile Date Bar & Card Readability Polish
+
+**`src/components/DatePicker.jsx`** — the "Latest available" badge no
+longer shifts the date controls on mobile: it now renders **after** the
+date picker (`[<] [date] [>] [Latest available]`), keeping the picker
+stable; on desktop it stays **first** via `sm:order-first` (badge → prev
+→ toggle → next → counter).
+
+**`src/components/DailyTable.jsx`** — mobile card `MTD x · TGT y` subtext
+is now larger (`text-xs`) and high-contrast (**bold white** labels +
+numbers, `text-slate-100`/`text-slate-700`) for low-vision users.
+
+---
+
+### 📱 Provincial Breakdown — Mobile Card List
+
+**`src/components/DailyTable.jsx`** — the wide scrollable table is replaced
+by a **two-line card list on mobile** (< sm), styled like a native billing
+list (Lumen Billing reference):
+- **Left:** province name (bold) + pace badge (On pace / Behind /
+  Critical) + `MTD x · TGT y` subtext
+- **Right:** achievement % (color-coded by HIT/LAG/MISS) + `CO n` subtext
+- OVER ALL TOTAL stays pinned as a teal card at the bottom; search and
+  pace filter chips apply to both layouts
+- Desktop (sm+) keeps the full 16-column sortable table unchanged
+  (`hidden sm:block`)
+
+---
+
 ### ⏱️ New Module — Installation SLA Breakdown (shared across plans)
 
 **`src/components/AgingReport.jsx`** (new) — reads the **COMPLETED AGING

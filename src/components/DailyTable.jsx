@@ -71,6 +71,37 @@ function PaceBadge({ entry, refDate }) {
   )
 }
 
+/**
+ * Mobile card row (two-line style, < sm): mirrors the Lumen Billing list
+ * layout — province name + pace badge + MTD/TARGET ("due") on the left,
+ * achievement % ("amount") on the right.
+ */
+function MobileRow({ entry, refDate, overall }) {
+  const badge = getBadgeStyle(entry.pct)
+  const pctDisplay = Number.isFinite(entry.pct) ? formatNumber(entry.pct, '%') : '—'
+  return (
+    <div className={`flex items-center justify-between gap-3 px-3.5 py-3 ${overall ? 'bg-teal-50 dark:bg-teal-950/40' : ''}`}>
+      <div className="min-w-0">
+        <p className={`text-sm truncate ${overall ? 'font-black text-teal-700 dark:text-teal-300' : 'font-bold text-slate-800 dark:text-slate-100'}`}>
+          {entry.area}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
+          <PaceBadge entry={entry} refDate={refDate} />
+          <span className="text-xs text-slate-500 dark:text-slate-300">
+            <span className="font-bold text-slate-700 dark:text-slate-100">MTD {formatNumber(entry.mtd)}</span>
+            <span className="mx-1 opacity-60">·</span>
+            <span className="font-bold text-slate-700 dark:text-slate-100">TGT {formatNumber(entry.target)}</span>
+          </span>
+        </div>
+      </div>
+      <div className="text-right shrink-0">
+        <p className={`text-base font-black tabular-nums leading-tight ${badge.color}`}>{pctDisplay}</p>
+        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">CO {formatNumber(entry.carryOver)}</p>
+      </div>
+    </div>
+  )
+}
+
 function TrendCell({ areaName, areaTrends, overall }) {
   const tr = areaTrends && areaTrends[areaName]
   if (!tr || tr.values.length < 2) {
@@ -214,8 +245,25 @@ export default function DailyTable({ dateData, refDate, areaTrends }) {
         )}
       </div>
 
-      {/* Table */}
-      <div className="w-full overflow-x-auto">
+      {/* Mobile card list (< sm) — two-line rows */}
+      <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-800/40">
+        {filteredAreas.map((entry) => (
+          <MobileRow key={entry.area} entry={entry} refDate={refDate} />
+        ))}
+
+        {dateData.overallTotal && (
+          <MobileRow entry={dateData.overallTotal} refDate={refDate} overall />
+        )}
+
+        {filteredAreas.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+            No areas match {search ? `“${search}”` : 'the current filter'}{paceFilter !== 'all' ? ` with ${paceFilter} pace` : ''}.
+          </div>
+        )}
+      </div>
+
+      {/* Desktop table (sm+) */}
+      <div className="hidden sm:block w-full overflow-x-auto">
         <table className="w-full border-collapse" style={{ minWidth: '1100px' }}>
         <thead>
           <tr className="bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700/50">
