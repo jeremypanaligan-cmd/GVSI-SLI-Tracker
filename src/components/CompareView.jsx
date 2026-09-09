@@ -9,6 +9,7 @@
  * Data is a map: { [planId]: { mtd, raw, source, loading } } where `mtd` is
  * the parsed MTD data (parseMTDData) and `raw` the parsed RAW daily data.
  */
+import { useState, useRef } from 'react'
 import { getBadgeStyle, getPaceBadgeStyle, projectRunRate, findLatestDataDate, getTodayStr } from '../utils/dataProcessor'
 import { PLANS, PLAN_ORDER } from '../config/plans'
 
@@ -59,7 +60,7 @@ function PlanCard({ planId, entry, selectedMonthYear, onOpenPlan }) {
     : null
 
   return (
-    <div className={`relative rounded-2xl border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-[#0E1622] overflow-hidden flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${pc.badge}`}>
+    <div className={`relative rounded-2xl border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-[#0E1622] overflow-hidden flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md snap-start shrink-0 w-[85%] sm:w-auto sm:shrink sm:snap-none ${pc.badge}`}>
       {/* Accent top bar */}
       <div className={`h-1.5 w-full ${pc.bg}`} />
 
@@ -202,6 +203,31 @@ function PortfolioTotals({ data, selectedMonthYear }) {
 }
 
 export default function CompareView({ data, selectedMonthYear, onOpenPlan }) {
+  const carouselRef = useRef(null)
+  const [activeIdx, setActiveIdx] = useState(0)
+
+  // Track which card is centered while swiping (mobile carousel only).
+  const handleCarouselScroll = () => {
+    const el = carouselRef.current
+    if (!el || el.children.length === 0) return
+    const center = el.scrollLeft + el.clientWidth / 2
+    let best = 0
+    for (let i = 0; i < el.children.length; i++) {
+      const c = el.children[i]
+      const cCenter = c.offsetLeft + c.offsetWidth / 2
+      const bestCenter = el.children[best].offsetLeft + el.children[best].offsetWidth / 2
+      if (Math.abs(cCenter - center) < Math.abs(bestCenter - center)) best = i
+    }
+    setActiveIdx(best)
+  }
+
+  const jumpToCard = (i) => {
+    const el = carouselRef.current
+    if (!el || !el.children[i]) return
+    const child = el.children[i]
+    el.scrollTo({ left: child.offsetLeft - (el.clientWidth - child.offsetWidth) / 2, behavior: 'smooth' })
+  }
+
   return (
     <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-5 space-y-5">
       {/* Section header */}
@@ -215,10 +241,28 @@ export default function CompareView({ data, selectedMonthYear, onOpenPlan }) {
         </span>
       </div>
 
-      {/* Plan cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 items-stretch">
+      {/* Plan cards — horizontal snap carousel on mobile (< sm), grid on sm+ */}
+      <div
+        ref={carouselRef}
+        onScroll={handleCarouselScroll}
+        className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar -mx-3 px-3 gap-3 sm:gap-4 items-stretch sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:overflow-visible sm:snap-none sm:mx-0 sm:px-0"
+      >
         {PLAN_ORDER.map((planId) => (
           <PlanCard key={planId} planId={planId} entry={data?.[planId]} selectedMonthYear={selectedMonthYear} onOpenPlan={onOpenPlan} />
+        ))}
+      </div>
+
+      {/* Scroll indicator dots (mobile only) */}
+      <div className="sm:hidden flex items-center justify-center gap-1.5 mt-3">
+        {PLAN_ORDER.map((planId, i) => (
+          <button
+            key={planId}
+            onClick={() => jumpToCard(i)}
+            aria-label={`Go to ${PLANS[planId].name}`}
+            className={`h-1.5 rounded-full transition-all duration-300 ${
+              i === activeIdx ? 'w-4 bg-violet-500' : 'w-1.5 bg-slate-300 dark:bg-slate-700'
+            }`}
+          />
         ))}
       </div>
 

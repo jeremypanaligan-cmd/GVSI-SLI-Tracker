@@ -84,6 +84,56 @@ the scrolling cells highlight together. Verified: AREA stays pinned at
 - "X of Y areas" live counter; OVER ALL TOTAL row always stays visible;
   friendly no-match state
 
+### 🧭 Header Decluttering — 2-Tier App Bar (UI TODO #1)
+
+**`src/App.jsx`** — restructured the sticky header so the mobile "tab" is no
+longer a cramped multi-row wrap:
+- **Tier 1 (brand row, mobile):** SLI logo + truncated title + compact
+  status pill (pulsing dot + time-ago, UI TODO #2) + theme toggle — 4
+  elements, clean
+- **Tier 2 (action strip, mobile):** horizontally scrollable bar
+  (`overflow-x-auto` + new `.no-scrollbar` utility in `index.css`) holding
+  the plan tabs (FIBERX/BIDA/SME) + Compare + Report + Export + Sync as
+  icon+label buttons
+- **Desktop (sm+):** unchanged single row — status pill (countdown + time
+  ago) + plan selector + Compare/Report/Export/Sync + theme toggle
+- Compare/Report/Export/Sync are now shared action definitions rendered by
+  both breakpoints (`headerActions` + `renderHeaderAction`), so the two
+  layouts can never drift apart; also fixed a pre-existing stray quote in
+  the Sync button className (`shadow-lg'`)
+
+### 📉 Daily To-Date Cards — Sparklines Removed
+
+**`src/components/ExecutiveOverview.jsx`** — removed the small 7-day
+sparkline line-charts under each Daily To-Date metric value, keeping only the
+compact day-over-day delta (e.g. `-9 (1%)`, `+90 (115%)`). Cleaner numbers-only
+look; the 7D TREND column in the Provincial Breakdown table still uses
+sparklines. Unused `Sparkline` import dropped from this file.
+
+### 🔗 Copy Snapshot Link (UI TODO #3)
+
+**New `src/utils/copyLink.js`** — `copySnapshotLink()` copies the current
+shareable URL (`?plan=&date=&month=&view=`, kept in sync by urlState) to the
+clipboard via the async Clipboard API, with a hidden-textarea
+`execCommand('copy')` fallback for older browsers / non-secure contexts.
+
+**`src/App.jsx`** — new **Copy Link** action in the shared header buttons
+(mobile strip + desktop row): copies the current snapshot link and shows a
+"Link copied" toast (auto-dismisses after ~2.2s). Self-updating link — anyone
+who opens it gets fresh data for that exact screen state.
+
+### 🎠 Compare Mode Mobile Carousel (UI TODO #4)
+
+**`src/components/CompareView.jsx`** — on phones the three plan cards no
+longer stack into a long vertical scroll; they now form a horizontal
+**snap-scroll carousel**:
+- `flex + overflow-x-auto + snap-x snap-mandatory`, each card `snap-start`
+  `w-[85%]` so the next plan peeks at the edge (swipe to compare FIBERX /
+  BIDA / SME); hidden scrollbar via the existing `.no-scrollbar` utility
+- **Scroll indicator dots** (mobile only): active card is a wider violet
+  pill; dots are tappable and smooth-scroll to that plan
+- Desktop (sm+) keeps the original 2/3-column grid unchanged
+
 ---
 
 ## [1.6.0] — 2026-09-08

@@ -18,6 +18,7 @@ import { PLANS, PLAN_ORDER, DEFAULT_PLAN } from './config/plans'
 import PWAInstallBanner from './components/PWAInstallBanner'
 import ExecutiveReportModal from './components/ExecutiveReportModal'
 import { exportRawDataCSV } from './utils/exportCSV'
+import { copySnapshotLink } from './utils/copyLink'
 import { readUrlState, writeUrlState, STATE_STORAGE_KEYS } from './utils/urlState'
 
 const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000 // 5 minutes
@@ -92,6 +93,8 @@ export default function App() {
   const [activePlan, setActivePlan] = useState(initialPlan)
   const [reportOpen, setReportOpen] = useState(false)
   const [compareData, setCompareData] = useState(null)
+  const [toast, setToast] = useState(null)
+  const toastTimerRef = useRef(null)
 
   const loadDataRef = useRef(null)
   // Guards against race conditions when the user rapidly switches plans: only
@@ -397,6 +400,103 @@ export default function App() {
   const freshness = getFreshnessStyle(dataAge, isOnline)
   const timeAgo = formatTimeAgo(lastSync)
 
+  // Copy the current view state as a shareable link + show a confirmation toast.
+  const handleCopyLink = useCallback(async () => {
+    const ok = await copySnapshotLink()
+    setToast(ok ? 'Link copied' : 'Could not copy link')
+    clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setToast(null), 2200)
+  }, [])
+
+  // ── Header action buttons (Compare / Copy Link / Report / Export) ──
+  // Shared by the desktop single-row header and the mobile scroll strip so
+  // the two breakpoints never drift apart.
+  const headerActions = [
+    {
+      key: 'compare',
+      active: view === 'compare',
+      title: view === 'compare' ? 'Back to single plan view' : 'Compare all service plans',
+      onClick: () => setView(view === 'compare' ? 'executive' : 'compare'),
+      label: view === 'compare' ? 'Single' : 'Compare',
+      icon: (
+        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+        </svg>
+      ),
+    },
+    {
+      key: 'report',
+      active: false,
+      disabled: !executiveMetrics,
+      title: 'Generate executive report (print / PDF)',
+      onClick: () => setReportOpen(true),
+      label: 'Report',
+      icon: (
+        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      ),
+    },
+    {
+      key: 'export',
+      active: false,
+      disabled: !rawDaily || rawDaily.dates?.length === 0,
+      title: 'Export all RAW DATA as CSV',
+      onClick: () => exportRawDataCSV(rawDaily, activePlan),
+      label: 'Export',
+      icon: (
+        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      ),
+    },
+    {
+      key: 'copy',
+      active: false,
+      title: 'Copy shareable link for this view',
+      onClick: handleCopyLink,
+      label: 'Copy Link',
+      icon: (
+        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 010 5.656l-4 4a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l4-4a4 4 0 015.656 5.656l-1.5 1.5" />
+        </svg>
+      ),
+    },
+  ]
+
+  const renderHeaderAction = (a, size) => (
+    <button
+      key={a.key}
+      onClick={a.onClick}
+      disabled={a.disabled}
+      title={a.title}
+      className={`flex items-center gap-1.5 rounded-lg border font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 ${
+        size === 'mobile' ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'
+      } ${
+        a.active
+          ? 'border-violet-500/60 bg-violet-500/10 text-violet-600 dark:text-violet-300'
+          : 'border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
+      }`}
+    >
+      {a.icon}
+      <span>{a.label}</span>
+    </button>
+  )
+
+  const renderSyncButton = (size) => (
+    <button
+      onClick={() => loadData(true)}
+      disabled={isSyncing}
+      className={`flex items-center gap-2 rounded-lg bg-teal-600 hover:bg-teal-500 active:bg-teal-700 text-white font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shrink-0 ${
+        size === 'mobile' ? 'px-2.5 py-1.5 text-xs' : 'px-4 py-2 text-sm'
+      }`}
+      style={{ backgroundColor: currentPlan.accentHex }}
+    >
+      <SyncIcon spinning={isSyncing} />
+      <span>{isSyncing ? 'Syncing…' : 'Sync Data'}</span>
+    </button>
+  )
+
   return (
     <div className="min-h-screen flex flex-col font-sans">
       {/* Sync overlay */}
@@ -411,23 +511,23 @@ export default function App() {
 
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/80 dark:bg-[#0B0F17]/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60">
-        <div className="w-full px-3 sm:px-6 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center font-black text-white text-sm tracking-tight shadow-lg shadow-teal-500/20">
+        <div className="w-full px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center font-black text-white text-sm tracking-tight shadow-lg shadow-teal-500/20 shrink-0">
               SLI
             </div>
-            <div>
-              <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight tracking-tight">
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight tracking-tight truncate">
                 <span className="text-teal-600 dark:text-teal-400">GVSI</span> SLI Tracker
               </h1>
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:block tracking-wide">
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:block tracking-wide truncate">
                 Gallopvision Services, Inc. — {view === 'executive' ? 'Executive Overview' : view === 'compare' ? 'Portfolio Compare' : `Daily Status — ${selectedDate || '…'}`}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap justify-end">
-            {/* Consolidated Status Pill: countdown + time ago */}
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            {/* Desktop status pill: countdown + time ago */}
             {lastSync && (
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60" title={`Last updated: ${lastSync.toLocaleString()} • Auto-refreshes every 5 min`}>                <svg className="w-3 h-3 text-slate-400 dark:text-slate-500 animate-spin" style={{ animationDuration: '3s' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -440,61 +540,33 @@ export default function App() {
               </div>
             )}
 
-            <PlanSelector activePlan={activePlan} onPlanChange={handlePlanChange} isSyncing={isSyncing} />
+            {/* Mobile compact status pill: pulsing dot + time ago */}
+            {lastSync && (
+              <div className="sm:hidden flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60" title={`Last updated: ${lastSync.toLocaleString()} • Auto-refreshes every 5 min`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${freshness.dot}`} />
+                <span className={freshness.text}>{isSyncing ? 'Syncing…' : timeAgo}</span>
+              </div>
+            )}
 
-            {/* Compare mode toggle */}
-            <button
-              onClick={() => setView(view === 'compare' ? 'executive' : 'compare')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg border text-sm font-medium transition-all duration-200 ${
-                view === 'compare'
-                  ? 'border-violet-500/60 bg-violet-500/10 text-violet-600 dark:text-violet-300'
-                  : 'border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
-              }`}
-              title={view === 'compare' ? 'Back to single plan view' : 'Compare all service plans'}
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-              </svg>
-              <span className="hidden sm:inline">{view === 'compare' ? 'Single' : 'Compare'}</span>
-            </button>
+            {/* Desktop controls — single row (sm+) */}
+            <div className="hidden sm:flex items-center gap-1.5 sm:gap-2">
+              <PlanSelector activePlan={activePlan} onPlanChange={handlePlanChange} isSyncing={isSyncing} />
+              {headerActions.map(a => renderHeaderAction(a, 'desktop'))}
+              {renderSyncButton('desktop')}
+            </div>
 
             <ThemeToggle />
+          </div>
+        </div>
 
-            {/* Report (print / PDF) button */}
-            <button
-              onClick={() => setReportOpen(true)}
-              disabled={!executiveMetrics}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Generate executive report (print / PDF)"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span className="hidden sm:inline">Report</span>
-            </button>
-
-            {/* Export CSV button */}
-            <button
-              onClick={() => exportRawDataCSV(rawDaily, activePlan)}
-              disabled={!rawDaily || rawDaily.dates?.length === 0}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Export all RAW DATA as CSV"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span className="hidden sm:inline">Export</span>
-            </button>
-
-            <button
-              onClick={() => loadData(true)}
-              disabled={isSyncing}
-              className="flex items-center gap-2 px-2 py-1.5 sm:px-4 sm:py-2 rounded-lg bg-teal-600 hover:bg-teal-500 active:bg-teal-700 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg'
-              style={{ backgroundColor: currentPlan.accentHex }}"
-            >
-              <SyncIcon spinning={isSyncing} />
-              <span className="hidden sm:inline">{isSyncing ? 'Syncing…' : 'Sync Data'}</span>
-            </button>
+        {/* Tier 2 — mobile action strip (< sm): horizontally scrollable */}
+        <div className="sm:hidden w-full px-3 pb-2.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            <div className="shrink-0">
+              <PlanSelector activePlan={activePlan} onPlanChange={handlePlanChange} isSyncing={isSyncing} />
+            </div>
+            {headerActions.map(a => renderHeaderAction(a, 'mobile'))}
+            {renderSyncButton('mobile')}
           </div>
         </div>
       </header>
@@ -590,6 +662,16 @@ export default function App() {
           momDelta={momDelta}
           onClose={() => setReportOpen(false)}
         />
+      )}
+
+      {/* Toast notification (e.g. "Link copied") */}
+      {toast && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[70] px-4 py-2 rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-semibold shadow-2xl animate-slide-up flex items-center gap-2 pointer-events-none">
+          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          {toast}
+        </div>
       )}
 
       {/* Footer */}

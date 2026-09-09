@@ -59,6 +59,15 @@
   background: #475569;
 }
 
+/* ── Hide scrollbar (mobile header action strip) ── */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* ── Badge pulse animation ── */
 @keyframes pulse-green {
   0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }

@@ -1,6 +1,5 @@
 import { getBadgeStyle, getTodayStr, projectRunRate, getPaceBadgeStyle } from '../utils/dataProcessor'
 import DatePicker from './DatePicker'
-import Sparkline from './Sparkline'
 
 export default function ExecutiveOverview({ metrics, selectedDate, availableDates, latestDataDate, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail, plan, momDelta, dailyTrends }) {
   if (!metrics) {
@@ -299,7 +298,7 @@ function DailyMetricCard({ label, value, icon, subtitle, trend }) {
 }
 
 /**
- * Compact sparkline + day-over-day delta used under daily metric values.
+ * Day-over-day delta shown under daily metric values (no sparkline).
  */
 function CardTrend({ trend, tone }) {
   if (!trend || trend.values.length < 2) return null
@@ -307,10 +306,9 @@ function CardTrend({ trend, tone }) {
   const flat = trend.dayDelta != null && trend.dayDelta === 0
   const dark = tone !== 'light'
   return (
-    <div className="flex items-center justify-between gap-2 mt-1.5">
-      <Sparkline data={trend.values} width={54} height={16} positive={up || flat} />
+    <div className="mt-1.5">
       <span
-        className={`inline-flex items-center gap-0.5 text-[9px] font-bold shrink-0 ${
+        className={`inline-flex items-center gap-0.5 text-[9px] font-bold ${
           flat ? (dark ? 'text-slate-500 dark:text-slate-400' : 'text-teal-700/80 dark:text-teal-300/80')
             : up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
         }`}

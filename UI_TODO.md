@@ -5,7 +5,7 @@ problem, the proposed solution, and the rough effort. Check items off as they la
 
 ---
 
-## 1. Header Decluttering (2-Tier App Bar) — 🔥 Priority
+## 1. Header Decluttering (2-Tier App Bar) — 🔥 Priority ✅ DONE
 
 **Problem:** On mobile the top header is a cramped multi-row wrap — brand +
 3 plan pills + Compare + Theme + Report + Export + Sync all compete for ~360px.
@@ -24,9 +24,12 @@ overflow menu (⋮) — fewer visible controls, 2 taps to reach actions.
 
 **Effort:** Medium (layout-only, no data logic changes). Files: `App.jsx`.
 
+**✅ Landed:** 2-tier app bar shipped — brand row + scrollable action strip on
+mobile; single row on desktop; shared `headerActions` for both breakpoints.
+
 ---
 
-## 2. Mobile Status Pill
+## 2. Mobile Status Pill ✅ DONE
 
 **Problem:** the countdown / time-ago pill is `hidden sm:flex` — mobile users get
 no "last sync" / freshness indicator.
@@ -36,9 +39,10 @@ no "last sync" / freshness indicator.
 
 **Effort:** Low. Files: `App.jsx`.
 
----
+**✅ Landed:** compact pill (pulsing dot + time-ago, e.g. "just now") in Tier 1
+on mobile; full countdown pill retained on desktop.
 
-## 3. Copy Snapshot Link — Quick Win
+## 3. Copy Snapshot Link — Quick Win ✅ DONE
 
 **Problem:** URL state persistence exists (Phase 1), but there is no way for an
 executive to *grab* the current state as a shareable link. (Roadmap F3 part 2 —
@@ -50,9 +54,13 @@ Self-updating link — always shows fresh data when opened.
 
 **Effort:** Low. Files: `App.jsx`, new small `CopyLink` helper/component.
 
+**✅ Landed:** Copy Link button in the shared header actions (mobile strip +
+desktop row); new `src/utils/copyLink.js` (Clipboard API + execCommand
+fallback); "Link copied" toast (~2.2s auto-dismiss).
+
 ---
 
-## 4. Compare Mode Mobile Polish
+## 4. Compare Mode Mobile Polish ✅ DONE
 
 **Problem:** on phones the 3 plan cards stack vertically — long scroll to compare.
 
@@ -61,6 +69,10 @@ mandatory`, snap per card, swipe between FIBERX / BIDA / SME); grid stays on
 sm+.
 
 **Effort:** Low–Medium. Files: `CompareView.jsx`.
+
+**✅ Landed:** snap carousel (`snap-x snap-mandatory`, cards `snap-start`
+w-[85%] with next-plan peek) + tappable scroll-indicator dots with active
+state; grid unchanged on sm+.
 
 ---
 
