@@ -31,7 +31,7 @@ function getFirstDayOfMonth(year, month) {
   return new Date(year, month, 1).getDay()
 }
 
-export default function DatePicker({ dates, selectedDate, onSelect, maxDate, latestDataDate }) {
+export default function DatePicker({ dates, selectedDate, onSelect, maxDate, latestDataDate, badgeBefore = false }) {
   const [open, setOpen] = useState(false)
   const [viewMonth, setViewMonth] = useState(() => {
     const sel = parseDate(selectedDate)
@@ -92,6 +92,19 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate, lat
   // Falls back to the last array entry when no explicit latestDataDate is given.
   const latestDate = latestDataDate || (dates.length > 0 ? dates[dates.length - 1] : null)
   const isLatest = latestDate != null && selectedDate === latestDate
+
+  // Badge — shows ONLY on the single latest available date in the dataset.
+  // `badgeBefore` renders it ahead of the date controls (Executive Overview);
+  // otherwise it sits after the controls on mobile and leads on desktop via
+  // sm:order-first (Provincial Breakdown keeps this default behavior).
+  const latestBadge = isLatest ? (
+    <span
+      className={`${badgeBefore ? '' : 'sm:order-first'} inline-flex items-center max-w-[90px] sm:max-w-none text-[10px] font-medium px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/40 truncate shrink-0`}
+      title="Latest date with available data"
+    >
+      Latest available
+    </span>
+  ) : null
 
   const goPrev = () => { if (hasPrev) onSelect(dates[currentIndex - 1]) }
   const goNext = () => { if (hasNext) onSelect(dates[currentIndex + 1]) }
@@ -308,6 +321,9 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate, lat
 
   return (
     <div className="flex items-center gap-1.5 sm:gap-2" ref={ref}>
+      {/* Latest-available badge — ahead of the controls when badgeBefore is set */}
+      {badgeBefore && latestBadge}
+
       {/* Previous arrow */}
       <button
         onClick={goPrev}
@@ -348,17 +364,9 @@ export default function DatePicker({ dates, selectedDate, onSelect, maxDate, lat
         {currentIndex + 1}/{dates.length}
       </span>
 
-      {/* Badge — shows ONLY on the single latest available date in the dataset.
-          Placed AFTER the picker on mobile so the date control never shifts;
-          desktop keeps it first via sm:order-first. */}
-      {isLatest && (
-        <span
-          className="sm:order-first inline-flex items-center max-w-[90px] sm:max-w-none text-[10px] font-medium px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/40 truncate shrink-0"
-          title="Latest date with available data"
-        >
-          Latest available
-        </span>
-      )}
+      {/* Latest-available badge — default position (after controls on mobile,
+          first on desktop). Only rendered when badgeBefore is not set. */}
+      {!badgeBefore && latestBadge}
 
       {/* Desktop: inline popover */}
       {open && (

@@ -169,6 +169,9 @@ export default function App() {
   }, [])
 
   const handlePlanChange = useCallback(async (newPlan) => {
+    // Single active selection: picking a plan exits SLA / Compare modes so the
+    // plan filter becomes the only highlighted navigation item.
+    setView(v => (v === 'aging' || v === 'compare' ? 'executive' : v))
     if (newPlan === activePlan) return
     planChangeRef.current = newPlan
     setActivePlan(newPlan)
@@ -415,22 +418,10 @@ export default function App() {
     toastTimerRef.current = setTimeout(() => setToast(null), 2200)
   }, [])
 
-  // ── Header action buttons (Compare / Copy Link / Report / Export) ──
-  // Shared by the desktop single-row header and the mobile scroll strip so
-  // the two breakpoints never drift apart.
+  // ── Header action buttons (SLA / Report / Export / Copy Link) ──
+  // Shared by the mobile overflow menu and the WebView navbar utility group
+  // so the two breakpoints never drift apart.
   const headerActions = [
-    {
-      key: 'compare',
-      active: view === 'compare',
-      title: view === 'compare' ? 'Back to single plan view' : 'Compare all service plans',
-      onClick: () => setView(view === 'compare' ? 'executive' : 'compare'),
-      label: view === 'compare' ? 'Single' : 'Compare',
-      icon: (
-        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-        </svg>
-      ),
-    },
     {
       key: 'aging',
       active: view === 'aging',
@@ -485,38 +476,6 @@ export default function App() {
     },
   ]
 
-  const renderHeaderAction = (a, size) => (
-    <button
-      key={a.key}
-      onClick={a.onClick}
-      disabled={a.disabled}
-      title={a.title}
-      className={`flex items-center gap-1.5 rounded-lg border font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 ${
-        size === 'mobile' ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'
-      } ${
-        a.active
-          ? 'border-violet-500/60 bg-violet-500/10 text-violet-600 dark:text-violet-300'
-          : 'border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
-      }`}
-    >
-      {a.icon}
-      <span>{a.label}</span>
-    </button>
-  )
-
-  const renderSyncButton = (size) => (
-    <button
-      onClick={() => loadData(true)}
-      disabled={isSyncing}
-      className={`flex items-center gap-2 rounded-lg bg-teal-600 hover:bg-teal-500 active:bg-teal-700 text-white font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shrink-0 ${
-        size === 'mobile' ? 'px-2.5 py-1.5 text-xs' : 'px-4 py-2 text-sm'
-      }`}
-      style={{ backgroundColor: currentPlan.accentHex }}
-    >
-      <SyncIcon spinning={isSyncing} />
-      <span>{isSyncing ? 'Syncing…' : 'Sync Data'}</span>
-    </button>
-  )
 
   // Mobile overflow menu (⋮) — secondary actions that don't fit the clean
   // brand row. Reuses the header action icons so mobile and desktop match.
@@ -528,13 +487,20 @@ export default function App() {
       onClick: () => loadData(true),
       disabled: isSyncing,
     },
-    ...headerActions.filter(a => a.key !== 'compare').map(a => ({
+    // SLA is excluded — it already lives in the bottom navigation bar.
+    ...headerActions.filter(a => a.key !== 'aging').map(a => ({
       key: a.key,
       label: a.label,
       icon: a.icon,
       onClick: a.onClick,
       disabled: a.disabled,
     })),
+  ]
+
+  const viewTabs = [
+    { id: 'executive', label: 'Executive', view: 'executive', active: view === 'executive' },
+    { id: 'daily', label: 'Provincial', view: 'daily', active: view === 'daily' },
+    { id: 'compare', label: 'Compare', view: 'compare', active: view === 'compare' },
   ]
 
   return (
@@ -550,7 +516,9 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 dark:bg-[#0B0F17]/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60">
+      <header className="sticky top-0 z-40">
+        {/* Mobile header (< md) — keeps existing mobile navigation behavior */}
+        <div className="md:hidden bg-white/80 dark:bg-[#0B0F17]/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60">
         <div className="w-full px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center font-black text-white text-sm tracking-tight shadow-lg shadow-teal-500/20 shrink-0">
@@ -588,15 +556,8 @@ export default function App() {
               </div>
             )}
 
-            {/* Desktop controls — single row (sm+) */}
-            <div className="hidden sm:flex items-center gap-1.5 sm:gap-2">
-              <PlanSelector activePlan={activePlan} onPlanChange={handlePlanChange} isSyncing={isSyncing} />
-              {headerActions.map(a => renderHeaderAction(a, 'desktop'))}
-              {renderSyncButton('desktop')}
-            </div>
-
             {/* Mobile overflow menu (⋮) — secondary actions */}
-            <div className="relative sm:hidden">
+            <div className="relative md:hidden">
               <button
                 onClick={() => setMobileMenuOpen(o => !o)}
                 className="w-9 h-9 rounded-lg flex items-center justify-center bg-slate-200 hover:bg-slate-300 active:bg-slate-400 dark:bg-slate-800 dark:hover:bg-slate-700 dark:active:bg-slate-600 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-600 transition-all duration-200"
@@ -629,6 +590,100 @@ export default function App() {
             </div>
 
             <ThemeToggle />
+          </div>
+        </div>
+        </div>
+
+        {/* WebView / Desktop / Tablet navbar (md+) */}
+        <div className="hidden md:block bg-[#070A0F]/80 backdrop-blur-md border-b border-slate-800/80">
+          <div className="w-full px-4 lg:px-6 py-2.5 lg:py-3">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+
+              {/* Left — Branding & Active Context */}
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center font-black text-white text-sm tracking-tight shadow-lg shadow-teal-500/20 shrink-0">
+                  SLI
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-[15px] font-bold text-white leading-tight tracking-tight truncate">
+                    <span className="text-teal-400">GVSI</span> SLI Tracker
+                  </h1>
+                  <p className="text-xs text-slate-400 tracking-wide truncate">
+                    Gallopvision Services, Inc. — Daily Status
+                  </p>
+                </div>
+              </div>
+
+              {/* Center — Main View Navigation */}
+              <nav aria-label="Main views" className="flex items-center gap-1 bg-slate-800/40 border border-slate-700/50 rounded-lg p-1 w-full lg:w-auto lg:shrink-0">
+                {viewTabs.map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setView(tab.view)}
+                    aria-current={tab.active ? 'page' : undefined}
+                    className={`flex-1 lg:flex-none px-3 lg:px-4 py-1.5 rounded-md text-xs lg:text-sm font-semibold tracking-wide whitespace-nowrap transition-all duration-200 ${
+                      tab.active
+                        ? 'bg-slate-700/80 text-white shadow-sm ring-1 ring-white/10'
+                        : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
+
+              {/* Right — Plan switcher, Utilities, Sync, Theme */}
+              <div className="flex items-center justify-between lg:justify-end gap-2 lg:gap-3 shrink-0">
+                <PlanSelector
+                  variant="navbar"
+                  activePlan={view === 'aging' || view === 'compare' ? null : activePlan}
+                  onPlanChange={handlePlanChange}
+                  isSyncing={isSyncing}
+                />
+
+                {/* Icon-only utilities in a frosted wrapper */}
+                <div className="flex items-center gap-1 bg-slate-800/40 border border-slate-700/50 rounded-lg p-1">
+                  {headerActions.map(a => (
+                    <button
+                      key={a.key}
+                      onClick={a.onClick}
+                      disabled={a.disabled}
+                      title={a.title}
+                      aria-label={a.label}
+                      className={`w-8 h-8 lg:w-9 lg:h-9 rounded-md flex items-center justify-center transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed ${
+                        a.active
+                          ? 'bg-white/10 text-white ring-1 ring-white/20'
+                          : 'text-slate-400 hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      {a.icon}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Primary CTA — Sync Data + inline live time badge (no floating) */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => loadData(true)}
+                    disabled={isSyncing}
+                    title={`Sync now • Last updated: ${lastSync ? lastSync.toLocaleString() : 'never'} • Auto-refreshes every 5 min${refreshCountdown != null ? ` • Next refresh in ${Math.floor(refreshCountdown / 60)}:${String(refreshCountdown % 60).padStart(2, '0')}` : ''}`}
+                    className="flex items-center gap-2 rounded-lg px-3 lg:px-4 py-1.5 lg:py-2 text-xs lg:text-sm font-semibold text-white hover:opacity-90 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-black/20 shrink-0"
+                    style={{ backgroundColor: currentPlan.accentHex }}
+                  >
+                    <SyncIcon spinning={isSyncing} />
+                    <span>{isSyncing ? 'Syncing…' : 'Sync Data'}</span>
+                  </button>
+                  {lastSync && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800/60 border border-slate-700/50 text-[10px] font-semibold text-slate-300 whitespace-nowrap">
+                      <span className={`w-1.5 h-1.5 rounded-full ${freshness.dot}`} />
+                      {isSyncing ? 'Syncing…' : timeAgo}
+                    </span>
+                  )}
+                </div>
+
+                <ThemeToggle />
+              </div>
+            </div>
           </div>
         </div>
       </header>
@@ -680,10 +735,11 @@ export default function App() {
         ) : (
           <div className="h-full flex flex-col">
             {/* Control bar */}
-            <div className="w-full px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800/40">
+            <div className="w-full px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between md:justify-end gap-3 border-b border-slate-200 dark:border-slate-800/40">
+              {/* WebView/Desktop only: back button hidden — the navbar tabs (Executive | Provincial | Compare) handle navigation */}
               <button
                 onClick={() => setView('executive')}
-                className="flex items-center gap-1.5 text-xs font-medium text-teal-600 dark:text-teal-400 hover:text-teal-500 dark:hover:text-teal-300 transition"
+                className="flex md:hidden items-center gap-1.5 text-xs font-medium text-teal-600 dark:text-teal-400 hover:text-teal-500 dark:hover:text-teal-300 transition"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -714,46 +770,53 @@ export default function App() {
       </main>
 
       {/* Mobile bottom tab bar — native app style (< sm) */}
-      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-[#0B0F17]/95 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800/60 pb-[env(safe-area-inset-bottom)]">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-[#0B0F17]/95 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800/60 pb-[env(safe-area-inset-bottom)]">
         <div className="flex items-stretch">
           {PLAN_ORDER.map((planId) => {
             const plan = PLANS[planId]
-            const isActive = activePlan === planId && view !== 'compare'
+            const isActive = activePlan === planId && view !== 'aging' && view !== 'compare'
             return (
               <button
                 key={planId}
                 onClick={() => handleOpenPlan(planId)}
-                className="relative flex-1 flex flex-col items-center justify-center gap-1 py-2.5 active:bg-slate-100 dark:active:bg-slate-800/60 transition-colors"
+                className="relative flex-1 flex flex-col items-center justify-center py-2.5 active:bg-slate-100 dark:active:bg-slate-800/60 transition-colors"
                 aria-label={`Open ${plan.fullName}`}
               >
                 <span className={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-b-full transition-colors ${isActive ? plan.accentClasses.bg : 'bg-transparent'}`} />
-                <PlanGlyph planId={planId} className={`w-5 h-5 ${isActive ? plan.accentClasses.text : 'text-slate-400 dark:text-slate-500'}`} />
-                <span className={`text-[10px] font-bold tracking-wide ${isActive ? plan.accentClasses.text : 'text-slate-400 dark:text-slate-500'}`}>{plan.name}</span>
+                {/* Active tab micro-interaction: zoom + elevate icon & label, inactive stays muted */}
+                <span className={`flex flex-col items-center justify-center gap-1 transition-all duration-200 ease-out ${isActive ? 'scale-110 -translate-y-0.5' : 'scale-100'}`}>
+                  <PlanGlyph planId={planId} className={`w-5 h-5 transition-all duration-200 ease-out ${isActive ? `${plan.accentClasses.text} ${plan.accentClasses.glow}` : 'text-slate-400 dark:text-slate-500'}`} />
+                  <span className={`text-[10px] font-bold tracking-wide transition-colors duration-200 ${isActive ? plan.accentClasses.text : 'text-slate-400 dark:text-slate-500'}`}>{plan.name}</span>
+                </span>
               </button>
             )
           })}
           <button
             onClick={() => setView(view === 'aging' ? 'executive' : 'aging')}
-            className="relative flex-1 flex flex-col items-center justify-center gap-1 py-2.5 active:bg-slate-100 dark:active:bg-slate-800/60 transition-colors"
+            className="relative flex-1 flex flex-col items-center justify-center py-2.5 active:bg-slate-100 dark:active:bg-slate-800/60 transition-colors"
             aria-label="Installation SLA breakdown"
           >
             <span className={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-b-full transition-colors ${view === 'aging' ? 'bg-teal-500' : 'bg-transparent'}`} />
-            <svg className={`w-5 h-5 ${view === 'aging' ? 'text-teal-500' : 'text-slate-400 dark:text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <circle cx="12" cy="13" r="8" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4l2.5 2.5M9 2h6" />
-            </svg>
-            <span className={`text-[10px] font-bold tracking-wide ${view === 'aging' ? 'text-teal-500' : 'text-slate-400 dark:text-slate-500'}`}>SLA</span>
+            <span className={`flex flex-col items-center justify-center gap-1 transition-all duration-200 ease-out ${view === 'aging' ? 'scale-110 -translate-y-0.5' : 'scale-100'}`}>
+              <svg className={`w-5 h-5 transition-all duration-200 ease-out ${view === 'aging' ? 'text-teal-500 drop-shadow-[0_0_6px_rgba(20,184,166,0.6)]' : 'text-slate-400 dark:text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <circle cx="12" cy="13" r="8" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4l2.5 2.5M9 2h6" />
+              </svg>
+              <span className={`text-[10px] font-bold tracking-wide transition-colors duration-200 ${view === 'aging' ? 'text-teal-500' : 'text-slate-400 dark:text-slate-500'}`}>SLA</span>
+            </span>
           </button>
           <button
             onClick={() => setView(view === 'compare' ? 'executive' : 'compare')}
-            className="relative flex-1 flex flex-col items-center justify-center gap-1 py-2.5 active:bg-slate-100 dark:active:bg-slate-800/60 transition-colors"
+            className="relative flex-1 flex flex-col items-center justify-center py-2.5 active:bg-slate-100 dark:active:bg-slate-800/60 transition-colors"
             aria-label="Portfolio compare"
           >
             <span className={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-b-full transition-colors ${view === 'compare' ? 'bg-violet-500' : 'bg-transparent'}`} />
-            <svg className={`w-5 h-5 ${view === 'compare' ? 'text-violet-500' : 'text-slate-400 dark:text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-            </svg>
-            <span className={`text-[10px] font-bold tracking-wide ${view === 'compare' ? 'text-violet-500' : 'text-slate-400 dark:text-slate-500'}`}>Compare</span>
+            <span className={`flex flex-col items-center justify-center gap-1 transition-all duration-200 ease-out ${view === 'compare' ? 'scale-110 -translate-y-0.5' : 'scale-100'}`}>
+              <svg className={`w-5 h-5 transition-all duration-200 ease-out ${view === 'compare' ? 'text-violet-500 drop-shadow-[0_0_6px_rgba(139,92,246,0.6)]' : 'text-slate-400 dark:text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+              <span className={`text-[10px] font-bold tracking-wide transition-colors duration-200 ${view === 'compare' ? 'text-violet-500' : 'text-slate-400 dark:text-slate-500'}`}>Compare</span>
+            </span>
           </button>
         </div>
       </nav>
@@ -786,7 +849,7 @@ export default function App() {
       )}
 
       {/* Bottom nav spacer (mobile) — keeps footer clear of the fixed tab bar */}
-      <div className="sm:hidden h-[68px]" />
+      <div className="md:hidden h-[68px]" />
 
       {/* Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-800/60 bg-white/60 dark:bg-[#0B0F17]/60 backdrop-blur-xl">

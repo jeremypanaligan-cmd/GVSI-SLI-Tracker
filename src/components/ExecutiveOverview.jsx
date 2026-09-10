@@ -219,6 +219,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
                 onSelect={onDateSelect}
                 maxDate={getTodayStr()}
                 latestDataDate={latestDataDate}
+                badgeBefore
               />
             </div>
           )}

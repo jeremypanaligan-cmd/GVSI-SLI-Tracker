@@ -4,6 +4,88 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
+## [1.9.0] — 2026-09-10
+
+### 🖥️ WebView / Desktop C-Suite Navbar Redesign
+
+**`src/App.jsx`** — the single-row toolbar is replaced by a hierarchical,
+frosted navbar on `md:` and above (WebView / Desktop / Tablet). Mobile
+(`< md`) keeps the brand row + ⋮ menu + bottom tab bar unchanged:
+
+- **Left — Branding & Active Context:** SLI logo + app title + muted
+  subtitle `Gallopvision Services, Inc. — Daily Status` (`text-slate-400
+  text-xs`)
+- **Center — Main View Navigation:** segmented pill tabs
+  `[ Executive | Provincial | Compare ]` with smooth active-state
+  transitions (`transition-all duration-200`)
+- **Right — Plan Switcher & Utilities:** segmented `[ FIBERX | BIDA |
+  SME ]` switcher with per-plan accent colors; SLA / Report / Export /
+  Copy Link collapsed into **icon-only buttons with tooltips** inside a
+  frosted wrapper (`bg-slate-800/40 border border-slate-700/50 rounded-lg
+  p-1`); standout **Sync Data** button with a live time badge (e.g.
+  `2m ago`)
+- Sticky frosted chrome: `sticky top-0 z-40 bg-[#070A0F]/80
+  backdrop-blur-md border-b border-slate-800/80`
+- Mobile bottom tab bar now covers everything below `md` (`md:hidden`) —
+  the cramped `sm`-only single-row toolbar is gone
+
+**`src/components/PlanSelector.jsx`** — new `variant="navbar"` styling
+tuned for the dark frosted navbar (inactive pills muted slate, active
+pills keep their plan accent); dropped a broken dynamic shadow class.
+
+---
+
+### 📱 Mobile — Latest Available Badge Order + Meatball Cleanup
+
+- **`src/components/DatePicker.jsx`** — new `badgeBefore` prop renders the
+  "Latest available" badge **before** the date controls
+  (`[Latest available] [◀] [date] [▶]`); default position unchanged for
+  Provincial Breakdown
+- **`src/components/ExecutiveOverview.jsx`** — Daily To-Date DatePicker
+  passes `badgeBefore`, so mobile shows the badge first; Provincial
+  Breakdown untouched
+- **`src/App.jsx`** — **SLA** removed from the ⋮ meatball menu (already
+  available in the bottom tab bar)
+
+---
+
+### ✨ Active Tab Scale-Up Micro-Interaction (Mobile Bottom Nav)
+
+**`src/App.jsx`** + **`src/config/plans.js`** — the active bottom-nav tab
+now zooms & elevates its icon + label (`scale-110 -translate-y-0.5` on an
+inner wrapper, `transition-all duration-200 ease-out`), with a per-plan
+accent glow (`accentClasses.glow` drop-shadow: indigo / red / teal) and
+brand-colored text; inactive tabs stay `scale-100` muted. Transforms only
+— no layout shifts, overflow, or clipping.
+
+---
+
+### 🎯 Single Active Navigation Fix
+
+- Plan tabs (mobile bottom nav) now deactivate in SLA / Compare views:
+  `activePlan === planId && view !== 'aging' && view !== 'compare'`
+- Desktop plan switcher receives `activePlan={null}` while SLA / Compare
+  is active, so no plan pill highlights alongside the SLA icon
+- `handlePlanChange` exits SLA / Compare views (`setView('executive')`)
+  when a plan is selected — exactly one navigation element can be
+  highlighted at any time; `activePlan` still drives which plan's data
+  loads
+
+---
+
+### 🧹 Provincial Breakdown WebView Cleanup
+
+- **`src/App.jsx`** — the `Back to Executive Summary` button is hidden on
+  `md+` (`flex md:hidden`; the navbar tabs handle navigation) and the
+  control bar right-aligns the DatePicker + last-sync stamp via
+  `md:justify-end`; mobile keeps the back button
+- The **sync time badge** no longer floats over the Sync Data button
+  (`absolute -top-2 -right-1.5` removed) — it now flows inline as a
+  frosted pill beside the button (`flex items-center gap-2`) with the
+  live freshness dot
+
+---
+
 ## [1.8.0] — 2026-09-10
 
 ### 📊 Phase 3 — Portfolio Compare Mode (F4)
