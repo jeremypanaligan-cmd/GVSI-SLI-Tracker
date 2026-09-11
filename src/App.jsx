@@ -609,7 +609,7 @@ export default function App() {
                     <span className="text-teal-400">GVSI</span> SLI Tracker
                   </h1>
                   <p className="text-xs text-slate-400 tracking-wide truncate">
-                    Gallopvision Services, Inc. — Daily Status
+                    Gallopvision Services, Inc.
                   </p>
                 </div>
               </div>
