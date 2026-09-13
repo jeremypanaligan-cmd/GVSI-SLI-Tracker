@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import AppLogo from './AppLogo'
 
 const DISMISS_KEY = 'gvsi_pwa_install_dismissed'
 const DISMISS_EXPIRY = 3 * 24 * 60 * 60 * 1000 // 3 days — short enough that the banner returns soon
@@ -106,9 +107,7 @@ export default function PWAInstallBanner() {
         <div className="bg-white dark:bg-slate-900/95 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700/50 p-4 backdrop-blur-xl">
           <div className="flex items-start gap-3">
             {/* App icon */}
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center font-black text-white text-base tracking-tight shadow-lg shadow-teal-500/30 flex-shrink-0">
-              SLI
-            </div>
+            <AppLogo className="w-12 h-12 rounded-xl shadow-lg shadow-teal-500/30" />
 
             <div className="flex-1 min-w-0">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-0.5">

@@ -11,6 +11,11 @@
 
 const SHEET_BASE = 'https://docs.google.com/spreadsheets/d/'
 
+// Login credentials live in ONE tab of the FIBERX sheet, shared by every plan.
+// Tab: "Login Credentials" — Username | PasswordHash | FullName | Role
+// (PasswordHash = lowercase SHA-256 hex of the plain password)
+export const AUTH_URL = `${SHEET_BASE}1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=895191585`
+
 export const PLANS = {
   fiberx: {
     id: 'fiberx',

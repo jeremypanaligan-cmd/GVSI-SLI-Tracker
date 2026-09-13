@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!--
+    Compact brand mark — the wordmark-free variant of icon-source.svg.
+
+    Used at small sizes (20–36px: header, navbar, footer) where the baked-in
+    "SLI TRACKER" wordmark of icon-512.png would only smudge. Strokes are heavy
+    on purpose so the glyph still reads when the whole mark is ~20px wide.
+  -->
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+    <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00F2FE" stop-opacity="0.5" />
+      <stop offset="45%" stop-color="#00F2FE" stop-opacity="1" />
+      <stop offset="100%" stop-color="#10B981" stop-opacity="1" />
+    </linearGradient>
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="1" />
+      <stop offset="100%" stop-color="#00F2FE" stop-opacity="1" />
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Rounded tile -->
+  <rect width="512" height="512" rx="96" fill="url(#bgGrad)" />
+  <rect x="5" y="5" width="502" height="502" rx="92" fill="none"
+        stroke="#00F2FE" stroke-opacity="0.22" stroke-width="6" />
+
+  <!-- Fiber line arcing over the target, running off both edges -->
+  <g filter="url(#glow)">
+    <path d="M -14 330 C 112 330, 130 110, 256 110 C 382 110, 400 330, 526 330"
+          fill="none" stroke="url(#lineGrad)" stroke-width="32" stroke-linecap="round" />
+  </g>
+
+  <!-- Connection nodes -->
+  <circle cx="70" cy="292" r="18" fill="#0F172A" stroke="#00F2FE" stroke-width="9" />
+  <circle cx="442" cy="292" r="18" fill="#0F172A" stroke="#10B981" stroke-width="9" />
+
+  <!-- Target: two rings plus the checkpoint dot -->
+  <g transform="translate(256, 316)">
+    <circle r="128" fill="none" stroke="url(#ringGrad)" stroke-width="28" opacity="0.9" />
+    <circle r="70" fill="none" stroke="#10B981" stroke-width="26" opacity="0.9" />
+    <circle r="28" fill="#10B981" />
+    <circle r="12" fill="#00F2FE" />
+  </g>
+
+  <!-- Status badge -->
+  <g transform="translate(396, 106)">
+    <circle r="52" fill="#10B981" opacity="0.16" />
+    <circle r="34" fill="#10B981" />
+    <path d="M -15 0 L -5 10 L 15 -9" fill="none" stroke="#0F172A" stroke-width="10"
+          stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+</svg>

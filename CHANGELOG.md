@@ -4,6 +4,144 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
+## [1.11.0] — 2026-09-13
+
+### 🔐 Login Gate
+
+The dashboard now sits behind a username/password screen, backed by a
+`Login Credentials` tab so users can be added or removed without a code change.
+
+- **`src/components/LoginScreen.jsx`** (new) — full-screen sign-in: username +
+password with a show/hide toggle, "Keep me signed in on this device", inline
+error message, autofocus, and Enter-to-submit
+- **`src/utils/auth.js`** (new) —
+  - `sha256Hex()` hashes the entered password with Web Crypto (needs https or
+    localhost)
+  - `fetchCredentials()` reads the credentials tab and maps columns **by header
+    name** (`Username` / `PasswordHash` / `FullName` / `Role`), so column order
+    can change freely
+  - `verifyCredentials()` matches the username case-insensitively (unknown user
+    and wrong password both return the same generic result)
+  - session helpers — 30 days when remembered, 12 hours otherwise; the password
+    hash is never written to storage
+- **`src/context/AuthContext.jsx`** (new) — `AuthProvider` + `useAuth()`. It
+renders `LoginScreen` until a session exists, so the dashboard never mounts and
+**never fetches sheet data** before sign-in
+- **`src/main.jsx`** — wraps `<App />` in `<AuthProvider />`
+- **`src/App.jsx`** — `Sign out` joins the shared header actions, so it appears in
+both the desktop utility group and the mobile ⋮ menu; the signed-in user shows as
+a chip in the navbar (lg+) and as a name/role header at the top of the mobile menu
+- **`src/config/plans.js`** — `AUTH_URL` for the shared `Login Credentials` tab
+(gid `895191585`), read from the FIBERX sheet for all plans
+
+**Security note:** this is a **convenience gate, not security.** The credentials
+tab is publicly readable through the CSV export, the hashes use no salt or key
+stretching, and the check runs in the browser — it can be bypassed and its hashes
+brute-forced offline. Documented in the README so the limits are explicit.
+
+### 🎨 Brand Mark
+
+The in-app logo is now the app's canonical icon instead of the placeholder teal
+"SLI" tile.
+
+- **`src/components/AppLogo.jsx`** (new) — one shared brand mark used by the
+  mobile header, desktop navbar, footer, login screen, install banner and the
+  printed executive report. The asset path lives in this one file, so artwork
+  can be swapped or renamed in a single place, and `import.meta.env.BASE_URL`
+  keeps the `/GVSI-SLI-Tracker/` prefix out of every call site
+- **Two variants:** `variant="full"` (the default) is `public/icon-512.png` —
+  the app icon with its "SLI TRACKER" wordmark, generated from
+  `public/icon-source.svg` and already declared by `manifest.json`, used where
+  there is room (login screen, install banner, printed report). `variant="mark"`
+  is the new `public/brand-mark.svg`: the same artwork with the wordmark removed
+  and heavier strokes, so it still reads at 20–36px (mobile header, desktop
+  navbar, footer) instead of smudging
+- The mark joins the service worker's shell pre-cache list next to the PWA icons
+- Every hard-coded `bg-gradient-to-br from-teal-500 to-teal-700` logo tile is
+  gone, and the previously used `public/new/` icon set is no longer referenced
+
+**Version:** package.json bumped 1.10.0 → **1.11.0** (one line — the service
+worker cache names, manifest icon query and data cache keys all follow it).
+
+---
+
+## [1.10.0] — 2026-09-13
+
+### 🌐 Spreadsheet-Driven Area Config (Apps Script)
+
+Retired provinces no longer require a code edit — the list of exported areas
+is read from a new **`CONFIG`** tab in each plan's spreadsheet.
+
+**Root cause of "removed provinces keep coming back in MTD":** the MTD
+report does **not** read the NEW REPORT sheet. It builds its area list from
+`RAW DATA`, and `RAW DATA` is only ever rewritten by the *Import* step.
+Running only *Generate MTD Report* reproduces whatever was imported last, so
+provinces deleted from NEW REPORT (leaving zero rows or `#REF!` formulas)
+stayed in both `RAW DATA` and `MTD`.
+
+**`FIBERXSCRIPT.gs` / `BIDASCRIPT.gs` / `SMESCRIPT.gs`** (all three plans):
+
+- New **`CONFIG` tab** — column A holds the `EXCLUDED_AREAS` key, column B
+the area names (e.g. `CAGAYAN, APAYAO, KALINGA`). Separators may be commas,
+semicolons, slashes or line breaks, and the key may repeat to list one area
+per row; `EXCLUDED_AREAS` / `EXCLUDED_AREA` and loose spacing are accepted
+- `getExcludedAreas()` / `readExcludedAreasFromConfig()` / `isExcludedArea()`
+— matching is case-insensitive (`Cagayan` = `CAGAYAN`) and the tab is read
+once per run, so hundreds of row checks cost a single read
+- **Blank value = exclude nothing**; **missing tab or key = safe fallback**
+to the built-in `DEFAULT_EXCLUDED_AREAS`, so a deleted tab can never
+silently blank out the reports
+- Filtering applied at **both** stages — the RAW DATA import skips excluded
+areas, and `parseRawData()` skips them again, so a stale `RAW DATA` cannot
+leak them into MTD; they are also left out of `OVER ALL TOTAL` sums
+- New menu item **`Setup / Edit CONFIG Sheet`** — creates the tab with its
+header + current list and reports what is configured, without ever
+overwriting existing values; script header bumped to v9
+
+### 📚 Data Pipeline Documentation
+
+- **`docs/DATA_PIPELINE.md`** (new) — pipeline diagram, sheet roles, the
+Apps Script file per plan, the NEW REPORT → RAW DATA column mapping, how
+MTD sections / areas / totals are built, the `CONFIG` tab format and rules,
+the **Full Sync requirement** (and why *Generate MTD Report* alone is not
+enough), the menu reference, and troubleshooting (`#REF!` / `#DIV/0!`,
+stale app data, newly added provinces)
+- **`README.md`** — the stale single-sheet **Data Source** section now lists
+the three live plan spreadsheets used by `src/config/plans.js`, plus a new
+**Documentation** section linking the pipeline doc and this changelog
+- **`scripts/SETUP_GUIDE.md`** — marked legacy with a pointer to the new doc
+(it documents the retired FIBERX v1 `scripts/MTD.gs` path; its menu labels,
+trigger behaviour and MTD columns are out of date)
+
+### 🔖 Version & Cache Refresh — package.json Is Now the Single Source
+
+**`package.json`** — version bumped 1.8.0 → **1.10.0** so the app version catches
+up with this changelog (1.9.0 shipped without a package bump). It is now the
+**only** file to bump on a release — every version carrier below derives from it:
+
+- **`vite.config.js`** — injects `__APP_VERSION__` and adds a `versionedManifest()`
+plugin that fills `{{VERSION}}` in `public/manifest.json` (served substituted in
+dev, written substituted into `dist/` on build)
+- **`src/utils/version.js`** (new) — exports `APP_VERSION`
+- **`src/main.jsx`** — registers the worker as `sw.js?v=<APP_VERSION>`
+- **`public/sw.js`** — cache names now come from the worker's own `?v=` query
+(`gvsi-sli-v1.10.0` / `gvsi-sli-data-v1.10.0`), so a release never edits this
+file; the changing URL also guarantees the browser picks up the new worker
+- **`src/utils/dataFetcher.js`** — `CACHE_VERSION` derives from the app version
+(`gvsi_mtd_fiberx_v1.10.0`, …), and retired versions are now **swept** instead of
+hand-listed: anything matching the data-key prefixes that isn't part of the
+current set is removed from localStorage on every load and from IndexedDB once
+per version (`gvsi_idb_purged` marker)
+- **`src/utils/idbCache.js`** — new `idbKeys()` and `idbRemoveMany(keys)` purge a
+whole retired version from IndexedDB in a single transaction
+- **`public/manifest.json`** — icon cache-buster is the `{{VERSION}}` placeholder
+- Verified that the sweep leaves `gvsi_theme`, `gvsi_active_plan` and the
+`gvsi_selected_*` view state untouched
+- **`public/manifest.json`** — icon cache-busting query `?v=1.8.0` →
+`?v=1.10.0` to match the released version
+
+---
+
 ## [1.9.0] — 2026-09-10
 
 ### 🖥️ WebView / Desktop C-Suite Navbar Redesign

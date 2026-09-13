@@ -76,6 +76,46 @@ export async function idbRemove(key) {
 }
 
 /**
+ * List every key currently stored in IndexedDB.
+ * Returns [] when the database is unavailable.
+ */
+export async function idbKeys() {
+  try {
+    const db = await openDB()
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly')
+      const req = tx.objectStore(STORE_NAME).getAllKeys()
+      req.onsuccess = () => resolve(req.result || [])
+      req.onerror = () => reject(req.error)
+    })
+  } catch (err) {
+    console.warn('[IDB] Keys failed:', err.message)
+    return []
+  }
+}
+
+/**
+ * Remove many keys in a single transaction.
+ * Used to purge a whole retired cache version on upgrade — far cheaper than one
+ * open/transaction per key.
+ */
+export async function idbRemoveMany(keys) {
+  if (!keys || !keys.length) return
+  try {
+    const db = await openDB()
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite')
+      const store = tx.objectStore(STORE_NAME)
+      keys.forEach((key) => store.delete(key))
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+  } catch (err) {
+    console.warn('[IDB] RemoveMany failed:', err.message)
+  }
+}
+
+/**
  * Clear all entries from IndexedDB.
  */
 export async function idbClear() {

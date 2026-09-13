@@ -1,5 +1,6 @@
 /**
- * GVSI SLI Tracker - Automated Database Management v8
+ * GVSI SLI Tracker - Automated Database Management v9
+ * Excluded areas are now read from the CONFIG tab (see AREA CONFIG below).
  * 
  * FIBERX NEW REPORT format (Column J removed):
 
@@ -25,7 +26,114 @@ const FIBERX_SHEET_NAME = 'FIBERX NEW REPORT';
 const RAW_DATA_SHEET_NAME = 'RAW DATA';
 const MTD_SHEET_NAME = 'MTD';
 
-// Areas are now dynamically detected from RAW DATA — no hardcoded list needed
+// ==================== AREA CONFIG (spreadsheet-driven) ====================
+// Areas are dynamically detected from RAW DATA. Which of them to SKIP is read from a
+// CONFIG tab instead of being hardcoded, so provinces can be added or removed in the
+// sheet — no code edit needed:
+//
+//   CONFIG tab:
+//     A1: SETTING          B1: VALUE
+//     A2: EXCLUDED_AREAS   B2: CAGAYAN, APAYAO, KALINGA
+//
+//   - Separate names with comma, semicolon, slash or a new line.
+//   - Repeat the key row to list one area per row (EXCLUDED_AREA also works).
+//   - Leave the value blank to exclude nothing.
+//   - Missing CONFIG tab or missing key → DEFAULT_EXCLUDED_AREAS below is used instead,
+//     so a deleted tab can never silently blank out the reports.
+//
+// Run 'Setup / Edit CONFIG Sheet' from the GVSI Auto-DB menu to create the tab.
+// Excluded areas are skipped by BOTH the RAW DATA import and MTD generation.
+const CONFIG_SHEET_NAME = 'CONFIG';
+const CONFIG_EXCLUDED_KEY = 'EXCLUDED_AREAS';
+const DEFAULT_EXCLUDED_AREAS = ['CAGAYAN', 'APAYAO', 'KALINGA'];
+
+var _excludedAreasCache = null;
+
+function getExcludedAreas() {
+  if (_excludedAreasCache === null) {
+    var fromConfig = readExcludedAreasFromConfig();
+    _excludedAreasCache = (fromConfig === null) ? DEFAULT_EXCLUDED_AREAS : fromConfig;
+  }
+  return _excludedAreasCache;
+}
+
+/**
+ * Reads the EXCLUDED_AREAS list from the CONFIG tab (uppercased).
+ * Returns [] when the key exists but is blank, or null when it cannot be found.
+ */
+function readExcludedAreasFromConfig() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
+  if (!sheet) return null;
+  
+  var values = sheet.getDataRange().getValues();
+  var found = false;
+  var list = [];
+  
+  for (var i = 0; i < values.length; i++) {
+    var key = String(values[i][0]).trim().toUpperCase().replace(/\s+/g, '_');
+    if (key !== CONFIG_EXCLUDED_KEY && key !== 'EXCLUDED_AREA') continue;
+    found = true;
+    
+    var parts = String(values[i][1] || '').split(/[,;\/|\r\n]+/);
+    for (var p = 0; p < parts.length; p++) {
+      var name = parts[p].trim();
+      if (name) list.push(name.toUpperCase());
+    }
+  }
+  
+  return found ? list : null;
+}
+
+function isExcludedArea(areaName) {
+  var name = String(areaName).trim().toUpperCase();
+  var excluded = getExcludedAreas();
+  for (var i = 0; i < excluded.length; i++) {
+    if (name === excluded[i]) return true;
+  }
+  return false;
+}
+
+/**
+ * Creates the CONFIG tab (header + EXCLUDED_AREAS row) when it is missing.
+ * Existing values are never overwritten — it only reports what is configured.
+ */
+function setupConfigSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG_SHEET_NAME);
+  var created = false;
+  
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG_SHEET_NAME);
+    created = true;
+  }
+  
+  var values = sheet.getDataRange().getValues();
+  var hasKey = false;
+  for (var i = 0; i < values.length; i++) {
+    var key = String(values[i][0]).trim().toUpperCase().replace(/\s+/g, '_');
+    if (key === CONFIG_EXCLUDED_KEY || key === 'EXCLUDED_AREA') { hasKey = true; break; }
+  }
+  
+  if (!hasKey) {
+    var startRow = sheet.getLastRow() + 1;
+    if (startRow === 1) {
+      sheet.getRange(1, 1, 1, 2).setValues([['SETTING', 'VALUE']]).setFontWeight('bold');
+      startRow = 2;
+    }
+    sheet.getRange(startRow, 1, 1, 2).setValues([[CONFIG_EXCLUDED_KEY, DEFAULT_EXCLUDED_AREAS.join(', ')]]);
+    sheet.autoResizeColumns(1, 2);
+  }
+  
+  _excludedAreasCache = null;
+  var current = getExcludedAreas();
+  var summary = current.length ? current.join(', ') : '(none)';
+  
+  try {
+    SpreadsheetApp.getUi().alert('CONFIG sheet ready!' + (created ? '\n\nCreated the CONFIG tab.' : '') +
+      '\n\nEXCLUDED_AREAS = ' + summary +
+      '\n\nThese areas are skipped by the import and by MTD generation.\nEdit column B, then run Full Sync.');
+  } catch(e) {}
+}
 
 const RAW_HEADER = [
   'Date', 'AREA', 'BF', 'INC', 'Total Jo',
@@ -114,7 +222,7 @@ function importFiberxToRawData() {
       areaName = firstCell;
     }
     
-    if (areaName) {
+    if (areaName && !isExcludedArea(areaName)) {
       // RAW DATA columns: Date(0) AREA(1) BF(2) INC(3) TotalJo(4)
       //   CompFromTotal(5) CompFromRjo(6) TotalCompleted(7)
       //   RjoIncoming(8) RjoRedispatched(8) TotalRjo(9)
@@ -379,8 +487,8 @@ function parseRawData(rawData) {
     
     if (areaStr === 'OVER ALL TOTAL') {
       currentBlock.overallTotal = entry;
-    } else if (areaStr && areaStr !== 'AREA') {
-      // Use the exact area name from RAW DATA — no hardcoded filtering
+    } else if (areaStr && areaStr !== 'AREA' && !isExcludedArea(areaStr)) {
+      // Use the exact area name from RAW DATA (EXCLUDED_AREAS already filtered out)
       currentBlock.areas[areaStr] = entry;
     }
   }
@@ -459,6 +567,8 @@ function onOpen() {
     .addItem('Generate MTD Report', 'generateMTDReport')
     .addSeparator()
     .addItem('Full Sync (Import + MTD)', 'fullSync')
+    .addSeparator()
+    .addItem('Setup / Edit CONFIG Sheet', 'setupConfigSheet')
     .addItem('Setup Auto-Trigger (Every 5 min)', 'setupAutoTrigger')
     .addItem('Stop Auto-Trigger', 'stopAutoTrigger')
     .addToUi();

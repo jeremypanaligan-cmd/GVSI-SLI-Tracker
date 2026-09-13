@@ -1,13 +1,15 @@
 import { parseCSV } from './csvParser'
-import { idbGet, idbSet } from './idbCache'
+import { idbGet, idbSet, idbKeys, idbRemoveMany } from './idbCache'
 import { PLANS, PLAN_ORDER, DEFAULT_PLAN } from '../config/plans'
+import { APP_VERSION } from './version.js'
 
-const CACHE_VERSION = 'v7'
+// Versioned by the app version, so a release retires the previous cache set automatically
+const CACHE_VERSION = `v${APP_VERSION}`
 const CACHE_MAX_AGE = 1000 * 60 * 5 // 5 minutes
 
 /**
  * Build plan-scoped cache keys.
- * e.g. gvsi_mtd_fiberx_v7, gvsi_raw_bida_v7, gvsi_aging_sme_v7
+ * e.g. gvsi_mtd_fiberx_v8, gvsi_raw_bida_v8, gvsi_aging_sme_v8
  */
 function cacheKeys(planId) {
   return {
@@ -18,21 +20,49 @@ function cacheKeys(planId) {
   }
 }
 
-// Clear ALL old cache versions (plan-agnostic and old versioned)
+/**
+ * Retired cache versions are swept rather than hand-listed, so bumping the version in
+ * package.json is all a release needs. Swept keys are the ones that look like a data
+ * cache key but are not part of the current set — in BOTH stores.
+ */
+const currentCacheKeys = new Set(
+  PLAN_ORDER.flatMap((planId) => Object.values(cacheKeys(planId)))
+)
+
+// Keys from before keys were plan-scoped — they don't follow the prefix + version shape
+const LEGACY_CACHE_KEYS = [
+  'gvsi_mtd_data', 'gvsi_raw_data', 'gvsi_data_time',
+  'gvsi_sli_data', 'gvsi_sli_data_time',
+]
+const CACHE_KEY_PREFIXES = ['gvsi_mtd_', 'gvsi_raw_', 'gvsi_aging_', 'gvsi_time_']
+
+function isRetiredCacheKey(key) {
+  if (currentCacheKeys.has(key)) return false
+  if (LEGACY_CACHE_KEYS.includes(key)) return true
+  return CACHE_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))
+}
+
+// localStorage is synchronous and cheap — swept on every load
+// (theme / plan / view state keys don't match, so user preferences are untouched)
 try {
-  const oldKeys = [
-    'gvsi_mtd_data', 'gvsi_raw_data', 'gvsi_data_time',
-    'gvsi_mtd_data_v2', 'gvsi_raw_data_v2', 'gvsi_data_time_v2',
-    'gvsi_mtd_data_v3', 'gvsi_raw_data_v3', 'gvsi_data_time_v3',
-    'gvsi_mtd_data_v4', 'gvsi_raw_data_v4', 'gvsi_data_time_v4',
-    'gvsi_mtd_data_v5', 'gvsi_raw_data_v5', 'gvsi_data_time_v5',
-    'gvsi_mtd_data_v6', 'gvsi_raw_data_v6', 'gvsi_data_time_v6',
-    'gvsi_mtd_fiberx_v6', 'gvsi_raw_fiberx_v6', 'gvsi_time_fiberx_v6',
-    'gvsi_mtd_bida_v6', 'gvsi_raw_bida_v6', 'gvsi_time_bida_v6',
-    'gvsi_mtd_sme_v6', 'gvsi_raw_sme_v6', 'gvsi_time_sme_v6',
-    'gvsi_sli_data', 'gvsi_sli_data_time',
-  ]
-  oldKeys.forEach(k => localStorage.removeItem(k))
+  Object.keys(localStorage).filter(isRetiredCacheKey).forEach((key) => localStorage.removeItem(key))
+} catch { /* ignore */ }
+
+// IndexedDB mirrors the same keys (it's the localStorage quota fallback) and costs a
+// database round-trip, so it is swept once per cache version instead of on every load.
+const IDB_PURGE_MARKER = 'gvsi_idb_purged'
+try {
+  if (typeof indexedDB !== 'undefined' && localStorage.getItem(IDB_PURGE_MARKER) !== CACHE_VERSION) {
+    idbKeys()
+      .then((keys) => {
+        const retired = keys.filter(isRetiredCacheKey)
+        return retired.length ? idbRemoveMany(retired) : null
+      })
+      .then(() => {
+        try { localStorage.setItem(IDB_PURGE_MARKER, CACHE_VERSION) } catch { /* ignore */ }
+      })
+      .catch(() => { /* ignore */ })
+  }
 } catch { /* ignore */ }
 
 /**

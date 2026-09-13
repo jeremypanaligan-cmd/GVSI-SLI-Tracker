@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { formatNumber, computeAreaPace } from '../utils/dataProcessor'
+import AppLogo from './AppLogo'
 
 /**
  * Light-only pace badge styles for the report sheet. The sheet is always white,
@@ -117,12 +118,7 @@ export default function ExecutiveReportModal({
         <div className="px-8 py-6 border-b border-slate-200">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div
-                className="w-11 h-11 rounded-xl flex items-center justify-center font-black text-white text-sm tracking-tight"
-                style={{ backgroundColor: plan.accentHex }}
-              >
-                SLI
-              </div>
+              <AppLogo className="w-11 h-11 rounded-xl shadow-sm" />
               <div>
                 <h1 className="text-lg font-black tracking-tight text-slate-900">GVSI SLI Tracker</h1>
                 <p className="text-[11px] text-slate-500 font-semibold">{plan.fullName}</p>

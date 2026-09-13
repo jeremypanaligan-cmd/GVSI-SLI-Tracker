@@ -1,5 +1,11 @@
-const CACHE_NAME = 'gvsi-sli-v16'
-const DATA_CACHE = 'gvsi-sli-data-v12'
+// Cache names carry the app version the page registered us with (?v=<version>), so a
+// release never needs this file edited — see src/utils/version.js and vite.config.js.
+let VERSION = 'dev'
+try {
+  VERSION = new URL(self.location.href).searchParams.get('v') || 'dev'
+} catch (e) { /* keep the default */ }
+const CACHE_NAME = `gvsi-sli-v${VERSION}`
+const DATA_CACHE = `gvsi-sli-data-v${VERSION}`
 const BASE = '/GVSI-SLI-Tracker'
 
 const SHELL_ASSETS = [
@@ -9,6 +15,7 @@ const SHELL_ASSETS = [
   BASE + '/manifest.json',
   BASE + '/icon-192.png',
   BASE + '/icon-512.png',
+  BASE + '/brand-mark.svg',
 ]
 
 // Install: pre-cache app shell

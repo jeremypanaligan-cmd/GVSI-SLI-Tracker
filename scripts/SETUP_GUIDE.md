@@ -1,5 +1,12 @@
 # GVSI SLI Tracker - Automated Database Setup
 
+> **⚠️ Legacy guide.** This documents the original single-plan (FIBERX v1) `scripts/MTD.gs`
+> script and is kept for reference only. The active setup is one Apps Script project per plan
+> using `FIBERXSCRIPT.gs` / `BIDASCRIPT.gs` / `SMESCRIPT.gs` — see
+> **[docs/DATA_PIPELINE.md](../docs/DATA_PIPELINE.md)** for the current pipeline, the `CONFIG`
+> tab, and the Full Sync requirement. Some details below (menu labels, trigger behaviour, MTD
+> columns) are out of date.
+
 ## Sheet Structure
 
 | Sheet Name | Purpose |

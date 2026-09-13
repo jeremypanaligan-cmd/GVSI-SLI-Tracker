@@ -17,6 +17,9 @@ import ThemeToggle from './components/ThemeToggle'
 import PlanSelector from './components/PlanSelector'
 import { PLANS, PLAN_ORDER, DEFAULT_PLAN } from './config/plans'
 import PWAInstallBanner from './components/PWAInstallBanner'
+import UpdatePrompt from './components/UpdatePrompt'
+import AppLogo from './components/AppLogo'
+import { useAuth } from './context/AuthContext'
 import ExecutiveReportModal from './components/ExecutiveReportModal'
 import { exportRawDataCSV } from './utils/exportCSV'
 import { copySnapshotLink } from './utils/copyLink'
@@ -77,6 +80,7 @@ function initialPlan() {
 }
 
 export default function App() {
+  const { user, signOut } = useAuth()
   const [mtdData, setMtdData] = useState(null)
   const [rawDaily, setRawDaily] = useState(null)
   const [agingData, setAgingData] = useState(null)
@@ -474,6 +478,20 @@ export default function App() {
         </svg>
       ),
     },
+    {
+      key: 'signout',
+      active: false,
+      title: user?.fullName
+        ? `Sign out — signed in as ${user.fullName}${user.role ? ` (${user.role})` : ''}`
+        : 'Sign out',
+      onClick: signOut,
+      label: 'Sign out',
+      icon: (
+        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+      ),
+    },
   ]
 
 
@@ -521,9 +539,7 @@ export default function App() {
         <div className="md:hidden bg-white/80 dark:bg-[#0B0F17]/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60">
         <div className="w-full px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center font-black text-white text-sm tracking-tight shadow-lg shadow-teal-500/20 shrink-0">
-              SLI
-            </div>
+            <AppLogo variant="mark" className="w-9 h-9 rounded-lg shadow-lg shadow-teal-500/20" />
             <div className="min-w-0">
               <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight tracking-tight truncate">
                 <span className="text-teal-600 dark:text-teal-400">GVSI</span> SLI Tracker
@@ -573,6 +589,14 @@ export default function App() {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setMobileMenuOpen(false)} />
                   <div className="absolute right-0 top-full mt-2 z-50 w-48 rounded-xl border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-900 shadow-2xl py-1">
+                    {user && (
+                      <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700/60">
+                        <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">{user.fullName}</p>
+                        {user.role && (
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">{user.role}</p>
+                        )}
+                      </div>
+                    )}
                     {mobileMenuItems.map(item => (
                       <button
                         key={item.key}
@@ -601,9 +625,7 @@ export default function App() {
 
               {/* Left — Branding & Active Context */}
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center font-black text-white text-sm tracking-tight shadow-lg shadow-teal-500/20 shrink-0">
-                  SLI
-                </div>
+                <AppLogo variant="mark" className="w-9 h-9 rounded-lg shadow-lg shadow-teal-500/20" />
                 <div className="min-w-0">
                   <h1 className="text-[15px] font-bold text-white leading-tight tracking-tight truncate">
                     <span className="text-teal-400">GVSI</span> SLI Tracker
@@ -682,6 +704,17 @@ export default function App() {
                 </div>
 
                 <ThemeToggle />
+
+                {/* Signed-in user (the sign-out action sits in the utility group above) */}
+                {user && (
+                  <span
+                    title={`Signed in as ${user.fullName}${user.role ? ` — ${user.role}` : ''}`}
+                    className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/60 border border-slate-700/50 text-[10px] font-semibold text-slate-300 whitespace-nowrap shrink-0"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
+                    {user.fullName}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -824,6 +857,9 @@ export default function App() {
       {/* PWA Install Banner */}
       <PWAInstallBanner />
 
+      {/* "New version ready" prompt (service worker update) */}
+      <UpdatePrompt />
+
       {/* Executive Report (print / PDF) */}
       {reportOpen && (
         <ExecutiveReportModal
@@ -855,9 +891,7 @@ export default function App() {
       <footer className="border-t border-slate-200 dark:border-slate-800/60 bg-white/60 dark:bg-[#0B0F17]/60 backdrop-blur-xl">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center font-black text-white text-[7px] tracking-tight">
-              SLI
-            </div>
+            <AppLogo variant="mark" className="w-5 h-5 rounded" />
             <span className="text-[11px] text-slate-500 dark:text-slate-500">
               <span className="font-semibold text-slate-600 dark:text-slate-400">GVSI SLI Tracker</span> {'—'} {currentPlan.fullName}
             </span>
