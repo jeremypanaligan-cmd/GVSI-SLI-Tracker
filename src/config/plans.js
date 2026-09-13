@@ -30,6 +30,23 @@ export const PLANS = {
       ring: 'ring-indigo-500/30',
       glow: 'drop-shadow-[0_0_6px_rgba(99,102,241,0.6)]',
       badge: 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-700/40',
+      // Provincial Breakdown table chrome — the header strip follows the plan.
+      // Opaque backgrounds matter: the AREA / MTD-TARGET-% cells are sticky, so
+      // they must hide the columns that scroll beneath them.
+      head: {
+        bg: 'bg-indigo-100 dark:bg-indigo-950',
+        text: 'text-indigo-700 dark:text-indigo-200',
+        border: 'border-indigo-300 dark:border-indigo-800',
+      },
+      // OVER ALL TOTAL row — same plan accent, solid rather than a /40 tint: the
+      // pinned AREA and MTD · TARGET · % cells have to hide the columns scrolling
+      // beneath them, and one opaque colour for the whole row also removes the
+      // seam between the pinned cells and the rest of it.
+      total: {
+        bg: 'bg-indigo-50 dark:bg-[#181c3d]',
+        text: 'text-indigo-700 dark:text-indigo-200',
+        border: 'border-indigo-300 dark:border-indigo-800',
+      },
     },
     mtdUrl: `${SHEET_BASE}1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=1061751267`,
     rawUrl: `${SHEET_BASE}1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=486719298`,
@@ -49,6 +66,16 @@ export const PLANS = {
       ring: 'ring-red-500/30',
       glow: 'drop-shadow-[0_0_6px_rgba(239,68,68,0.6)]',
       badge: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700/40',
+      head: {
+        bg: 'bg-red-100 dark:bg-red-950',
+        text: 'text-red-700 dark:text-red-200',
+        border: 'border-red-300 dark:border-red-800',
+      },
+      total: {
+        bg: 'bg-red-50 dark:bg-[#2b131c]',
+        text: 'text-red-700 dark:text-red-200',
+        border: 'border-red-300 dark:border-red-800',
+      },
     },
     mtdUrl: `${SHEET_BASE}1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M/export?format=csv&gid=1061751267`,
     rawUrl: `${SHEET_BASE}1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M/export?format=csv&gid=486719298`,
@@ -68,6 +95,16 @@ export const PLANS = {
       ring: 'ring-teal-500/30',
       glow: 'drop-shadow-[0_0_6px_rgba(20,184,166,0.6)]',
       badge: 'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-700/40',
+      head: {
+        bg: 'bg-teal-100 dark:bg-teal-950',
+        text: 'text-teal-700 dark:text-teal-200',
+        border: 'border-teal-300 dark:border-teal-800',
+      },
+      total: {
+        bg: 'bg-teal-50 dark:bg-[#0b262e]',
+        text: 'text-teal-700 dark:text-teal-200',
+        border: 'border-teal-300 dark:border-teal-800',
+      },
     },
     mtdUrl: `${SHEET_BASE}10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY/export?format=csv&gid=1061751267`,
     rawUrl: `${SHEET_BASE}10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY/export?format=csv&gid=486719298`,

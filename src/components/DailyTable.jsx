@@ -76,18 +76,33 @@ function PaceBadge({ entry, refDate }) {
   )
 }
 
+// Chrome fallbacks used when no plan accent is supplied, so the table keeps its
+// pre-plan colours when reused without a plan in context.
+const DEFAULT_HEAD_ACCENT = {
+  bg: 'bg-slate-100 dark:bg-slate-800/60',
+  text: 'text-slate-600 dark:text-slate-300',
+  border: 'border-slate-200 dark:border-slate-700/50',
+}
+// Solid on purpose — see the comment on `accentClasses.total` in plans.js: the
+// pinned cells must mask what scrolls under them.
+const DEFAULT_TOTAL_ACCENT = {
+  bg: 'bg-teal-50 dark:bg-[#0b262e]',
+  text: 'text-teal-700 dark:text-teal-300',
+  border: 'border-teal-300 dark:border-teal-700/50',
+}
+
 /**
  * Mobile card row (two-line style, < sm): mirrors the Lumen Billing list
  * layout — province name + pace badge + MTD/TARGET ("due") on the left,
  * achievement % ("amount") on the right.
  */
-function MobileRow({ entry, refDate, overall }) {
+function MobileRow({ entry, refDate, overall, totalAccent = DEFAULT_TOTAL_ACCENT }) {
   const badge = getBadgeStyle(entry.pct)
   const pctDisplay = Number.isFinite(entry.pct) ? formatNumber(entry.pct, '%') : '—'
   return (
-    <div className={`flex items-center justify-between gap-3 px-3.5 py-3 ${overall ? 'bg-teal-50 dark:bg-teal-950/40' : ''}`}>
+    <div className={`flex items-center justify-between gap-3 px-3.5 py-3 ${overall ? totalAccent.bg : ''}`}>
       <div className="min-w-0">
-        <p className={`text-sm truncate ${overall ? 'font-black text-teal-700 dark:text-teal-300' : 'font-bold text-slate-800 dark:text-slate-100'}`}>
+        <p className={`text-sm truncate ${overall ? `font-black ${totalAccent.text}` : 'font-bold text-slate-800 dark:text-slate-100'}`}>
           {entry.area}
         </p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
@@ -107,7 +122,7 @@ function MobileRow({ entry, refDate, overall }) {
   )
 }
 
-function TrendCell({ areaName, areaTrends, overall }) {
+function TrendCell({ areaName, areaTrends, overall, accentText = 'text-teal-600 dark:text-teal-300' }) {
   const tr = areaTrends && areaTrends[areaName]
   if (!tr || tr.values.length < 2) {
     return <span className="text-slate-300 dark:text-slate-600">—</span>
@@ -121,7 +136,7 @@ function TrendCell({ areaName, areaTrends, overall }) {
         width={54}
         height={16}
         positive={up || flat}
-        strokeClass={overall ? 'text-teal-600 dark:text-teal-300' : undefined}
+        strokeClass={overall ? accentText : undefined}
       />
       <span
         className={`inline-flex items-center text-[10px] font-semibold shrink-0 ${flat ? 'text-slate-400 dark:text-slate-500' : up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}
@@ -133,7 +148,7 @@ function TrendCell({ areaName, areaTrends, overall }) {
   )
 }
 
-function SortIcon({ active, direction }) {
+function SortIcon({ active, direction, colorClass = 'text-teal-500 dark:text-teal-400' }) {
   if (!active) {
     return (
       <svg className="w-3 h-3 ml-1 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -142,17 +157,26 @@ function SortIcon({ active, direction }) {
     )
   }
   return (
-    <svg className={`w-3 h-3 ml-1 text-teal-500 dark:text-teal-400 transition-transform ${direction === 'desc' ? '' : 'rotate-180'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+    <svg className={`w-3 h-3 ml-1 ${colorClass} transition-transform ${direction === 'desc' ? '' : 'rotate-180'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
     </svg>
   )
 }
 
-export default function DailyTable({ dateData, refDate, areaTrends }) {
+export default function DailyTable({ dateData, refDate, areaTrends, accent }) {
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
   const [search, setSearch] = useState('')
   const [paceFilter, setPaceFilter] = useState('all')
+
+  // Table chrome follows the selected plan. The header strip needs an *opaque*
+  // background because the AREA / MTD·TARGET·% cells are sticky — a translucent
+  // tint would let the columns scrolling underneath show through.
+  const headAccent = accent?.head || DEFAULT_HEAD_ACCENT
+  const totalAccent = accent?.total || DEFAULT_TOTAL_ACCENT
+  const chipActive = accent?.bg
+    ? `${accent.bg} border-transparent text-white shadow-sm`
+    : 'bg-teal-600 border-teal-600 text-white shadow-sm shadow-teal-600/20'
 
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -234,7 +258,7 @@ export default function DailyTable({ dateData, refDate, areaTrends }) {
               onClick={() => setPaceFilter(f.value)}
               className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all duration-200 ${
                 paceFilter === f.value
-                  ? 'bg-teal-600 border-teal-600 text-white shadow-sm shadow-teal-600/20'
+                  ? chipActive
                   : 'bg-white dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60'
               }`}
             >
@@ -257,7 +281,7 @@ export default function DailyTable({ dateData, refDate, areaTrends }) {
         ))}
 
         {dateData.overallTotal && (
-          <MobileRow entry={dateData.overallTotal} refDate={refDate} overall />
+          <MobileRow entry={dateData.overallTotal} refDate={refDate} overall totalAccent={totalAccent} />
         )}
 
         {filteredAreas.length === 0 && (
@@ -271,23 +295,23 @@ export default function DailyTable({ dateData, refDate, areaTrends }) {
       <div className="hidden sm:block w-full overflow-x-auto">
         <table className="w-full border-collapse" style={{ minWidth: '1100px' }}>
         <thead>
-          <tr className="bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700/50">
+          <tr className={`${headAccent.bg} border-b ${headAccent.border}`}>
             {COLUMNS.map((col) => (
               <th
                 key={col.key}
                 onClick={() => col.sortable && handleSort(col.key)}
                 className={`px-3 py-3 text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-colors ${
                   col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''
-                } ${col.sticky ? 'sticky left-0 bg-slate-100 dark:bg-[#111c2e] z-20 border-r border-slate-200 dark:border-slate-700/40' : ''} ${
-                  col.stickyRight !== undefined ? 'sticky right-0 bg-slate-100 dark:bg-[#111c2e] z-20 border-l border-slate-200 dark:border-slate-700/40 shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.35)] dark:shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.6)]' : ''
+                } ${col.sticky ? `sticky left-0 ${headAccent.bg} z-20 border-r border-slate-200 dark:border-slate-700/40` : ''} ${
+                  col.stickyRight !== undefined ? `sticky right-0 ${headAccent.bg} z-20 border-l border-slate-200 dark:border-slate-700/40 shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.35)] dark:shadow-[-6px_0_8px_-4px_rgba(0,0,0,0.6)]` : ''
                 } ${
-                  col.sortable ? 'cursor-pointer select-none hover:bg-slate-200 dark:hover:bg-slate-700/60 text-slate-600 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400'
+                  col.sortable ? `cursor-pointer select-none hover:bg-black/5 dark:hover:bg-white/10 ${headAccent.text}` : `${headAccent.text} opacity-75`
                 }`}
                 style={col.sticky ? { minWidth: '140px' } : col.stickyRight !== undefined ? { minWidth: `${col.width}px`, width: `${col.width}px`, right: `${col.stickyRight}px` } : { minWidth: `${col.width}px`, width: `${col.width}px` }}
               >
                 <span className="inline-flex items-center">
                   {col.label}
-                  {col.sortable && <SortIcon active={sortKey === col.key} direction={sortDir} />}
+                  {col.sortable && <SortIcon active={sortKey === col.key} direction={sortDir} colorClass={accent?.text} />}
                 </span>
               </th>
             ))}
@@ -323,8 +347,8 @@ export default function DailyTable({ dateData, refDate, areaTrends }) {
 
           {/* OVER ALL TOTAL row */}
           {dateData.overallTotal && (
-            <tr className="bg-teal-50 dark:bg-teal-950/40 border-t-2 border-teal-300 dark:border-teal-700/50 font-bold">
-              <Td bold sticky bgColor="bg-teal-50 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300">
+            <tr className={`${totalAccent.bg} border-t-2 ${totalAccent.border} font-bold`}>
+              <Td bold sticky bgColor={`${totalAccent.bg} ${totalAccent.text}`}>
                 OVER ALL TOTAL
               </Td>
               <Td align="right">{formatNumber(dateData.overallTotal.bf)}</Td>
@@ -338,10 +362,10 @@ export default function DailyTable({ dateData, refDate, areaTrends }) {
               <Td align="right" bold>{formatNumber(dateData.overallTotal.totalRjo)}</Td>
               <Td align="right">{formatNumber(dateData.overallTotal.carryOver)}</Td>
               <Td align="center"><PaceBadge entry={dateData.overallTotal} refDate={refDate} /></Td>
-              <Td align="center"><TrendCell areaName="OVER ALL TOTAL" areaTrends={areaTrends} overall /></Td>
-              <Td align="right" bold stickyRight={180} width={88} bgColor="bg-teal-50 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300">{formatNumber(dateData.overallTotal.mtd)}</Td>
-              <Td align="right" stickyRight={84} width={96} bgColor="bg-teal-50 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300">{formatNumber(dateData.overallTotal.target)}</Td>
-              <Td align="center" stickyRight={0} width={84} bgColor="bg-teal-50 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300"><PctBadge value={dateData.overallTotal.pct} /></Td>
+              <Td align="center"><TrendCell areaName="OVER ALL TOTAL" areaTrends={areaTrends} overall accentText={totalAccent.text} /></Td>
+              <Td align="right" bold stickyRight={180} width={88} bgColor={`${totalAccent.bg} ${totalAccent.text}`}>{formatNumber(dateData.overallTotal.mtd)}</Td>
+              <Td align="right" stickyRight={84} width={96} bgColor={`${totalAccent.bg} ${totalAccent.text}`}>{formatNumber(dateData.overallTotal.target)}</Td>
+              <Td align="center" stickyRight={0} width={84} bgColor={`${totalAccent.bg} ${totalAccent.text}`}><PctBadge value={dateData.overallTotal.pct} /></Td>
             </tr>
           )}
 

@@ -521,6 +521,15 @@ export default function App() {
     { id: 'compare', label: 'Compare', view: 'compare', active: view === 'compare' },
   ]
 
+  // SLA / aging is a view, not a plan, so it gets its own accent. It used to be
+  // teal-500, which was indistinguishable from SME's teal when both sat in the
+  // bottom bar — amber now reads as "escalation" and collides with neither.
+  const slaAccent = {
+    bg: 'bg-amber-500',
+    text: 'text-amber-500',
+    glow: 'drop-shadow-[0_0_6px_rgba(245,158,11,0.6)]',
+  }
+
   return (
     <div className="min-h-screen flex flex-col font-sans">
       {/* Sync overlay */}
@@ -796,7 +805,7 @@ export default function App() {
 
             {/* Daily table */}
             <div className="flex-1 overflow-auto">
-              <DailyTable dateData={dailyBlock} refDate={selectedDate || latestDataDate} areaTrends={areaTrends} />
+              <DailyTable dateData={dailyBlock} refDate={selectedDate || latestDataDate} areaTrends={areaTrends} accent={currentPlan.accentClasses} />
             </div>
           </div>
         )}
@@ -829,13 +838,13 @@ export default function App() {
             className="relative flex-1 flex flex-col items-center justify-center py-2.5 active:bg-slate-100 dark:active:bg-slate-800/60 transition-colors"
             aria-label="Installation SLA breakdown"
           >
-            <span className={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-b-full transition-colors ${view === 'aging' ? 'bg-teal-500' : 'bg-transparent'}`} />
+            <span className={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-b-full transition-colors ${view === 'aging' ? slaAccent.bg : 'bg-transparent'}`} />
             <span className={`flex flex-col items-center justify-center gap-1 transition-all duration-200 ease-out ${view === 'aging' ? 'scale-110 -translate-y-0.5' : 'scale-100'}`}>
-              <svg className={`w-5 h-5 transition-all duration-200 ease-out ${view === 'aging' ? 'text-teal-500 drop-shadow-[0_0_6px_rgba(20,184,166,0.6)]' : 'text-slate-400 dark:text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className={`w-5 h-5 transition-all duration-200 ease-out ${view === 'aging' ? `${slaAccent.text} ${slaAccent.glow}` : 'text-slate-400 dark:text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <circle cx="12" cy="13" r="8" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4l2.5 2.5M9 2h6" />
               </svg>
-              <span className={`text-[10px] font-bold tracking-wide transition-colors duration-200 ${view === 'aging' ? 'text-teal-500' : 'text-slate-400 dark:text-slate-500'}`}>SLA</span>
+              <span className={`text-[10px] font-bold tracking-wide transition-colors duration-200 ${view === 'aging' ? slaAccent.text : 'text-slate-400 dark:text-slate-500'}`}>SLA</span>
             </span>
           </button>
           <button

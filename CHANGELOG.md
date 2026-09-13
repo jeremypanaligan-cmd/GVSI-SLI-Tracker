@@ -4,6 +4,47 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
+## [1.12.0] — 2026-09-13
+
+### 🎨 Plan-Coloured Table Chrome
+
+The Provincial Breakdown now reads as the selected plan's screen instead of a
+teal-tinted one, and the bottom bar's SLA tab no longer wears SME's colour.
+
+- **`src/config/plans.js`** — new `accentClasses.head` and `accentClasses.total`
+  per plan (`bg` / `text` / `border`) for the table header strip and the OVER ALL
+  TOTAL row. Both backgrounds are **fully opaque on purpose**: the AREA and
+  MTD · TARGET · % cells are pinned, so an alpha tint let the columns scrolling
+  underneath show through. The total row deliberately uses one solid colour for
+  the whole row, so the pinned cells no longer sit on a darker patch than the
+  rest of it
+- **`src/components/DailyTable.jsx`** — takes a new `accent` prop
+  - the header row and its four sticky cells are tinted in the plan colour, with
+    the plan colour on the labels, the sort arrows and the bottom border
+  - the **OVER ALL TOTAL** row follows the plan as well — on the desktop table and
+    in the mobile card — which removes the last hardcoded teal from the table
+  - the 7D TREND sparkline in the total row picks up the plan colour too
+  - the active PACE filter chip uses the plan colour instead of hardcoded teal
+  - all of it falls back to the previous neutral/teal styling when no plan is in
+    context, so the component still works standalone
+- **`src/components/AgingReport.jsx`** — the Installation SLA Breakdown is now
+  amber-accented so it matches its own bottom-bar tab: the heading badge, the
+  sort arrows, the search focus ring and the OVERALL TOTAL row all moved off
+  teal. Its total row was an alpha tint as well, and the PROVINCE cell there is
+  pinned too, so it gets the same solid treatment via one `TOTAL_ROW_BG` constant
+  (the mobile card matches the desktop row). The ≤24h / ≤72h / >72h stat cards
+  keep their own semantic green / amber / red
+- **`src/App.jsx`** — passes `currentPlan.accentClasses` down to the table
+- **`src/App.jsx`** — the mobile bottom bar's **SLA** tab was `teal-500`, which
+  was indistinguishable from SME's plan colour two slots away. It now has its own
+  `slaAccent` (amber) for the indicator bar, icon and label — a colour that
+  collides with no plan accent
+
+**Version:** package.json bumped 1.11.0 → **1.12.0** (the service worker cache
+names, manifest icon query and data cache keys all follow it).
+
+---
+
 ## [1.11.0] — 2026-09-13
 
 ### 🔐 Login Gate

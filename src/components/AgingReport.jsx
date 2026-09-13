@@ -20,6 +20,12 @@ const COLUMNS = [
   { key: 'total', label: 'TOTAL', align: 'right', sortable: true },
 ]
 
+// The OVERALL total row is a solid colour, not a tint: the PROVINCE cell is
+// pinned, so an alpha background would let the columns scrolling underneath show
+// through it — and one colour for the whole row avoids a visible seam between the
+// pinned cell and the rest of the row.
+const TOTAL_ROW_BG = 'bg-amber-50 dark:bg-amber-950'
+
 function Td({ children, align = 'left', bold = false, className = '', sticky = false, bgColor = '' }) {
   const alignClass = align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''
   return (
@@ -41,7 +47,7 @@ function SortIcon({ active, direction }) {
     )
   }
   return (
-    <svg className={`w-3 h-3 ml-1 text-teal-500 dark:text-teal-400 transition-transform ${direction === 'desc' ? '' : 'rotate-180'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+    <svg className={`w-3 h-3 ml-1 text-amber-500 dark:text-amber-400 transition-transform ${direction === 'desc' ? '' : 'rotate-180'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
     </svg>
   )
@@ -50,13 +56,13 @@ function SortIcon({ active, direction }) {
 /**
  * Mobile card row (two-line style, < sm): mirrors the Provincial Breakdown
  * card list — province + color-coded SLA buckets on the left, TOTAL on the
- * right. OVERALL TOTAL stays pinned as a teal card.
+ * right. OVERALL TOTAL stays pinned as an amber card.
  */
 function MobileRow({ row, overall }) {
   return (
-    <div className={`flex items-center justify-between gap-3 px-3.5 py-3 ${overall ? 'bg-teal-50 dark:bg-teal-950/40' : ''}`}>
+    <div className={`flex items-center justify-between gap-3 px-3.5 py-3 ${overall ? TOTAL_ROW_BG : ''}`}>
       <div className="min-w-0">
-        <p className={`text-sm truncate ${overall ? 'font-black text-teal-700 dark:text-teal-300' : 'font-bold text-slate-800 dark:text-slate-100'}`}>
+        <p className={`text-sm truncate ${overall ? 'font-black text-amber-700 dark:text-amber-200' : 'font-bold text-slate-800 dark:text-slate-100'}`}>
           {overall ? 'OVERALL TOTAL' : row.province}
         </p>
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1 text-xs">
@@ -72,7 +78,7 @@ function MobileRow({ row, overall }) {
         </div>
       </div>
       <div className="text-right shrink-0">
-        <p className={`text-base font-black tabular-nums leading-tight ${overall ? 'text-teal-700 dark:text-teal-300' : 'text-slate-800 dark:text-slate-100'}`}>
+        <p className={`text-base font-black tabular-nums leading-tight ${overall ? 'text-amber-700 dark:text-amber-200' : 'text-slate-800 dark:text-slate-100'}`}>
           {formatNumber(row.total)}
         </p>
         <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Total</p>
@@ -164,7 +170,7 @@ export default function AgingReport({ data }) {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <span className="w-8 h-8 rounded-lg bg-teal-600 dark:bg-teal-500 flex items-center justify-center shrink-0">
+            <span className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center shrink-0">
               <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <circle cx="12" cy="13" r="8" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4l2.5 2.5M9 2h6" />
@@ -201,7 +207,7 @@ export default function AgingReport({ data }) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search province…"
-              className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50 transition placeholder:text-slate-400 dark:placeholder:text-slate-500"
+              className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50 transition placeholder:text-slate-400 dark:placeholder:text-slate-500"
             />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" title="Clear search">
@@ -287,8 +293,8 @@ export default function AgingReport({ data }) {
             {/* OVERALL total row */}
             {overall && (
               <tfoot>
-                <tr className="bg-teal-50 dark:bg-teal-950/40 border-t-2 border-teal-300 dark:border-teal-700/50 font-bold">
-                  <Td bold sticky bgColor="bg-teal-50 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300">
+                <tr className={`${TOTAL_ROW_BG} border-t-2 border-amber-300 dark:border-amber-700/50 font-bold`}>
+                  <Td bold sticky bgColor={`${TOTAL_ROW_BG} text-amber-700 dark:text-amber-200`}>
                     OVERALL TOTAL
                   </Td>
                   <Td align="right" className="text-emerald-700 dark:text-emerald-300">{formatNumber(overall.le24)}</Td>
