@@ -23,8 +23,25 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
   const progressPct = mtd.pct !== null && !isNaN(mtd.pct) ? Math.min(mtd.pct, 100) : 0
   const dailyCompleted = daily?.totalCompleted ?? 0
 
-  // Run-rate projection (Phase 1 — Task 6)
-  const projection = (mtd.totalCompleted != null && mtd.target != null && !isNaN(mtd.totalCompleted) && !isNaN(mtd.target))
+  // Determine if the selected month is in the past — projections are only
+  // meaningful for the current (or future) month where days remain.
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  const now = new Date()
+  const currentMonthYear = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`
+  function parseMonthYear(str) {
+    if (!str) return null
+    const parts = str.split(' ')
+    if (parts.length !== 2) return null
+    const mi = MONTHS.indexOf(parts[0])
+    const yi = parseInt(parts[1], 10)
+    return mi >= 0 && !isNaN(yi) ? { m: mi, y: yi } : null
+  }
+  const sel = parseMonthYear(selectedMonthYear)
+  const cur = parseMonthYear(currentMonthYear)
+  const isPastMonth = sel && cur && (sel.y < cur.y || (sel.y === cur.y && sel.m < cur.m))
+
+  // Run-rate projection (Phase 1 — Task 6) — skip for past months
+  const projection = (!isPastMonth && mtd.totalCompleted != null && mtd.target != null && !isNaN(mtd.totalCompleted) && !isNaN(mtd.target))
     ? projectRunRate(mtd.totalCompleted, mtd.target, latestDataDate || getTodayStr())
     : null
   const paceBadge = projection ? getPaceBadgeStyle(projection.pace) : null
