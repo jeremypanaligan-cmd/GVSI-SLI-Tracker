@@ -341,7 +341,7 @@ export default function App() {
     if (cached.mtd) {
       setMtdData(parseMTDData(cached.mtd, newMonth))
     }
-  }, [])
+  }, [activePlan])
 
   /**
    * Build a CompareView entry for one plan result: parsed MTD + RAW.
