@@ -4,6 +4,101 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
+## [1.13.0] — 2026-09-15
+
+### 📈 30-Day Trend Sparkline
+
+The Executive Overview hero card now carries a 30-day rolling sparkline of
+daily completions beside the achievement rate, so a month that is technically
+"on pace" can still be read as trending up or down.
+
+- **`src/config/plans.js`** — new per-plan `trendUrl` pointing at the plan's own
+  tab in the shared **SLI TRACKER Database** (`FIBERX DATA` / `BIDA DATA` /
+  `SME DATA`). It uses the `RAW DATA` column layout, so the existing parser
+  handles it unchanged
+- **`src/utils/dataFetcher.js`** — fetches the trend tab alongside MTD / RAW /
+  aging, with its own `trend` cache key (`gvsi_trend_<plan>_v<version>`); the
+  key embeds the app version, so this release retires the previous cache set
+- **`src/App.jsx`** — new `trend30Day` memo, widening the existing 7-day trend
+  builder to 30 days. It anchors on `findLatestDataDate()` rather than the last
+  row in the sheet, so a pre-entered trailing day of zeroes cannot flatten the
+  series and make a healthy line look like a collapse
+- **`src/components/ExecutiveOverview.jsx`** — sparkline plus period delta
+  (`+4 (+5%)`); hidden for a past month, matching the projection rule, because
+  the tab holds a rolling window and not a per-month one
+- **Latent bug fixed:** `plan` was never passed to `ExecutiveOverview`, so every
+  plan-accented element inside it silently fell back to teal. It now receives
+  `currentPlan`, which also brings the sparkline and Monthly Target into the
+  selected plan's colour
+
+---
+
+### 🚀 Velocity Report
+
+Answers the question the run-rate projection only implies: how fast is work
+actually closing, and how fast does it need to?
+
+- **`src/components/VelocityReport.jsx`** (new) — month-to-date rate next to the
+  required rate, recent 7-day momentum with an accelerating / slowing read,
+  drift from an even track (`completed − target × daysElapsed ÷ daysInMonth`),
+  the projected finish day, and a per-day bar chart with the required rate drawn
+  as a dashed reference line — days that missed it are rose, days that met it
+  emerald
+- **`src/components/ExecutiveOverview.jsx`** — renders between Month-to-Date and
+  Daily To-Date, gated on the projection, so a closed month shows no per-day
+  requirement it can no longer act on
+
+---
+
+### 🗂️ Data Sources Consolidated on the Shared Database
+
+- **`src/config/plans.js`** — `AUTH_URL` now reads the shared **Login
+  Credentials** tab instead of the FIBERX sheet, and `agingUrl` the shared
+  **COMPLETED AGING REPORT** tab, so users can be added, and SLA data kept, in
+  one place rather than per plan
+- MTD and `RAW DATA` deliberately stay on the per-plan sheets: they are written
+  by each plan's Apps Script, and the split keeps a plan's writers out of the
+  shared file
+
+---
+
+### 🐛 Fixes
+
+- **`src/App.jsx`** — `handleMonthChange` had an empty dependency array, so it
+  kept reading the cache of whichever plan was active on the first render:
+  switching to BIDA and then changing the month showed FIBERX numbers. It now
+  depends on `activePlan`
+- **`src/App.jsx`** — the same stale-closure shape in `loadData`, where
+  `activePlan` was missing from the deps. Reachable when both the cache and the
+  network fail during a plan switch, after which an auto-refresh would re-fetch
+  the previous plan
+- **`src/components/ExecutiveOverview.jsx`** — projections are suppressed for a
+  month that is already over. It compares month index and year rather than
+  sorting the label, which orders "December 2026" before "January 2026"
+- **`src/components/DailyTable.jsx`** — table headers reveal the full column
+  name and its definition on hover (BF, ABL, COMP RJO, RJO FPMos, CO, PACE, …)
+- **`src/components/SLITable.jsx`** — deleted; unreferenced dead code, which also
+  dropped ~1.4 KB of CSS left behind by Tailwind's purge
+
+---
+
+### 📚 Documentation
+
+- **`docs/DATASOURCE.md`** (new) — every part of the app mapped to the sheet and
+  tab it reads, with the cache keys, the prefetch behaviour and the gotchas
+  (including that `NEW REPORT` is an upstream encoding tab the app never reads)
+- **`README.md`**, **`docs/DATA_PIPELINE.md`** — corrected the now-stale
+  credentials and aging-report locations after the move to the shared database,
+  and added the trend tab
+
+---
+
+**Version:** package.json bumped 1.12.0 → **1.13.0**, the only edit a release
+needs — the service worker cache names, the versioned manifest and the data
+cache keys all derive from it.
+
+---
+
 ## [1.12.0] — 2026-09-13
 
 ### 🎨 Plan-Coloured Table Chrome
