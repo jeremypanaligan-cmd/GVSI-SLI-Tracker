@@ -21,25 +21,25 @@ const PACE_FILTERS = [
 // PACE / 7D TREND are placed before the right-sticky group so the pinned
 // MTD · TARGET · % columns never cover them when scrolling.
 const COLUMNS = [
-  { key: 'area', label: 'AREA', sticky: true, sortable: true, width: 150 },
-  { key: 'bf', label: 'BF', align: 'right', sortable: true, width: 72 },
-  { key: 'inc', label: 'INC', align: 'right', sortable: true, width: 72 },
-  { key: 'totalJo', label: 'TTL JO', align: 'right', bold: true, sortable: true, width: 80 },
-  { key: 'completedFromTotal', label: 'COMP TTL', align: 'right', sortable: true, width: 96 },
-  { key: 'completedFromRjo', label: 'COMP RJO', align: 'right', sortable: true, width: 96 },
-  { key: 'totalCompleted', label: 'TTL COMP', align: 'right', bold: true, sortable: true, width: 100 },
-  { key: 'rjoIncoming', label: 'RJO INC', align: 'right', sortable: true, width: 88 },
-  { key: 'rjoRedispatched', label: 'RJO FPMos', align: 'right', sortable: true, width: 100 },
-  { key: 'totalRjo', label: 'TTL RJO', align: 'right', bold: true, sortable: true, width: 84 },
-  { key: 'carryOver', label: 'CO', align: 'right', sortable: true, width: 68 },
-  { key: 'pace', label: 'PACE', align: 'center', sortable: false, width: 104 },
-  { key: 'trend', label: '7D TREND', align: 'center', sortable: false, width: 112 },
+  { key: 'area', label: 'AREA', tooltip: 'Provincial / Region Area', sticky: true, sortable: true, width: 150 },
+  { key: 'bf', label: 'BF', tooltip: 'Brought Forward', align: 'right', sortable: true, width: 72 },
+  { key: 'inc', label: 'INC', tooltip: 'Incoming Tickets', align: 'right', sortable: true, width: 72 },
+  { key: 'totalJo', label: 'ABL', tooltip: 'Active Backlogs (BF+INC)', align: 'right', bold: true, sortable: true, width: 80 },
+  { key: 'completedFromTotal', label: 'COMP ABL', tooltip: 'Completed Active Backlogs', align: 'right', sortable: true, width: 96 },
+  { key: 'completedFromRjo', label: 'COMP RJO', tooltip: 'Completed Returned Job Orders', align: 'right', sortable: true, width: 96 },
+  { key: 'totalCompleted', label: 'TTL COMP', tooltip: 'Total Completed', align: 'right', bold: true, sortable: true, width: 100 },
+  { key: 'rjoIncoming', label: 'RJO INC', tooltip: 'Returned Job Orders from Incoming', align: 'right', sortable: true, width: 88 },
+  { key: 'rjoRedispatched', label: 'RJO FPMos', tooltip: 'Returned Job Orders from the Previous Months', align: 'right', sortable: true, width: 100 },
+  { key: 'totalRjo', label: 'TTL RJO', tooltip: 'Total Returned Job Orders', align: 'right', bold: true, sortable: true, width: 84 },
+  { key: 'carryOver', label: 'CO', tooltip: 'Carry Over', align: 'right', sortable: true, width: 68 },
+  { key: 'pace', label: 'PACE', tooltip: 'Performance Pace Status', align: 'center', sortable: false, width: 104 },
+  { key: 'trend', label: '7D TREND', tooltip: '7-Day Historical Trend', align: 'center', sortable: false, width: 112 },
   // Right-sticky group: MTD · TARGET · % stay visible while scrolling.
   // stickyRight = px offset from the container's right edge (width of the
   // columns to their right).
-  { key: 'mtd', label: 'MTD', align: 'right', bold: true, sortable: true, stickyRight: 180, width: 88 },
-  { key: 'target', label: 'TARGET', align: 'right', sortable: true, stickyRight: 84, width: 96 },
-  { key: 'pct', label: '%', align: 'center', highlight: true, sortable: true, stickyRight: 0, width: 84 },
+  { key: 'mtd', label: 'MTD', tooltip: 'Month to Date Total', align: 'right', bold: true, sortable: true, stickyRight: 180, width: 88 },
+  { key: 'target', label: 'TARGET', tooltip: 'Monthly Target Objective', align: 'right', sortable: true, stickyRight: 84, width: 96 },
+  { key: 'pct', label: '%', tooltip: 'Achievement Percentage', align: 'center', highlight: true, sortable: true, stickyRight: 0, width: 84 },
 ]
 
 function Td({ children, align = 'left', bold = false, highlight = false, className = '', sticky = false, stickyRight, bgColor = '', width }) {
@@ -300,6 +300,7 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent }) {
               <th
                 key={col.key}
                 onClick={() => col.sortable && handleSort(col.key)}
+                title={col.tooltip}
                 className={`px-3 py-3 text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-colors ${
                   col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''
                 } ${col.sticky ? `sticky left-0 ${headAccent.bg} z-20 border-r border-slate-200 dark:border-slate-700/40` : ''} ${
