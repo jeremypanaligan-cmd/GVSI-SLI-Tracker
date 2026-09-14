@@ -1,6 +1,7 @@
 import { getBadgeStyle, getTodayStr, projectRunRate, getPaceBadgeStyle } from '../utils/dataProcessor'
 import DatePicker from './DatePicker'
 import Sparkline from './Sparkline'
+import VelocityReport from './VelocityReport'
 
 export default function ExecutiveOverview({ metrics, selectedDate, availableDates, latestDataDate, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail, plan, momDelta, dailyTrends, trend30Day }) {
   if (!metrics) {
@@ -243,6 +244,15 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
           </div>
         </div>
       </section>
+
+      {/* VELOCITY — actual daily pace vs the rate the remaining month needs.
+          Driven by the run-rate projection, so it follows the same rule: nothing
+          for a closed month, where "required per day" is no longer a decision. */}
+      {projection && (
+        <section>
+          <VelocityReport projection={projection} trend={trend30Day?.totalCompleted} />
+        </section>
+      )}
 
       {/* DAILY TO-DATE PORTION */}
       <section>
