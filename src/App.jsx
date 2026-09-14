@@ -152,7 +152,7 @@ export default function App() {
       setLoading(false)
       setIsSyncing(false)
     }
-  }, [mtdData, selectedDate, selectedMonthYear])
+  }, [mtdData, selectedDate, selectedMonthYear, activePlan])
 
   /**
    * Apply a fetched/cached plan result to state (MTD, RAW, source, date, month).
