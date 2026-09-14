@@ -84,6 +84,7 @@ export default function App() {
   const [mtdData, setMtdData] = useState(null)
   const [rawDaily, setRawDaily] = useState(null)
   const [agingData, setAgingData] = useState(null)
+  const [trendData, setTrendData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [source, setSource] = useState('none')
@@ -123,6 +124,7 @@ export default function App() {
       setRawDaily(daily)
 
       setAgingData(parseAgingReport(result.aging))
+      setTrendData(result.trend)
 
       setSource(result.source)
       setLastSync(result.timestamp)
@@ -145,6 +147,7 @@ export default function App() {
         setMtdData(parseMTDData(cached.mtd))
         setRawDaily(parseRawDailyData(cached.raw))
         setAgingData(parseAgingReport(cached.aging))
+        setTrendData(cached.trend)
         setSource(cached.source)
         setLastSync(cached.timestamp)
       }
@@ -164,6 +167,7 @@ export default function App() {
     const planDaily = parseRawDailyData(result.raw)
     setRawDaily(planDaily)
     setAgingData(parseAgingReport(result.aging))
+    setTrendData(result.trend)
     setSource(result.source)
     setLastSync(result.timestamp)
     const planDates = planDaily.dates || []
@@ -316,6 +320,24 @@ export default function App() {
     for (const k of keys) out[k] = buildDailyTrend(rawDaily, selectedDate, k, 7)
     return out
   }, [rawDaily, selectedDate])
+
+  // 30-day trend from the dedicated per-plan DATA tab (FIBERX DATA / BIDA DATA /
+  // SME DATA). Same column layout as RAW DATA, so it is parsed the same way and
+  // the trend window is simply widened from 7 to 30 days.
+  const trend30Day = useMemo(() => {
+    if (!trendData) return null
+    const parsed = parseRawDailyData(trendData)
+    if (!parsed.dates.length) return null
+    // Anchor on the latest date that actually carries incoming work, so a
+    // pre-entered trailing row with zeroes does not flatten the series.
+    const latestTrendDate = findLatestDataDate(parsed) || parsed.dates[parsed.dates.length - 1]
+    const keys = ['totalCompleted', 'inc', 'carryOver']
+    const out = {}
+    for (const k of keys) {
+      out[k] = buildDailyTrend(parsed, latestTrendDate, k, 30)
+    }
+    return out
+  }, [trendData])
 
   // 7-day total-completed trend per area + OVER ALL (for the Provincial table)
   const areaTrends = useMemo(() => {
@@ -771,8 +793,10 @@ export default function App() {
             selectedMonthYear={selectedMonthYear}
             availableMonths={mtdData?.availableMonths || []}
             onGoToDetail={() => setView('daily')}
+            plan={currentPlan}
             momDelta={momDelta}
             dailyTrends={dailyTrends}
+            trend30Day={trend30Day}
           />
         ) : (
           <div className="h-full flex flex-col">

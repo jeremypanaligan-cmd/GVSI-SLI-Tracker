@@ -16,6 +16,7 @@ function cacheKeys(planId) {
     mtd: `gvsi_mtd_${planId}_${CACHE_VERSION}`,
     raw: `gvsi_raw_${planId}_${CACHE_VERSION}`,
     aging: `gvsi_aging_${planId}_${CACHE_VERSION}`,
+    trend: `gvsi_trend_${planId}_${CACHE_VERSION}`,
     time: `gvsi_time_${planId}_${CACHE_VERSION}`,
   }
 }
@@ -69,12 +70,13 @@ try {
  * Save to localStorage; if quota exceeded, fall back to IndexedDB.
  * Cache keys are scoped by planId.
  */
-async function saveCache(planId, mtd, raw, aging) {
+async function saveCache(planId, mtd, raw, aging, trend) {
   const keys = cacheKeys(planId)
   try {
     localStorage.setItem(keys.mtd, JSON.stringify(mtd))
     localStorage.setItem(keys.raw, JSON.stringify(raw))
     localStorage.setItem(keys.aging, JSON.stringify(aging || { headers: [], rows: [], objects: [] }))
+    localStorage.setItem(keys.trend, JSON.stringify(trend || { headers: [], rows: [], objects: [] }))
     localStorage.setItem(keys.time, Date.now().toString())
   } catch {
     console.warn(`[Cache] localStorage full for ${planId}, saving to IndexedDB`)
@@ -82,6 +84,7 @@ async function saveCache(planId, mtd, raw, aging) {
       idbSet(keys.mtd, mtd),
       idbSet(keys.raw, raw),
       idbSet(keys.aging, aging || { headers: [], rows: [], objects: [] }),
+      idbSet(keys.trend, trend || { headers: [], rows: [], objects: [] }),
       idbSet(keys.time, Date.now()),
     ])
   }
@@ -96,6 +99,7 @@ async function readCache(planId) {
   let mtdRaw = null
   let rawRaw = null
   let agingRaw = null
+  let trendRaw = null
   let timeStr = null
 
   // 1) Try localStorage first
@@ -103,32 +107,36 @@ async function readCache(planId) {
     mtdRaw = localStorage.getItem(keys.mtd)
     rawRaw = localStorage.getItem(keys.raw)
     agingRaw = localStorage.getItem(keys.aging)
+    trendRaw = localStorage.getItem(keys.trend)
     timeStr = localStorage.getItem(keys.time)
   } catch { /* ignore */ }
 
   // 2) If localStorage is empty, try IndexedDB
   if (!mtdRaw && !rawRaw) {
-    const [idbMtd, idbRaw, idbAging, idbTime] = await Promise.all([
+    const [idbMtd, idbRaw, idbAging, idbTrend, idbTime] = await Promise.all([
       idbGet(keys.mtd),
       idbGet(keys.raw),
       idbGet(keys.aging),
+      idbGet(keys.trend),
       idbGet(keys.time),
     ])
     if (idbMtd && idbRaw) {
       mtdRaw = JSON.stringify(idbMtd)
       rawRaw = JSON.stringify(idbRaw)
       agingRaw = idbAging ? JSON.stringify(idbAging) : null
+      trendRaw = idbTrend ? JSON.stringify(idbTrend) : null
       timeStr = idbTime ? String(idbTime) : null
     }
   }
 
-  return { mtdRaw, rawRaw, agingRaw, timeStr }
+  return { mtdRaw, rawRaw, agingRaw, trendRaw, timeStr }
 }
 
 const EMPTY = {
   mtd: { headers: [], rows: [], objects: [] },
   raw: { headers: [], rows: [], objects: [] },
   aging: { headers: [], rows: [], objects: [] },
+  trend: { headers: [], rows: [], objects: [] },
 }
 
 /**
@@ -136,19 +144,20 @@ const EMPTY = {
  */
 export async function getCachedData(planId = DEFAULT_PLAN) {
   try {
-    const { mtdRaw, rawRaw, agingRaw, timeStr } = await readCache(planId)
+    const { mtdRaw, rawRaw, agingRaw, trendRaw, timeStr } = await readCache(planId)
 
     if (!mtdRaw && !rawRaw) return { ...EMPTY, source: 'none', timestamp: null }
 
     const mtd = mtdRaw ? JSON.parse(mtdRaw) : { headers: [], rows: [], objects: [] }
     const raw = rawRaw ? JSON.parse(rawRaw) : { headers: [], rows: [], objects: [] }
     const aging = agingRaw ? JSON.parse(agingRaw) : { headers: [], rows: [], objects: [] }
+    const trend = trendRaw ? JSON.parse(trendRaw) : { headers: [], rows: [], objects: [] }
     const timestamp = timeStr ? new Date(Number(timeStr)) : null
 
     const age = timestamp ? Date.now() - timestamp.getTime() : Infinity
     const source = age > CACHE_MAX_AGE ? 'stale-cache' : 'cache'
 
-    return { mtd, raw, aging, source, timestamp }
+    return { mtd, raw, aging, trend, source, timestamp }
   } catch {
     return { ...EMPTY, source: 'none', timestamp: null }
   }
@@ -156,7 +165,7 @@ export async function getCachedData(planId = DEFAULT_PLAN) {
 
 /**
  * Fetch both MTD and RAW DATA sheets for a specific plan.
- * Returns { mtd, raw, aging, source, timestamp }
+ * Returns { mtd, raw, aging, trend, source, timestamp }
  */
 export async function fetchAllData(planId = DEFAULT_PLAN) {
   const plan = PLANS[planId]
@@ -194,10 +203,19 @@ export async function fetchAllData(planId = DEFAULT_PLAN) {
         }
       } catch { /* aging is optional */ }
 
-      // Cache fresh data (plan-scoped)
-      await saveCache(planId, mtd, raw, aging)
+      // Best-effort: 30-day trend data from dedicated sheet — plan-specific.
+      let trend = { headers: [], rows: [], objects: [] }
+      try {
+        const trendRes = await fetch(plan.trendUrl + bust, { cache: 'no-store' })
+        if (trendRes.ok) {
+          trend = parseCSV(await trendRes.text())
+        }
+      } catch { /* trend is optional */ }
 
-      return { mtd, raw, aging, source: 'live', timestamp: new Date() }
+      // Cache fresh data (plan-scoped)
+      await saveCache(planId, mtd, raw, aging, trend)
+
+      return { mtd, raw, aging, trend, source: 'live', timestamp: new Date() }
     } catch (err) {
       const hint = err.message.includes('401') 
         ? ` — Sheet may not be published. Open the Google Sheet → File → Share → Publish to web.`

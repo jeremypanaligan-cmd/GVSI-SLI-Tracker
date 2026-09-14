@@ -1,7 +1,8 @@
 import { getBadgeStyle, getTodayStr, projectRunRate, getPaceBadgeStyle } from '../utils/dataProcessor'
 import DatePicker from './DatePicker'
+import Sparkline from './Sparkline'
 
-export default function ExecutiveOverview({ metrics, selectedDate, availableDates, latestDataDate, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail, plan, momDelta, dailyTrends }) {
+export default function ExecutiveOverview({ metrics, selectedDate, availableDates, latestDataDate, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail, plan, momDelta, dailyTrends, trend30Day }) {
   if (!metrics) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
@@ -50,6 +51,12 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
 
   // Phase 2 — F1 trend analytics
   const t = (key) => (dailyTrends && dailyTrends[key]) || null
+  // 30-day rolling trend from the dedicated DATA tab (plan-specific).
+  // Like the run-rate projection, it is only meaningful for the current month —
+  // the sheet holds the most recent window, so showing it on a closed month
+  // would read as if it described that month. Hide it for past months.
+  const tr30 = (!isPastMonth && trend30Day && trend30Day.totalCompleted) || null
+  const tr30Up = tr30 ? tr30.periodDelta >= 0 : true
   return (
     <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-5 space-y-5">
 
@@ -128,6 +135,22 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
                 <p className={`text-[11px] font-semibold mt-1 ${paceBadge?.color || 'text-slate-500 dark:text-slate-400'}`}>
                   Projected month-end: {fmt(Math.round(projection.projected))} ({projection.projectedPct.toFixed(0)}% of target)
                 </p>
+              )}
+              {tr30 && tr30.values.length >= 2 && (
+                <div className="flex items-center gap-2 mt-2.5" title={`Daily completions — last ${tr30.values.length} days (${tr30.dates[0]} → ${tr30.dates[tr30.dates.length - 1]})`}>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 shrink-0">30-day</span>
+                  <Sparkline
+                    data={tr30.values}
+                    width={110}
+                    height={22}
+                    strokeClass={pc.text || 'text-teal-500 dark:text-teal-400'}
+                    positive={tr30Up}
+                  />
+                  <span className={`text-[10px] font-bold shrink-0 ${tr30Up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                    {tr30.periodDelta >= 0 ? '+' : ''}{fmt(tr30.periodDelta)}
+                    {tr30.periodPct != null && isFinite(tr30.periodPct) ? ` (${tr30.periodPct >= 0 ? '+' : ''}${tr30.periodPct.toFixed(0)}%)` : ''}
+                  </span>
+                </div>
               )}
             </div>
             {/* Progress Bar */}

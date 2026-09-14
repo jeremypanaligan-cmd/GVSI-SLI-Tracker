@@ -40,19 +40,26 @@ npm run preview
 
 ## Data Sources
 
-Each plan has its own Google Sheet, read through the CSV export endpoint:
+Each plan has its own Google Sheet for daily tracking, plus one shared database for
+cross-plan data. All are read through the CSV export endpoint, from URLs declared in
+`src/config/plans.js`:
 
-| Plan | Spreadsheet |
-|------|-------------|
-| FIBERX | [FIBERX SLI Tracker DB](https://docs.google.com/spreadsheets/d/1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/edit) |
-| BIDA | [BIDA SLI Tracker DB](https://docs.google.com/spreadsheets/d/1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M/edit) |
-| SME | [SME SLI Tracker DB](https://docs.google.com/spreadsheets/d/10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY/edit) |
+| Spreadsheet | Holds |
+|-------------|-------|
+| [SLI TRACKER Database](https://docs.google.com/spreadsheets/d/1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/edit) *(shared)* | `Login Credentials`, `COMPLETED AGING REPORT`, `FIBERX/BIDA/SME DATA` |
+| [FIBERX SLI Tracker DB](https://docs.google.com/spreadsheets/d/1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/edit) | `FIBERX NEW REPORT`, `RAW DATA`, `MTD` |
+| [BIDA SLI Tracker DB](https://docs.google.com/spreadsheets/d/1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M/edit) | `BIDA NEW REPORT`, `RAW DATA`, `MTD` |
+| [SME SLI Tracker DB](https://docs.google.com/spreadsheets/d/10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY/edit) | `SME NEW REPORT`, `RAW DATA`, `MTD` |
+
+Which tab each screen reads, and which cache key it lands in, is listed in
+**[Data Sources](docs/DATASOURCE.md)**.
 
 ## Access (Login)
 
 The dashboard sits behind a username/password screen. Credentials live in the
-**`Login Credentials`** tab of the FIBERX sheet (`Username | PasswordHash | FullName | Role`,
-where the hash is the lowercase SHA-256 hex of the password) and are verified in the browser.
+**`Login Credentials`** tab of the shared **SLI TRACKER Database**
+(`Username | PasswordHash | FullName | Role`, where the hash is the lowercase SHA-256 hex of
+the password) and are verified in the browser.
 A session lasts 30 days on the device, or 12 hours when "Keep me signed in" is off. Sign out
 from the desktop navbar utility group or the mobile ⋮ menu.
 
@@ -66,6 +73,8 @@ from the desktop navbar utility group or the mobile ⋮ menu.
 - **[Data Pipeline](docs/DATA_PIPELINE.md)** — how `NEW REPORT` becomes `RAW DATA` and `MTD`
   through Apps Script, the `CONFIG` tab for retired areas, and why a **Full Sync** is required
   after editing the sheet.
+- **[Data Sources](docs/DATASOURCE.md)** — which spreadsheet tab every screen reads from, and
+  how each source is cached and refreshed.
 - **[CHANGELOG](CHANGELOG.md)** — release notes.
 
 ## Releasing

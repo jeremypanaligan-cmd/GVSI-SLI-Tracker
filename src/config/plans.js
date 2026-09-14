@@ -11,10 +11,10 @@
 
 const SHEET_BASE = 'https://docs.google.com/spreadsheets/d/'
 
-// Login credentials live in ONE tab of the FIBERX sheet, shared by every plan.
+// Login credentials live in a dedicated sheet, shared by every plan.
 // Tab: "Login Credentials" — Username | PasswordHash | FullName | Role
 // (PasswordHash = lowercase SHA-256 hex of the plain password)
-export const AUTH_URL = `${SHEET_BASE}1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=895191585`
+export const AUTH_URL = `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=1425491426`
 
 export const PLANS = {
   fiberx: {
@@ -50,7 +50,8 @@ export const PLANS = {
     },
     mtdUrl: `${SHEET_BASE}1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=1061751267`,
     rawUrl: `${SHEET_BASE}1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=486719298`,
-    agingUrl: `${SHEET_BASE}1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=1502867991`,
+    agingUrl: `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=766491804`,
+    trendUrl: `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=0`,
     sheetId: '1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0',
   },
   bida: {
@@ -79,7 +80,8 @@ export const PLANS = {
     },
     mtdUrl: `${SHEET_BASE}1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M/export?format=csv&gid=1061751267`,
     rawUrl: `${SHEET_BASE}1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M/export?format=csv&gid=486719298`,
-    agingUrl: `${SHEET_BASE}1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M/export?format=csv&gid=1502867991`,
+    agingUrl: `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=766491804`,
+    trendUrl: `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=721299435`,
     sheetId: '1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M',
   },
   sme: {
@@ -108,7 +110,8 @@ export const PLANS = {
     },
     mtdUrl: `${SHEET_BASE}10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY/export?format=csv&gid=1061751267`,
     rawUrl: `${SHEET_BASE}10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY/export?format=csv&gid=486719298`,
-    agingUrl: `${SHEET_BASE}10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY/export?format=csv&gid=1502867991`,
+    agingUrl: `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=766491804`,
+    trendUrl: `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=1854320942`,
     sheetId: '10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY',
   },
 }
