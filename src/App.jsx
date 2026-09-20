@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { fetchAllData, getCachedData, prefetchAllPlans } from './utils/dataFetcher'
+import { fetchArchivedMonths } from './utils/archiveFetcher'
 import {
   parseMTDData, extractExecutiveMetrics,
   parseRawDailyData, parseAgingReport, getTodayStr, findClosestDate,
-  getCurrentMonthYear, findLatestDataDate,
+  getCurrentMonthYear, findLatestDataDate, findLatestDateInMonth, monthYearOfDateLabel,
   buildDailyTrend, buildSeriesFromBlocks, summarizeSeries,
   computeMoMDelta,
 } from './utils/dataProcessor'
@@ -20,6 +21,9 @@ import PWAInstallBanner from './components/PWAInstallBanner'
 import UpdatePrompt from './components/UpdatePrompt'
 import AppLogo from './components/AppLogo'
 import { useAuth } from './context/AuthContext'
+import { usePresence, useDevRoster } from './hooks/usePresence'
+import DeveloperPanel from './components/DeveloperPanel'
+import MaintenanceScreen from './components/MaintenanceScreen'
 import ExecutiveReportModal from './components/ExecutiveReportModal'
 import { exportRawDataCSV } from './utils/exportCSV'
 import { copySnapshotLink } from './utils/copyLink'
@@ -80,7 +84,7 @@ function initialPlan() {
 }
 
 export default function App() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, forceSignOut, isDeveloper } = useAuth()
   const [mtdData, setMtdData] = useState(null)
   const [rawDaily, setRawDaily] = useState(null)
   const [agingData, setAgingData] = useState(null)
@@ -103,11 +107,15 @@ export default function App() {
   const [toast, setToast] = useState(null)
   const toastTimerRef = useRef(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [developerOpen, setDeveloperOpen] = useState(false)
 
   const loadDataRef = useRef(null)
   // Guards against race conditions when the user rapidly switches plans: only
   // the result of the most recently requested plan may update state.
   const planChangeRef = useRef(activePlan)
+  // The month the user actually has open right now. A plan switch fetches in the
+  // background, and that result must not undo a month picked while it was in flight.
+  const monthRef = useRef(selectedMonthYear)
 
   const loadData = useCallback(async (showSyncing = false) => {
     if (showSyncing) setIsSyncing(true)
@@ -115,7 +123,13 @@ export default function App() {
     setError(null)
 
     try {
-      const result = await fetchAllData(activePlan)
+      // A manual sync re-checks which months are archived, so a month archived since
+      // the last load appears without waiting for the month-index TTL to lapse.
+      if (showSyncing) {
+        await fetchArchivedMonths(activePlan, { force: true }).catch(() => {})
+      }
+
+      const result = await fetchAllData(activePlan, selectedMonthYear)
 
       const parsed = parseMTDData(result.mtd, selectedMonthYear)
       setMtdData(parsed)
@@ -135,16 +149,25 @@ export default function App() {
       const dates = daily.dates || []
       if (dates.length > 0) {
         const today = getTodayStr()
-        const best = findLatestDataDate(daily) || findClosestDate(dates, today)
-        if (!selectedDate || selectedDate === today || !dates.includes(selectedDate)) {
-          setSelectedDate(best)
+        const dateInSelectedMonth = findLatestDateInMonth(daily, selectedMonthYear)
+
+        if (monthYearOfDateLabel(selectedDate) !== selectedMonthYear && dateInSelectedMonth) {
+          // A shared link (or a restored session) can point at a past month while the
+          // stored date still sits in the live one. The tables have to follow the
+          // month, or the headline figures and the tables would disagree.
+          setSelectedDate(dateInSelectedMonth)
+        } else {
+          const best = findLatestDataDate(daily) || findClosestDate(dates, today)
+          if (!selectedDate || selectedDate === today || !dates.includes(selectedDate)) {
+            setSelectedDate(best)
+          }
         }
       }
     } catch (err) {
       setError(err.message)
-      const cached = await getCachedData(activePlan)
+      const cached = await getCachedData(activePlan, selectedMonthYear)
       if (cached.mtd) {
-        setMtdData(parseMTDData(cached.mtd))
+        setMtdData(parseMTDData(cached.mtd, selectedMonthYear))
         setRawDaily(parseRawDailyData(cached.raw))
         setAgingData(parseAgingReport(cached.aging))
         setTrendData(cached.trend)
@@ -158,12 +181,17 @@ export default function App() {
   }, [mtdData, selectedDate, selectedMonthYear, activePlan])
 
   /**
-   * Apply a fetched/cached plan result to state (MTD, RAW, source, date, month).
+   * Apply a fetched/cached plan result to state (MTD, RAW, source, date).
    * Used by both the cache-first path and the background refresh path.
+   *
+   * `month` is the month the result was fetched for, and this deliberately does NOT
+   * write `selectedMonthYear`: the background refresh can land seconds after the user
+   * picked another month, and setting the month here is what snapped the dropdown back
+   * to the live month. The plan switch sets the month eagerly instead — see
+   * handlePlanChange.
    */
-  const applyPlanData = useCallback((result) => {
-    setMtdData(parseMTDData(result.mtd, getCurrentMonthYear()))
-    setSelectedMonthYear(getCurrentMonthYear())
+  const applyPlanData = useCallback((result, month = getCurrentMonthYear()) => {
+    setMtdData(parseMTDData(result.mtd, month))
     const planDaily = parseRawDailyData(result.raw)
     setRawDaily(planDaily)
     setAgingData(parseAgingReport(result.aging))
@@ -185,44 +213,82 @@ export default function App() {
     setActivePlan(newPlan)
     setError(null)
 
+    // Switching plans resets the month to the live one — set it here and now rather
+    // than from the fetch callbacks below, so a month the user picks while the fetch
+    // is still in flight survives instead of being overwritten when it lands.
+    const month = getCurrentMonthYear()
+    setSelectedMonthYear(month)
+    monthRef.current = month
+
     // 1) Cache-first: if this plan's data is already cached, render it
     //    instantly and refresh in the background — no loading skeleton on
     //    plan switch.
     let cached = null
     try {
-      cached = await getCachedData(newPlan)
+      // Switching plans resets the month, so the cache is read for the live month.
+      cached = await getCachedData(newPlan, month)
     } catch { /* ignore */ }
 
     const hasCached = cached && (cached.mtd?.rows?.length > 0 || cached.raw?.rows?.length > 0)
     if (hasCached) {
       if (planChangeRef.current !== newPlan) return
-      applyPlanData(cached)
+      applyPlanData(cached, month)
     } else {
       setMtdData(null); setRawDaily(null); setAgingData(null); setLoading(true)
     }
 
     // 2) Background refresh: fetch fresh data and swap it in when it arrives.
+    //    Dropped when the month moved on while it was loading — applying it would
+    //    replace the month the user just opened with the one they left.
     try {
-      const result = await fetchAllData(newPlan)
-      if (planChangeRef.current !== newPlan) return
-      applyPlanData(result)
+      const result = await fetchAllData(newPlan, month)
+      if (planChangeRef.current !== newPlan || monthRef.current !== month) return
+      applyPlanData(result, month)
     } catch (err) {
-      if (planChangeRef.current !== newPlan) return
+      if (planChangeRef.current !== newPlan || monthRef.current !== month) return
       setError(err.message)
-      const fallback = await getCachedData(newPlan)
-      if (fallback.mtd) applyPlanData(fallback)
+      const fallback = await getCachedData(newPlan, month)
+      if (fallback.mtd) applyPlanData(fallback, month)
     } finally {
       setLoading(false)
       setIsSyncing(false)
     }
 
     // 3) Warm the caches of the other plans so future switches are instant.
-    prefetchAllPlans(newPlan).catch(() => {})
+    prefetchAllPlans(newPlan, month).catch(() => {})
   }, [activePlan, applyPlanData])
 
   const currentPlan = PLANS[activePlan] || PLANS[DEFAULT_PLAN]
 
   loadDataRef.current = loadData
+  // Keep the ref in step with state for the paths that set the month outside a pick:
+  // URL/localStorage restore on load, and the plan-switch reset above.
+  monthRef.current = selectedMonthYear
+
+  const showToast = useCallback((message) => {
+    setToast(message)
+    clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setToast(null), 2600)
+  }, [])
+
+  /**
+   * One heartbeat a minute carries three things: presence, the maintenance switch and
+   * "is my token still valid". A revoked session signs itself out from here instead of
+   * sitting there looking signed in.
+   */
+  const presence = usePresence({
+    user,
+    plan: activePlan,
+    view,
+    onTokenInvalid: () => forceSignOut('Ni-revoke ang session mo. Mag-sign in muli.'),
+  })
+
+  // Developer roster — polls only while a Developer is signed in.
+  const roster = useDevRoster(user?.token, isDeveloper)
+
+  // Non-Developers are held at the maintenance screen; Developers keep working and
+  // get a banner instead, so they can verify the state they just set.
+  const maintenanceBlocks = presence.maintenance.enabled && !isDeveloper
 
   // Persist shareable state (plan, date, month, view) to URL + localStorage.
   // URL writes use replaceState so date-stepping never pollutes browser history.
@@ -239,7 +305,7 @@ export default function App() {
   // Initial load + warm the caches of the other plans in the background
   useEffect(() => {
     loadData()
-    prefetchAllPlans(activePlan).catch(() => {})
+    prefetchAllPlans(activePlan, selectedMonthYear).catch(() => {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tick every 30s to update "time ago" display
@@ -356,14 +422,34 @@ export default function App() {
     return out
   }, [rawDaily, selectedDate, dailyBlock])
 
-  // When month changes, re-parse MTD data from cache
+  /**
+   * When the month changes, re-parse MTD for it AND move the date-driven views into
+   * that month — otherwise selecting August would show August's headline numbers next
+   * to September's daily table. The month is read from the archive-merged cache, so an
+   * archived month works exactly like the live one.
+   */
   const handleMonthChange = useCallback(async (newMonth) => {
     setSelectedMonthYear(newMonth)
-    const cached = await getCachedData(activePlan)
-    if (cached.mtd) {
+    // Set the ref too, so an in-flight plan-switch fetch sees the change immediately
+    // and drops its own result rather than applying the month the user left.
+    monthRef.current = newMonth
+
+    const cached = await getCachedData(activePlan, newMonth)
+    const daily = cached.raw?.rows?.length ? parseRawDailyData(cached.raw) : rawDaily
+
+    if (cached.mtd?.rows?.length || cached.mtd?.allRows?.length) {
       setMtdData(parseMTDData(cached.mtd, newMonth))
     }
-  }, [activePlan])
+    if (!daily) return
+
+    setRawDaily(daily)
+    const lastDateInMonth = findLatestDateInMonth(daily, newMonth)
+    if (!lastDateInMonth) return
+
+    // Only move the date when it belongs to another month, so a date the user picked
+    // by hand inside the current month is never yanked away.
+    setSelectedDate((prev) => (monthYearOfDateLabel(prev) === newMonth ? prev : lastDateInMonth))
+  }, [activePlan, rawDaily])
 
   /**
    * Build a CompareView entry for one plan result: parsed MTD + RAW.
@@ -387,7 +473,7 @@ export default function App() {
     const entries = {}
     for (const planId of PLAN_ORDER) {
       try {
-        const cached = await getCachedData(planId)
+        const cached = await getCachedData(planId, selectedMonthYear)
         entries[planId] = makeCompareEntry(cached)
       } catch {
         entries[planId] = { mtd: null, raw: null, source: 'none', timestamp: null }
@@ -398,7 +484,7 @@ export default function App() {
     // 2) Background refresh — fetch each plan fresh, update per plan
     for (const planId of PLAN_ORDER) {
       try {
-        const fresh = await fetchAllData(planId)
+        const fresh = await fetchAllData(planId, selectedMonthYear)
         setCompareData(prev => ({
           ...prev,
           [planId]: makeCompareEntry(fresh),
@@ -448,6 +534,20 @@ export default function App() {
   // Shared by the mobile overflow menu and the WebView navbar utility group
   // so the two breakpoints never drift apart.
   const headerActions = [
+    // Developer console — only rendered for a Developer role, and the RPCs behind it
+    // re-check that role inside Postgres, so the button is not the control.
+    ...(isDeveloper ? [{
+      key: 'developer',
+      active: developerOpen,
+      title: `Developer console — ${roster.active.length} aktibo ngayon`,
+      onClick: () => setDeveloperOpen(true),
+      label: 'Developer',
+      icon: (
+        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+        </svg>
+      ),
+    }] : []),
     {
       key: 'aging',
       active: view === 'aging',
@@ -536,6 +636,16 @@ export default function App() {
       disabled: a.disabled,
     })),
   ]
+
+  if (maintenanceBlocks) {
+    return (
+      <MaintenanceScreen
+        maintenance={presence.maintenance}
+        stale={presence.stale}
+        onRetry={presence.refresh}
+      />
+    )
+  }
 
   const viewTabs = [
     { id: 'executive', label: 'Executive', view: 'executive', active: view === 'executive' },
@@ -753,6 +863,20 @@ export default function App() {
       </header>
 
       {/* Content */}
+      {isDeveloper && presence.maintenance.enabled && (
+        <div className="px-4 sm:px-6 py-2 bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200 dark:border-amber-500/20 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            Naka-ON ang maintenance mode
+          </span>
+          <span className="font-normal opacity-80">
+            — harang ang lahat maliban sa Developer{presence.maintenance.by ? ` · ni ${presence.maintenance.by}` : ''}
+            {presence.maintenance.expiresAt
+              ? ` · auto-off ${new Date(presence.maintenance.expiresAt).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}`
+              : ' · manu-manong i-off'}
+          </span>
+        </div>
+      )}
       <main className="flex-1 overflow-hidden">
         {loading && !mtdData ? (
           <LoadingSkeleton />
@@ -904,6 +1028,19 @@ export default function App() {
           latestDataDate={latestDataDate}
           momDelta={momDelta}
           onClose={() => setReportOpen(false)}
+        />
+      )}
+
+      {/* Developer console (presence + maintenance) */}
+      {isDeveloper && (
+        <DeveloperPanel
+          open={developerOpen}
+          onClose={() => setDeveloperOpen(false)}
+          token={user?.token}
+          roster={roster}
+          maintenance={presence.maintenance}
+          onMaintenanceChange={presence.refresh}
+          onNotice={showToast}
         />
       )}
 

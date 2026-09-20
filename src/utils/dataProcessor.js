@@ -316,8 +316,11 @@ function formatDisplayDate(monthDay, year) {
 /**
  * Normalize date strings from RAW DATA to 'Month Day, Year' format.
  * Handles: 'Aug 1 2026', 'Aug. 1, 2026', 'September 1, 2026', etc.
+ *
+ * Exported because the archived-month reader has to compare an archived date label
+ * against a raw sheet value to keep one month from arriving twice.
  */
-function normalizeRawDate(raw) {
+export function normalizeRawDate(raw) {
   const s = raw.trim()
   // Already in full format
   if (/^\w+\s+\d+,\s*\d{4}$/.test(s)) return s
@@ -567,6 +570,42 @@ export function findLatestDataDate(daily) {
     if (inc > 0) return dates[i]
   }
   return null
+}
+
+/**
+ * 'September 1, 2026' → 'September 2026', or null when it is not a display date.
+ */
+export function monthYearOfDateLabel(dateLabel) {
+  const match = String(dateLabel || '').match(/^([A-Za-z]+)\s+\d+,\s*(\d{4})$/)
+  return match ? `${match[1]} ${match[2]}` : null
+}
+
+/**
+ * Latest date inside one month that carries data.
+ *
+ * Selecting a month moves the daily and provincial views into it, so an archived
+ * month shows its own last day instead of the live one. Prefers the last day with
+ * incoming work, and falls back to the last day present at all.
+ */
+export function findLatestDateInMonth(daily, monthYear) {
+  const dates = daily?.dates || []
+  const blocks = daily?.blocks || {}
+  if (!monthYear) return null
+
+  let lastSeen = null
+  for (let i = dates.length - 1; i >= 0; i--) {
+    if (monthYearOfDateLabel(dates[i]) !== monthYear) continue
+    if (!lastSeen) lastSeen = dates[i]
+
+    const blk = blocks[dates[i]]
+    if (!blk) continue
+    const overall = blk.overallTotal
+    const inc = overall
+      ? overall.inc || 0
+      : (blk.areas || []).reduce((s, a) => s + (a.inc || 0), 0)
+    if (inc > 0) return dates[i]
+  }
+  return lastSeen
 }
 
 /**

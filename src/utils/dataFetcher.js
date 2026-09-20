@@ -1,5 +1,6 @@
 import { parseCSV } from './csvParser'
 import { idbGet, idbSet, idbKeys, idbRemoveMany } from './idbCache'
+import { mergeArchiveIntoCsv } from './archiveFetcher'
 import { PLANS, PLAN_ORDER, DEFAULT_PLAN } from '../config/plans'
 import { APP_VERSION } from './version.js'
 
@@ -35,7 +36,7 @@ const LEGACY_CACHE_KEYS = [
   'gvsi_mtd_data', 'gvsi_raw_data', 'gvsi_data_time',
   'gvsi_sli_data', 'gvsi_sli_data_time',
 ]
-const CACHE_KEY_PREFIXES = ['gvsi_mtd_', 'gvsi_raw_', 'gvsi_aging_', 'gvsi_time_']
+const CACHE_KEY_PREFIXES = ['gvsi_mtd_', 'gvsi_raw_', 'gvsi_aging_', 'gvsi_time_', 'gvsi_arch_', 'gvsi_trend_']
 
 function isRetiredCacheKey(key) {
   if (currentCacheKeys.has(key)) return false
@@ -141,8 +142,11 @@ const EMPTY = {
 
 /**
  * Get cached data for a specific plan — tries localStorage first, then IndexedDB.
+ *
+ * `selectedMonthYear` is only used to decide which archived month of raw rows to fold
+ * in (`mergeArchiveIntoCsv`), so the right half of a month boundary is present.
  */
-export async function getCachedData(planId = DEFAULT_PLAN) {
+export async function getCachedData(planId = DEFAULT_PLAN, selectedMonthYear) {
   try {
     const { mtdRaw, rawRaw, agingRaw, trendRaw, timeStr } = await readCache(planId)
 
@@ -157,7 +161,11 @@ export async function getCachedData(planId = DEFAULT_PLAN) {
     const age = timestamp ? Date.now() - timestamp.getTime() : Infinity
     const source = age > CACHE_MAX_AGE ? 'stale-cache' : 'cache'
 
-    return { mtd, raw, aging, trend, source, timestamp }
+    // Archived months are cached separately (forever) and folded in on read, so the
+    // sheet cache holds one copy of the data and never grows with the archive.
+    const merged = await mergeArchiveIntoCsv(planId, { mtd, raw }, selectedMonthYear)
+
+    return { mtd: merged.mtd, raw: merged.raw, aging, trend, source, timestamp }
   } catch {
     return { ...EMPTY, source: 'none', timestamp: null }
   }
@@ -167,7 +175,7 @@ export async function getCachedData(planId = DEFAULT_PLAN) {
  * Fetch both MTD and RAW DATA sheets for a specific plan.
  * Returns { mtd, raw, aging, trend, source, timestamp }
  */
-export async function fetchAllData(planId = DEFAULT_PLAN) {
+export async function fetchAllData(planId = DEFAULT_PLAN, selectedMonthYear) {
   const plan = PLANS[planId]
   if (!plan) throw new Error(`Unknown plan: ${planId}`)
 
@@ -212,10 +220,13 @@ export async function fetchAllData(planId = DEFAULT_PLAN) {
         }
       } catch { /* trend is optional */ }
 
-      // Cache fresh data (plan-scoped)
+      // Cache the sheet data only — archived rows live in their own forever-cache, so
+      // only one copy of any month is ever stored.
       await saveCache(planId, mtd, raw, aging, trend)
 
-      return { mtd, raw, aging, trend, source: 'live', timestamp: new Date() }
+      const merged = await mergeArchiveIntoCsv(planId, { mtd, raw }, selectedMonthYear)
+
+      return { mtd: merged.mtd, raw: merged.raw, aging, trend, source: 'live', timestamp: new Date() }
     } catch (err) {
       const hint = err.message.includes('401') 
         ? ` — Sheet may not be published. Open the Google Sheet → File → Share → Publish to web.`
@@ -224,7 +235,7 @@ export async function fetchAllData(planId = DEFAULT_PLAN) {
     }
   }
 
-  return await getCachedData(planId)
+  return await getCachedData(planId, selectedMonthYear)
 }
 
 let prefetchPromise = null
@@ -237,7 +248,7 @@ let prefetchPromise = null
  * Dedupe guard: concurrent calls share one in-flight run; the promise resets
  * once it settles. Never throws — failures are logged and ignored.
  */
-export async function prefetchAllPlans(activePlanId = DEFAULT_PLAN) {
+export async function prefetchAllPlans(activePlanId = DEFAULT_PLAN, selectedMonthYear) {
   if (prefetchPromise) return prefetchPromise
 
   prefetchPromise = (async () => {
@@ -245,10 +256,10 @@ export async function prefetchAllPlans(activePlanId = DEFAULT_PLAN) {
       .filter(id => id !== activePlanId)
       .map(async (planId) => {
         try {
-          const cached = await getCachedData(planId)
+          const cached = await getCachedData(planId, selectedMonthYear)
           const fresh = cached.timestamp && (Date.now() - cached.timestamp.getTime()) < CACHE_MAX_AGE
           if (fresh) return { planId, status: 'fresh' }
-          const result = await fetchAllData(planId)
+          const result = await fetchAllData(planId, selectedMonthYear)
           return { planId, status: result.source === 'live' ? 'prefetched' : 'cached' }
         } catch (err) {
           console.warn(`[Prefetch] ${planId} failed:`, err.message)

@@ -535,31 +535,880 @@ function getMonthName(monthNum) {
 }
 
 // ==================== TRIGGERS & MENU ====================
+//
+// Managed triggers (ScriptApp). 'Setup Managed Triggers' reconciles ONLY the three
+// rows below and never touches anything else:
+//
+//   autoSync            time-based   every 5 minutes   Import + MTD
+//   archiveClosedMonths time-based   daily 02:00       Archive the closed month
+//   fullSync            spreadsheet  on change         Import + MTD
+//
+// The on-change trigger is created by code ON PURPOSE. It used to be added by hand in
+// the Triggers page, and the old setupAutoTrigger() deleted EVERY project trigger
+// before installing its timer — so re-running setup silently removed it.
 
-function setupAutoTrigger() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var triggers = ScriptApp.getProjectTriggers();
-  for (var i = 0; i < triggers.length; i++) {
-    ScriptApp.deleteTrigger(triggers[i]);
+const ARCHIVE_ENABLED_KEY = 'ARCHIVE_ENABLED';
+const ARCHIVE_AFTER_DAYS_KEY = 'ARCHIVE_AFTER_DAYS';
+const ARCHIVE_DRY_RUN_KEY = 'ARCHIVE_DRY_RUN';
+const ARCHIVE_LAST_KEY = 'LAST_ARCHIVE';
+const ARCHIVE_DEFAULT_AFTER_DAYS = 7;
+const ARCHIVE_BACKUP_SHEET = '_ARCHIVE_BACKUP';
+const ARCHIVE_BATCH_SIZE = 500;
+
+// Which plan this script belongs to. PLAN_ID must match the app's plan id
+// (src/config/plans.js: fiberx | bida | sme).
+const PLAN_ID = 'fiberx';
+const PLAN_SHEET_NAME = FIBERX_SHEET_NAME;
+
+const MONTH_NAMES_FULL = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTH_INDEX_ABBR = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+// ==================== CONFIG (generic reads/writes) ====================
+
+/** Every CONFIG row as { NORMALISED_KEY: value }; later rows win. */
+function readConfigMap_() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
+  var map = {};
+  if (!sheet) return map;
+
+  var values = sheet.getDataRange().getValues();
+  for (var i = 0; i < values.length; i++) {
+    var key = String(values[i][0]).trim().toUpperCase().replace(/\s+/g, '_');
+    if (key) map[key] = values[i][1];
   }
-  ScriptApp.newTrigger('autoSync').timeBased().everyMinutes(5).create();
-  try { SpreadsheetApp.getUi().alert('Auto-trigger installed!\n\nSyncs every 5 minutes.'); } catch(e) {}
+  return map;
 }
 
-function autoSync() {
-  importFiberxToRawData();
-  generateMTDReport();
+function configString_(map, key, fallback) {
+  if (!(key in map)) return fallback;
+  var value = map[key];
+  value = (value === null || value === undefined) ? '' : String(value).trim();
+  return value === '' ? fallback : value;
 }
 
-function stopAutoTrigger() {
-  var triggers = ScriptApp.getProjectTriggers();
-  for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'autoSync') {
-      ScriptApp.deleteTrigger(triggers[i]);
+function configBool_(map, key, fallback) {
+  var value = configString_(map, key, '');
+  if (value === '') return fallback;
+  value = value.toUpperCase();
+  return value === 'TRUE' || value === 'YES' || value === 'Y' ||
+         value === '1' || value === 'ON' || value === 'ENABLED';
+}
+
+function configNumber_(map, key, fallback) {
+  var n = parseFloat(configString_(map, key, ''));
+  return isNaN(n) ? fallback : n;
+}
+
+/** Writes one CONFIG value; every other row (EXCLUDED_AREAS included) is untouched. */
+function writeConfigValue_(key, value) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG_SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(CONFIG_SHEET_NAME);
+
+  var values = sheet.getDataRange().getValues();
+  for (var i = 0; i < values.length; i++) {
+    var existing = String(values[i][0]).trim().toUpperCase().replace(/\s+/g, '_');
+    if (existing === key) {
+      sheet.getRange(i + 1, 2).setValue(value);
+      return;
     }
   }
-  try { SpreadsheetApp.getUi().alert('Auto-trigger stopped.'); } catch(e) {}
+
+  var row = sheet.getLastRow() + 1;
+  if (row === 1) {
+    sheet.getRange(1, 1, 1, 2).setValues([['SETTING', 'VALUE']]).setFontWeight('bold');
+    row = 2;
+  }
+  sheet.getRange(row, 1, 1, 2).setValues([[key, value]]);
 }
+
+// ==================== DATES ====================
+
+function pad2_(n) { return (n < 10 ? '0' : '') + n; }
+
+function monthKeyOf_(date) { return date.getFullYear() + '-' + pad2_(date.getMonth() + 1); }
+function monthLabelOf_(date) { return MONTH_NAMES_FULL[date.getMonth()] + ' ' + date.getFullYear(); }
+/** The app's canonical date key, e.g. 'September 1, 2026'. */
+function dateLabelOf_(date) {
+  return MONTH_NAMES_FULL[date.getMonth()] + ' ' + date.getDate() + ', ' + date.getFullYear();
+}
+
+function todayMidnight_() {
+  var now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+/** Parses a sheet date (Date object, 'Sept 1 2026', 'September 1, 2026', ISO) → Date|null. */
+function parseAnyDate_(value) {
+  if (!value) return null;
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    return isNaN(value.getTime())
+      ? null
+      : new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+
+  var text = String(value).replace(/[._]/g, ' ').replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+
+  var iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10));
+
+  var worded = text.match(/^([A-Za-z]+) (\d{1,2}) (\d{4})$/);
+  if (worded) {
+    var index = MONTH_INDEX_ABBR[worded[1].substring(0, 3).toLowerCase()];
+    if (index === undefined) return null;
+    return new Date(parseInt(worded[3], 10), index, parseInt(worded[2], 10));
+  }
+  return null;
+}
+
+/** The date of a NEW REPORT day block: 'SLI DAILY TRACKING REPORT as of __Sept. 1, 2026__'. */
+function blockDateOf_(titleCell) {
+  var text = String(titleCell || '');
+  var wrapped = text.match(/__(.+?)__/);
+  if (wrapped) return parseAnyDate_(wrapped[1]);
+  var asOf = text.match(/as of\s+(.+)$/i);
+  return asOf ? parseAnyDate_(asOf[1]) : null;
+}
+
+/** 'September 2026' → Date(2026, 8, 1), or null when the cell is not a month header. */
+function parseMonthHeader_(text) {
+  var trimmed = String(text || '').trim();
+  for (var i = 0; i < MONTH_NAMES_FULL.length; i++) {
+    var match = trimmed.match(new RegExp('^' + MONTH_NAMES_FULL[i] + '\\s+(\\d{4})$', 'i'));
+    if (match) return new Date(parseInt(match[1], 10), i, 1);
+  }
+  return null;
+}
+
+function lastDayOfMonth_(monthDate) {
+  return new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+}
+
+/** The first day a closed month may be archived: `afterDays` days into the next month. */
+function archiveCutoff_(monthDate, afterDays) {
+  return new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, Math.max(1, Math.round(afterDays)));
+}
+
+/** Percent cells are stored as fractions; the app consumes the '0.00%' text form. */
+function percentText_(value) {
+  if (value === '' || value === null || value === undefined) return '';
+  if (typeof value === 'number') return (value * 100).toFixed(2) + '%';
+
+  var text = String(value).trim();
+  if (text.indexOf('%') !== -1) return text;
+  var n = parseFloat(text.replace(/[",\s]/g, ''));
+  if (isNaN(n)) return text;
+  return (n <= 1 ? n * 100 : n).toFixed(2) + '%';
+}
+
+function num_(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  var n = cleanNum(value);
+  return isNaN(n) ? null : n;
+}
+
+// ==================== SUPABASE ====================
+//
+// The service_role key is NEVER kept in this file — it lives in Script Properties,
+// set from the Apps Script editor: Project Settings → Script Properties.
+//
+//   SUPABASE_URL          https://<project-ref>.supabase.co
+//   SUPABASE_SERVICE_KEY  the service_role secret (Supabase → Project Settings → API keys)
+//   ALERT_EMAIL           optional; archive failures are mailed here
+//
+// Read-only keys would not do: the anon key ships inside the public app bundle, so it
+// must never be able to write archive rows.
+
+function supabaseConfig_() {
+  var props = PropertiesService.getScriptProperties();
+  var url = String(props.getProperty('SUPABASE_URL') || '').replace(/\/+$/, '');
+  var key = String(props.getProperty('SUPABASE_SERVICE_KEY') || '');
+  if (!url || !key) {
+    throw new Error('Kulang ang SUPABASE_URL / SUPABASE_SERVICE_KEY sa Script Properties. ' +
+      'Idagdag sa Apps Script editor: Project Settings → Script Properties.');
+  }
+  return { url: url, key: key };
+}
+
+function supabaseRequest_(path, options) {
+  var opts = options || {};
+  var config = supabaseConfig_();
+
+  var headers = {
+    apikey: config.key,
+    Authorization: 'Bearer ' + config.key,
+    'Content-Type': 'application/json'
+  };
+  if (opts.prefer) headers.Prefer = opts.prefer;
+  if (opts.range) {
+    headers.Range = opts.range;
+    headers['Range-Unit'] = 'items';
+  }
+
+  var params = { method: opts.method || 'get', headers: headers, muteHttpExceptions: true };
+  if (opts.body !== undefined) params.payload = JSON.stringify(opts.body);
+
+  var response = UrlFetchApp.fetch(config.url + '/rest/v1/' + path, params);
+  return {
+    code: response.getResponseCode(),
+    text: response.getContentText(),
+    headers: response.getAllHeaders()
+  };
+}
+
+function supabaseHeader_(headers, name) {
+  if (!headers) return null;
+  var keys = Object.keys(headers);
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].toLowerCase() === name) return headers[keys[i]];
+  }
+  return null;
+}
+
+/**
+ * Upsert (never plain insert) so a re-run over the same month is idempotent — the
+ * unique key makes duplicates impossible.
+ */
+function supabaseUpsert_(table, rows, onConflict) {
+  if (!rows.length) return;
+  for (var i = 0; i < rows.length; i += ARCHIVE_BATCH_SIZE) {
+    var chunk = rows.slice(i, i + ARCHIVE_BATCH_SIZE);
+    var result = supabaseRequest_(table + '?on_conflict=' + onConflict, {
+      method: 'post',
+      body: chunk,
+      prefer: 'resolution=merge-duplicates,return=minimal'
+    });
+    if (result.code < 200 || result.code >= 300) {
+      throw new Error('Supabase upsert failed on ' + table + ' (HTTP ' + result.code + '): ' +
+        String(result.text).slice(0, 300));
+    }
+  }
+}
+
+/** Exact row count for a query without downloading the rows (Content-Range / N). */
+function supabaseCount_(table, query) {
+  var result = supabaseRequest_(table + '?' + query, { prefer: 'count=exact', range: '0-0' });
+  // 200/206 → 'Content-Range: 0-0/402' · 416 → 'Content-Range: */0'
+  if (result.code !== 200 && result.code !== 206 && result.code !== 416) {
+    throw new Error('Supabase count failed on ' + table + ' (HTTP ' + result.code + '): ' +
+      String(result.text).slice(0, 200));
+  }
+  var header = supabaseHeader_(result.headers, 'content-range');
+  var match = String(header || '').match(/\/(\d+)\s*$/);
+  return match ? parseInt(match[1], 10) : -1;
+}
+
+function supabaseSum_(table, query, column) {
+  var result = supabaseRequest_(table + '?' + query + '&select=' + column);
+  if (result.code < 200 || result.code >= 300) {
+    throw new Error('Supabase read failed on ' + table + ' (HTTP ' + result.code + '): ' +
+      String(result.text).slice(0, 200));
+  }
+  var rows = JSON.parse(result.text || '[]');
+  var sum = 0;
+  for (var i = 0; i < rows.length; i++) sum += Number(rows[i][column] || 0);
+  return sum;
+}
+
+// ==================== ARCHIVE: read the month ====================
+
+/** RAW DATA rows belonging to one month, shaped for sli_raw_daily. */
+function collectRawArchiveRows_(monthKey) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(RAW_DATA_SHEET_NAME);
+  if (!sheet) throw new Error('RAW DATA sheet not found.');
+
+  var range = sheet.getDataRange();
+  var values = range.getValues();
+  var display = range.getDisplayValues();
+  var rows = [];
+
+  for (var i = 1; i < values.length; i++) {
+    var date = parseAnyDate_(values[i][0]);
+    if (!date || monthKeyOf_(date) !== monthKey) continue;
+
+    var area = String(values[i][1] || '').trim();
+    if (!area || area === 'AREA') continue;
+
+    rows.push({
+      plan: PLAN_ID,
+      month_key: monthKey,
+      report_date: monthKey + '-' + pad2_(date.getDate()),
+      date_label: dateLabelOf_(date),
+      area: area,
+      // The daily OVER ALL TOTAL row is archived too, flagged rather than dropped:
+      // the app's Daily To-Date card reads it, and it is not always equal to the sum
+      // of the area rows (a stale total would silently change closed-month numbers).
+      is_overall_total: area === 'OVER ALL TOTAL',
+      bf: num_(values[i][2]),
+      inc: num_(values[i][3]),
+      total_jo: num_(values[i][4]),
+      comp_from_total: num_(values[i][5]),
+      comp_from_rjo: num_(values[i][6]),
+      total_completed: num_(values[i][7]),
+      rjo_incoming: num_(values[i][8]),
+      rjo_redispatched: num_(values[i][9]),
+      total_rjo: num_(values[i][10]),
+      carry_over: num_(values[i][11]),
+      mtd: num_(values[i][12]),
+      target: num_(values[i][13]),
+      // Display value, so '#DIV/0!' is stored verbatim exactly as the CSV export shows it.
+      pct: String(display[i][14] === null || display[i][14] === undefined ? '' : display[i][14]).trim(),
+      row_order: rows.length
+    });
+  }
+  return rows;
+}
+
+/** MTD sheet rows belonging to one month, shaped for sli_mtd. */
+function collectMtdArchiveRows_(monthKey, monthLabel) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MTD_SHEET_NAME);
+  if (!sheet) throw new Error('MTD sheet not found.');
+
+  var range = sheet.getDataRange();
+  var values = range.getValues();
+  var display = range.getDisplayValues();
+  var rows = [];
+  var columns = null;
+  var inSection = false;
+
+  for (var i = 0; i < values.length; i++) {
+    var first = String(values[i][0] || '').trim();
+
+    if (parseMonthHeader_(first)) {
+      inSection = (first === monthLabel);
+      columns = null;
+      continue;
+    }
+    if (!inSection) continue;
+
+    if (first === 'AREA') {
+      columns = {};
+      for (var c = 0; c < values[i].length; c++) {
+        var name = String(values[i][c] || '').trim().toUpperCase();
+        if (name) columns[name] = c;
+      }
+      continue;
+    }
+    if (!columns) continue;
+    if (first === '') {
+      // generateMTDReport closes each month with blank rows.
+      if (rows.length) break;
+      continue;
+    }
+
+    var pick = function (name) {
+      var index = columns[name];
+      return (index === undefined || index < 0) ? null : num_(values[i][index]);
+    };
+
+    rows.push({
+      plan: PLAN_ID,
+      month_key: monthKey,
+      month_label: monthLabel,
+      area: first,
+      is_overall_total: first === 'OVER ALL TOTAL',
+      comp_from_total: pick('COMPLETED FROM TOTAL'),
+      comp_from_rjo: pick('COMPLETED FROM RJO'),
+      total_completed: pick('TOTAL COMPLETED'),
+      this_mo_rjo: pick('THIS MO. RJO'),
+      prev_mos_rjo: pick('PREV MOS. RJO'),
+      total_rjo: pick('TOTAL RJO'),
+      last_mtd: pick('LAST MTD'),
+      target: pick('TARGET'),
+      total_incoming: pick('TOTAL INCOMING'),
+      last_pct: percentText_(columns['LAST %'] === undefined ? '' : display[i][columns['LAST %']]),
+      row_order: rows.length
+    });
+  }
+  return rows;
+}
+
+function sumCompleted_(rows) {
+  var sum = 0;
+  for (var i = 0; i < rows.length; i++) {
+    if (!rows[i].is_overall_total) sum += Number(rows[i].total_completed || 0);
+  }
+  return sum;
+}
+
+// ==================== ARCHIVE: which month is due ====================
+
+/**
+ * Every month that is (a) past its cutoff — month end + ARCHIVE_AFTER_DAYS — and
+ * (b) complete, oldest first. Nothing is skipped when a run is missed: the next run
+ * picks up the backlog.
+ */
+function eligibleMonths_(afterDays) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(RAW_DATA_SHEET_NAME);
+  if (!sheet) throw new Error('RAW DATA sheet not found.');
+
+  var values = sheet.getDataRange().getValues();
+  var seen = {};
+  var overallLast = null;
+
+  for (var i = 1; i < values.length; i++) {
+    var date = parseAnyDate_(values[i][0]);
+    if (!date) continue;
+
+    if (!overallLast || date.getTime() > overallLast.getTime()) overallLast = date;
+
+    var key = monthKeyOf_(date);
+    if (!seen[key]) seen[key] = { first: date, last: date };
+    if (date.getTime() < seen[key].first.getTime()) seen[key].first = date;
+    if (date.getTime() > seen[key].last.getTime()) seen[key].last = date;
+  }
+
+  var today = todayMidnight_();
+  var keys = Object.keys(seen).sort();
+  var due = [];
+
+  for (var k = 0; k < keys.length; k++) {
+    var monthKey = keys[k];
+    var monthDate = seen[monthKey].first;
+    if (archiveCutoff_(monthDate, afterDays).getTime() > today.getTime()) continue;
+
+    // Completeness guard: only freeze the month once its last calendar day has been
+    // encoded, or once encoding has already moved on to a later month. A partial
+    // month would otherwise be archived and purged as if it were final.
+    var complete = seen[monthKey].last.getTime() >= lastDayOfMonth_(monthDate).getTime();
+    if (!complete && overallLast && monthKeyOf_(overallLast) > monthKey) complete = true;
+    if (!complete) continue;
+
+    due.push({ key: monthKey, label: monthLabelOf_(monthDate), date: monthDate });
+  }
+  return due;
+}
+
+// ==================== ARCHIVE: purge NEW REPORT ====================
+
+/** Copies the rows that are about to be deleted into a backup tab, values only. */
+function backupPurgedRows_(values, ranges) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var backup = ss.getSheetByName(ARCHIVE_BACKUP_SHEET);
+  if (!backup) backup = ss.insertSheet(ARCHIVE_BACKUP_SHEET);
+  else backup.clear();
+
+  var out = [['PRE-PURGE BACKUP', new Date().toISOString(), PLAN_ID]];
+  out.push(['Pagkabura ng archived month, hindi na kailangan ang tab na ito — pwedeng i-delete.']);
+  out.push([]);
+
+  for (var r = 0; r < ranges.length; r++) {
+    for (var i = 0; i < ranges[r].count; i++) {
+      var source = values[ranges[r].start - 1 + i];
+      if (source) out.push(source.slice());
+    }
+  }
+
+  var width = RAW_HEADER.length;
+  var padded = [];
+  for (var p = 0; p < out.length; p++) {
+    var copy = out[p].slice(0, width);
+    while (copy.length < width) copy.push('');
+    padded.push(copy);
+  }
+  backup.getRange(1, 1, padded.length, width).setValues(padded);
+}
+
+/**
+ * Deletes every day block of `monthKey` from the plan's NEW REPORT.
+ *
+ * This is the only step that actually shrinks the spreadsheet. Clearing RAW DATA is
+ * not enough: the import rebuilds it from NEW REPORT on every sync (every 5 minutes,
+ * and on every edit), so an old month left in NEW REPORT always comes back.
+ */
+function purgeMonthFromNewReport_(monthKey, dryRun) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PLAN_SHEET_NAME);
+  if (!sheet) throw new Error(PLAN_SHEET_NAME + ' sheet not found.');
+
+  var values = sheet.getDataRange().getValues();
+  var titles = [];
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').indexOf('SLI DAILY TRACKING REPORT') !== -1) titles.push(i);
+  }
+
+  var ranges = [];
+  var labels = [];
+  var rowCount = 0;
+
+  for (var t = 0; t < titles.length; t++) {
+    var startIndex = titles[t];
+    var endIndex = (t + 1 < titles.length) ? titles[t + 1] - 1 : values.length - 1;
+
+    var date = blockDateOf_(values[startIndex][0]);
+    if (!date || monthKeyOf_(date) !== monthKey) continue;
+
+    ranges.push({ start: startIndex + 1, count: endIndex - startIndex + 1 }); // 1-based row, row count
+    rowCount += endIndex - startIndex + 1;
+    labels.push(dateLabelOf_(date));
+  }
+
+  if (!ranges.length || dryRun) return { rows: rowCount, labels: labels };
+
+  backupPurgedRows_(values, ranges);
+  // Bottom-up, so the earlier row numbers stay valid while deleting.
+  for (var r = ranges.length - 1; r >= 0; r--) {
+    sheet.deleteRows(ranges[r].start, ranges[r].count);
+  }
+  return { rows: rowCount, labels: labels };
+}
+
+// ==================== ARCHIVE: one month ====================
+
+function archiveOneMonth_(month, dryRun) {
+  var rawRows = collectRawArchiveRows_(month.key);
+  var mtdRows = collectMtdArchiveRows_(month.key, month.label);
+
+  if (!rawRows.length) {
+    return month.label + ': walang RAW DATA rows — nilaktawan.';
+  }
+
+  var localRawSum = sumCompleted_(rawRows);
+  var localMtdSum = sumCompleted_(mtdRows);
+
+  if (dryRun) {
+    return month.label + ' (DRY RUN): ' + rawRows.length + ' RAW rows (sum ' + localRawSum +
+      '), ' + mtdRows.length + ' MTD rows (sum ' + localMtdSum +
+      '), ' + purgeMonthFromNewReport_(month.key, true).rows + ' NEW REPORT rows ang buburahin' +
+      ' — walang in-upload at walang binura.';
+  }
+
+  supabaseUpsert_('sli_raw_daily', rawRows, 'plan,report_date,area');
+  supabaseUpsert_('sli_mtd', mtdRows, 'plan,month_key,area');
+
+  // GATE: nothing is deleted until Supabase demonstrably holds the whole month —
+  // row counts AND a checksum, so a partial write can never be mistaken for success.
+  var remoteRawCount = supabaseCount_('sli_raw_daily', 'plan=eq.' + PLAN_ID + '&month_key=eq.' + month.key);
+  var remoteMtdCount = supabaseCount_('sli_mtd', 'plan=eq.' + PLAN_ID + '&month_key=eq.' + month.key);
+  var remoteRawSum = supabaseSum_('sli_raw_daily',
+    'plan=eq.' + PLAN_ID + '&month_key=eq.' + month.key + '&is_overall_total=eq.false', 'total_completed');
+  var remoteMtdSum = supabaseSum_('sli_mtd',
+    'plan=eq.' + PLAN_ID + '&month_key=eq.' + month.key + '&is_overall_total=eq.false', 'total_completed');
+
+  var rawOk = (remoteRawCount === rawRows.length) && (remoteRawSum === localRawSum);
+  var mtdOk = (remoteMtdCount === mtdRows.length) && (remoteMtdSum === localMtdSum);
+
+  if (!rawOk || !mtdOk) {
+    return month.label + ': VERIFICATION FAILED — WALANG BINURA. ' +
+      'RAW ' + remoteRawCount + '/' + rawRows.length + ' rows, sum ' + remoteRawSum + '/' + localRawSum + ' | ' +
+      'MTD ' + remoteMtdCount + '/' + mtdRows.length + ' rows, sum ' + remoteMtdSum + '/' + localMtdSum;
+  }
+
+  var purged = purgeMonthFromNewReport_(month.key, false);
+  fullSync();
+
+  return month.label + ': archived ' + rawRows.length + ' RAW + ' + mtdRows.length + ' MTD rows; ' +
+    'purged ' + purged.rows + ' NEW REPORT rows (' + purged.labels.length + ' day blocks, ' +
+    purged.labels.join(', ') + ').';
+}
+
+function auditArchive_(summary, startedAt, dryRun) {
+  var line = Utilities.formatDate(startedAt, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm') +
+    ' [' + PLAN_ID + (dryRun ? ' DRY RUN' : '') + '] ' + summary;
+  try { writeConfigValue_(ARCHIVE_LAST_KEY, line); } catch (e) { /* auditing must not throw */ }
+  Logger.log(line);
+}
+
+function alertArchiveFailure_(error, summary) {
+  try {
+    var to = String(PropertiesService.getScriptProperties().getProperty('ALERT_EMAIL') || '').trim();
+    if (!to) return;
+    MailApp.sendEmail(to, 'SLI Tracker archive FAILED (' + PLAN_ID + ')',
+      summary + '\n\n' + (error && error.stack ? error.stack : String(error)));
+  } catch (e) { /* never let alerting break the run */ }
+}
+
+/**
+ * The scheduled entry point: archive + purge every month that is due, oldest first.
+ *
+ * RECOMMENDED ORDER: run the dry run first — menu 'Archive Dry Run' — and only then
+ * set ARCHIVE_ENABLED to TRUE.
+ */
+function archiveClosedMonths() {
+  var startedAt = new Date();
+  var config = readConfigMap_();
+  var enabled = configBool_(config, ARCHIVE_ENABLED_KEY, false);
+  var dryRun = configBool_(config, ARCHIVE_DRY_RUN_KEY, false);
+  var afterDays = configNumber_(config, ARCHIVE_AFTER_DAYS_KEY, ARCHIVE_DEFAULT_AFTER_DAYS);
+  var notes = [];
+
+  try {
+    // A dry run is allowed while the archive is disabled, so the cut-off dates can be
+    // previewed before anything is switched on. The scheduled run stays inert.
+    if (!enabled && !dryRun) {
+      auditArchive_('ARCHIVE_ENABLED is not TRUE — walang ginawa. ' +
+        '(Itakda ang ARCHIVE_ENABLED = TRUE sa CONFIG tab para payagan ang archiving.)', startedAt, false);
+      return;
+    }
+
+    if (!dryRun) {
+      // The archive source must be complete, so rebuild RAW DATA + MTD first. Without
+      // this the archive could freeze a month as it looked five minutes ago.
+      fullSync();
+    }
+
+    var months = eligibleMonths_(afterDays);
+    if (!months.length) {
+      auditArchive_('Walang buwang due pa (kailangan ang ' + afterDays +
+        ' araw pagkatapos ng buwan). Walang ginawa.', startedAt, dryRun);
+      return;
+    }
+
+    for (var i = 0; i < months.length; i++) {
+      notes.push(archiveOneMonth_(months[i], dryRun));
+    }
+    auditArchive_(notes.join(' | '), startedAt, dryRun);
+  } catch (error) {
+    notes.push('FAILED: ' + (error && error.message ? error.message : String(error)));
+    auditArchive_(notes.join(' | '), startedAt, dryRun);
+    alertArchiveFailure_(error, notes.join(' | '));
+    throw error;
+  }
+}
+
+/** Menu helper: forces DRY_RUN for one pass, then restores the previous value. */
+function archiveDryRun() {
+  var previous = configString_(readConfigMap_(), ARCHIVE_DRY_RUN_KEY, '');
+  writeConfigValue_(ARCHIVE_DRY_RUN_KEY, 'TRUE');
+  try {
+    archiveClosedMonths();
+  } finally {
+    writeConfigValue_(ARCHIVE_DRY_RUN_KEY, previous === '' ? 'FALSE' : previous);
+  }
+  try {
+    SpreadsheetApp.getUi().alert('Dry run tapos na.\n\nTingnan ang LAST_ARCHIVE row sa CONFIG tab ' +
+      'para sa bilang ng rows na aarchive at buburahin.');
+  } catch (e) {}
+}
+
+// ==================== CONNECTION TEST ====================
+
+/**
+ * Answers "tama ba ang SUPABASE_URL at SUPABASE_SERVICE_KEY?" without touching data.
+ *
+ * The READS settle very little: the archive tables are public-read on purpose (the app
+ * fetches closed months with the anon key), so they answer even for a wrong key. The
+ * question that matters is whether this key may WRITE, and that is settled with an
+ * EMPTY INSERT probe: Postgres checks the INSERT privilege and RLS *before* it
+ * evaluates constraints, so a key that may write gets 23502 (not-null violation) and
+ * NOTHING is stored, while a key that may not gets 42501 — which covers both a missing
+ * GRANT and an RLS violation, and is exactly what an anon key produces.
+ *
+ * Not-null is the probe on purpose: it aborts the whole statement, so no probe row can
+ * survive a partial success. Verified against a throwaway table — this body comes back
+ * as 23502 with zero rows left behind.
+ */
+function testSupabaseConnection() {
+  var label = (typeof PLAN_ID === 'string' && PLAN_ID) ? PLAN_ID.toUpperCase() : 'PLAN';
+  var lines = [];
+  var problems = [];
+
+  var config = null;
+  try {
+    config = supabaseConfig_();
+  } catch (error) {
+    lines.push('✗ ' + error.message);
+  }
+
+  if (config) {
+    lines.push('URL         ' + config.url);
+
+    var role = supabaseKeyRole_(config.key);
+    lines.push('Key role    ' + (role || '(hindi JWT — sb_secret_ key, o sirang key)'));
+    if (role === 'anon' || role === 'authenticated') {
+      problems.push('Ang naka-set na key ay "' + role + '" — mali ito. Kunin ang ' +
+        'service_role secret sa Supabase → Project Settings → API keys.');
+    }
+
+    var tables = [
+      { name: 'sli_raw_daily', conflict: 'plan,report_date,area' },
+      { name: 'sli_mtd', conflict: 'plan,month_key,area' }
+    ];
+
+    for (var i = 0; i < tables.length; i++) {
+      lines.push('');
+      lines.push(tables[i].name + ':');
+
+      try {
+        var count = supabaseCount_(tables[i].name, 'select=id');
+        lines.push('  read    OK — ' + (count < 0 ? 'hindi mabasa ang count' : count + ' row(s)'));
+      } catch (error) {
+        lines.push('  read    ✗ ' + error.message);
+        problems.push(tables[i].name + ' hindi mabasa: ' + error.message);
+      }
+
+      try {
+        var probe = supabaseRequest_(tables[i].name + '?on_conflict=' + tables[i].conflict, {
+          method: 'post',
+          body: {},
+          prefer: 'resolution=merge-duplicates,return=minimal'
+        });
+        var verdict = readWriteProbe_(probe, tables[i].name);
+        lines.push('  write   ' + (verdict.writable ? 'OK — ' : '✗ ') + verdict.detail);
+        if (!verdict.writable) problems.push(tables[i].name + ' — ' + verdict.detail);
+      } catch (error) {
+        lines.push('  write   ✗ ' + error.message);
+        problems.push(tables[i].name + ' hindi masulatan: ' + error.message);
+      }
+    }
+  }
+
+  lines.push('');
+  if (!problems.length) {
+    lines.push('RESULTA: handa na ang archive para sa ' + label + '. Walang nabago sa data.');
+  } else {
+    lines.push('RESULTA: hindi pa handa ang archive.');
+    for (var p = 0; p < problems.length; p++) lines.push('• ' + problems[p]);
+  }
+
+  reportSupabaseTest_(label, lines, !problems.length);
+}
+
+/**
+ * What the empty-row probe actually said. Only a constraint rejection (23502 and
+ * friends) proves the write was permitted; anything else — in particular 42501, which
+ * is both "permission denied" and an RLS violation — means it was not.
+ */
+function readWriteProbe_(response, table) {
+  var body = {};
+  try { body = JSON.parse(response.text || '{}') || {}; } catch (error) { body = {}; }
+  var code = String(body.code || '');
+  var message = String(body.message || '').trim();
+
+  if (response.code >= 200 && response.code < 300) {
+    // The probe is always invalid, so this cannot happen — and if it ever did, a null
+    // row may now be sitting in the table. Never report this as a pass.
+    return { writable: false, detail: 'paalala: tinanggap ang blangkong row (HTTP ' +
+      response.code + ') — suriin kung may naipasok sa ' + table };
+  }
+  if (code === '23502' || code === '23514' || code === '23503' ||
+      code === '22P02' || code === '22007') {
+    return { writable: true, detail: 'may pahintulot (tinanggihan ng ' + code +
+      ' ang probe — walang naipasok)' };
+  }
+  if (response.code === 401 || response.code === 403 || code === '42501') {
+    return { writable: false, detail: 'walang pahintulot (HTTP ' + response.code +
+      (code ? ' / ' + code : '') + ') — mali o kulang ang key' };
+  }
+  if (response.code === 404 || code === 'PGRST205' || code === '42P01') {
+    return { writable: false, detail: 'hindi mahanap ang table (HTTP ' + response.code + ')' };
+  }
+  return { writable: false, detail: 'hindi inaasahang sagot HTTP ' + response.code +
+    (code ? ' / ' + code : '') + (message ? ' — ' + message.slice(0, 120) : '') };
+}
+
+/**
+ * The role a Supabase key speaks as, read straight out of the JWT payload — so "you
+ * pasted the anon key" is reported as exactly that, instead of as a permission error
+ * that sends you looking at the database. Returns null for keys that are not JWTs
+ * (the newer sb_secret_ / sb_publishable_ pair).
+ */
+function supabaseKeyRole_(key) {
+  var parts = String(key || '').split('.');
+  if (parts.length !== 3) return null;
+  try {
+    var payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (payload.length % 4) payload += '=';
+    var claims = JSON.parse(Utilities.newBlob(Utilities.base64Decode(payload)).getDataAsString());
+    return (claims && claims.role) ? String(claims.role) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+/** Shows the report in a dialog (menu run) and always in the execution log. */
+function reportSupabaseTest_(label, lines, ok) {
+  var report = 'Supabase connection test — ' + label + '\n\n' + lines.join('\n');
+  Logger.log(report);
+  try {
+    SpreadsheetApp.getUi().alert(ok ? 'Supabase OK' : 'Supabase: may problema', report,
+      SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (error) { /* run from the editor — the execution log above is the report */ }
+}
+
+// ==================== TRIGGERS ====================
+
+/**
+ * Creates the three managed triggers if they are missing, and removes duplicates of
+ * them. Every OTHER trigger in the project is left alone.
+ */
+function setupManagedTriggers() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var want = { autoSync: false, archiveClosedMonths: false, fullSync: false };
+  var removed = { setup: 0, duplicate: 0 };
+
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    var trigger = triggers[i];
+    var handler = trigger.getHandlerFunction();
+
+    // Triggers accidentally pointed at a menu/setup function can never do useful work.
+    if (handler === 'onOpen' || handler === 'setupAutoTrigger' || handler === 'setupManagedTriggers' ||
+        handler === 'stopAutoTrigger' || handler === 'stopManagedTriggers' ||
+        handler === 'archiveDryRun' || handler === 'testSupabaseConnection') {
+      ScriptApp.deleteTrigger(trigger);
+      removed.setup++;
+      continue;
+    }
+
+    if (!(handler in want)) continue; // not ours — leave it exactly as it is
+
+    var eventType = trigger.getEventType();
+    var matches =
+      (handler === 'autoSync' && eventType === ScriptApp.EventType.CLOCK) ||
+      (handler === 'archiveClosedMonths' && eventType === ScriptApp.EventType.CLOCK) ||
+      (handler === 'fullSync' && eventType === ScriptApp.EventType.ON_CHANGE);
+
+    if (matches && !want[handler]) {
+      want[handler] = true;
+    } else {
+      ScriptApp.deleteTrigger(trigger);
+      removed.duplicate++;
+    }
+  }
+
+  if (!want.autoSync) {
+    ScriptApp.newTrigger('autoSync').timeBased().everyMinutes(5).create();
+  }
+  if (!want.archiveClosedMonths) {
+    ScriptApp.newTrigger('archiveClosedMonths').timeBased().atHour(2).everyDays(1).create();
+  }
+  if (!want.fullSync) {
+    ScriptApp.newTrigger('fullSync').forSpreadsheet(ss).onChange().create();
+  }
+
+  var message = 'Managed triggers ready.\n\n' +
+    '- autoSync — every 5 minutes (Import + MTD)\n' +
+    '- archiveClosedMonths — daily 02:00 (Archive the closed month)\n' +
+    '- fullSync — on spreadsheet change (Import + MTD)\n\n' +
+    'Nyari: ' + removed.duplicate + ' duplicate, ' + removed.setup + ' sirang trigger ang tinanggal.\n' +
+    'Iba pang trigger sa project ay hindi ginalaw.';
+  try { SpreadsheetApp.getUi().alert(message); } catch (e) {}
+}
+
+/** Removes only the triggers this script manages. */
+function stopManagedTriggers() {
+  var managed = { autoSync: true, archiveClosedMonths: true, fullSync: true };
+  var removed = 0;
+
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (managed[triggers[i].getHandlerFunction()]) {
+      ScriptApp.deleteTrigger(triggers[i]);
+      removed++;
+    }
+  }
+  try { SpreadsheetApp.getUi().alert(removed + ' managed trigger(s) removed.'); } catch (e) {}
+}
+
+// Deprecated aliases. The old setup deleted EVERY project trigger before installing
+// its timer, which silently removed the hand-made on-change fullSync trigger — these
+// now delegate to the managed versions so an old habit cannot break the setup.
+function setupAutoTrigger() { setupManagedTriggers(); }
+function stopAutoTrigger() { stopManagedTriggers(); }
+
+// ==================== MENU ====================
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('GVSI Auto-DB')
@@ -569,9 +1418,20 @@ function onOpen() {
     .addItem('Full Sync (Import + MTD)', 'fullSync')
     .addSeparator()
     .addItem('Setup / Edit CONFIG Sheet', 'setupConfigSheet')
-    .addItem('Setup Auto-Trigger (Every 5 min)', 'setupAutoTrigger')
-    .addItem('Stop Auto-Trigger', 'stopAutoTrigger')
+    .addSeparator()
+    .addItem('Setup Managed Triggers', 'setupManagedTriggers')
+    .addItem('Stop Managed Triggers', 'stopManagedTriggers')
+    .addSeparator()
+    .addItem('Archive Closed Months to Supabase', 'archiveClosedMonths')
+    .addItem('Archive Dry Run', 'archiveDryRun')
+    .addSeparator()
+    .addItem('Test Supabase Connection', 'testSupabaseConnection')
     .addToUi();
+}
+
+function autoSync() {
+  importFiberxToRawData();
+  generateMTDReport();
 }
 
 function fullSync() {
