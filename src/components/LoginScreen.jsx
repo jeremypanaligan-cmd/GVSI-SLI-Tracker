@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import AppLogo from './AppLogo'
 import { useAuth } from '../context/AuthContext'
-import { fetchCredentials, verifyCredentials } from '../utils/auth'
+import { signIn as signInWithCredentials } from '../utils/auth'
+import { fetchMaintenanceState } from '../utils/presence'
 
 export default function LoginScreen() {
-  const { signIn } = useAuth()
+  const { signIn, notice, clearNotice } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
@@ -12,17 +13,27 @@ export default function LoginScreen() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  // Credentials tab is cached for the visit so retries don't refetch it
-  const credentialsRef = useRef(null)
   const usernameRef = useRef(null)
+  const [maintenance, setMaintenance] = useState({ enabled: false })
 
   useEffect(() => { usernameRef.current?.focus() }, [])
+
+  // Public read, so the notice is visible before anyone signs in. Best effort: a
+  // Supabase outage must not stop someone from signing in.
+  useEffect(() => {
+    let cancelled = false
+    fetchMaintenanceState()
+      .then((state) => { if (!cancelled) setMaintenance(state) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const handleSubmit = async (event) => {
     event.preventDefault()
     if (busy) return
 
     setError('')
+    clearNotice()
     if (!username.trim() || !password) {
       setError('Enter your username and password.')
       return
@@ -30,8 +41,10 @@ export default function LoginScreen() {
 
     setBusy(true)
     try {
-      if (!credentialsRef.current) credentialsRef.current = await fetchCredentials()
-      const user = await verifyCredentials(credentialsRef.current, username, password)
+      // The password is hashed in the browser and verified inside Postgres, so the
+      // hash never leaves this device in a form anything else can replay against
+      // the sheet.
+      const user = await signInWithCredentials(username, password)
 
       if (!user) {
         setError('Invalid username or password.')
@@ -39,12 +52,11 @@ export default function LoginScreen() {
       }
       signIn(user, remember)
     } catch (err) {
-      credentialsRef.current = null
       const message = String(err?.message || '')
       setError(
         message.startsWith('Sign-in needs')
           ? message
-          : 'Could not reach the credentials sheet. Check your connection and try again.'
+          : `${message || 'Could not sign in.'} Check your connection and try again.`
       )
     } finally {
       setBusy(false)
@@ -62,6 +74,19 @@ export default function LoginScreen() {
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Gallopvision Services, Inc.</p>
         </div>
+
+        {maintenance.enabled && (
+          <div className="mb-3 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-3 py-2.5">
+            <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              Maintenance mode
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-amber-700/90 dark:text-amber-300/90">
+              {maintenance.message || 'Pansamantalang naka-off ang dashboard habang may inaayos.'}
+              {' '}Puwede kang mag-sign in, pero haharangin ka hanggang matapos.
+            </p>
+          </div>
+        )}
 
         <form
           onSubmit={handleSubmit}
@@ -123,6 +148,12 @@ export default function LoginScreen() {
             />
             <span className="text-xs text-slate-600 dark:text-slate-400">Keep me signed in on this device</span>
           </label>
+
+          {notice && !error && (
+            <p role="status" className="mt-4 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-3 py-2">
+              {notice}
+            </p>
+          )}
 
           {error && (
             <p role="alert" className="mt-4 text-xs font-medium text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-lg px-3 py-2">
