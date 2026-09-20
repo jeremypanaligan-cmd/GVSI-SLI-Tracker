@@ -4,9 +4,7 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
-## [Unreleased]
-
-Hindi pa naka-tag at hindi pa binabago ang version sa `package.json`.
+## [1.15.0] — 2026-09-21
 
 ### 🐛 Fixes
 
@@ -53,6 +51,41 @@ Hindi pa naka-tag at hindi pa binabago ang version sa `package.json`.
   the incident that proved it, the `ARCHIVE_PURGE` gate and the formula guard
 - **`docs/DATA_PIPELINE.md`** and **`docs/DATASOURCE.md`** — `NEW REPORT` is an `IMPORTRANGE`
   mirror, not hand-encoded data, and the pipeline now says which parts come from Supabase
+
+### 🔤 Language
+
+- **Every user-facing string is professional English.** The console, the maintenance screen,
+  the sign-in screen and the maintenance banner in the header were written in Taglish —
+  "Aktibo ngayon", "Naka-ON ang maintenance mode", "Walang ibang aktibo sa loob ng 2 minuto".
+  The wording is now the register a C-suite reader expects from an internal reporting tool.
+  Nothing else changed: same layout, same behaviour, same keys in state
+
+### 🔍 Developer console
+
+- **Build status** (new section) — the version from `package.json`, the hashed bundle the
+  browser actually loaded, and whether Supabase is configured. The bundle name is the same
+  thing DevTools → Network shows, so "is the deploy I just pushed the one running?" is
+  answered without opening it. The archived-month list is read with `force`, deliberately
+  bypassing the 5-minute index cache, and refreshes that cache for the app as it does so
+- **Data source diagnostics** (new section) — per plan, which months came from Supabase and
+  which from the Google Sheet, with the payload size and row count on each side, plus the
+  split the merge actually produced. `src/utils/dataSourceDiagnostics.js` records every read
+  the data path makes (sheet export, archive fetch, per-month cache hit or miss) and the panel
+  renders the snapshot. It is pure observation — every entry point returns nothing and is
+  called for its side effect only — so a bug in it can make the panel wrong but cannot change
+  what the dashboard shows
+- **The instrumentation is what makes the archive's central claim checkable.** "The sheet
+  payload stays flat as the archive grows" was an assertion in the docs; now the Sheet payload
+  line shows the export the app actually downloaded next to the Archive payload it folded in,
+  so the two are directly comparable
+
+---
+
+**Version:** package.json bumped 1.14.0 → **1.15.0**. As before, the service worker cache
+names, the versioned manifest and the data and archive cache keys all derive from that one
+value, so this is the only edit a release needs. Nothing here requires a database change.
+
+A pushed `v*` tag publishes the GitHub release from this section.
 
 ---
 
