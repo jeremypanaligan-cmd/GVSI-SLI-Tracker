@@ -97,6 +97,8 @@ how long, recent sessions, and a **maintenance mode** switch that blocks everyon
   gate, and how to run or roll back an archive.
 - **[Accounts and the Developer console](docs/DEVELOPER.md)** — roles, sessions, presence,
   maintenance mode and what the public anon key can and cannot reach.
+- **[Roadmap](docs/ROADMAP.md)** — known upgrades that are not built yet, with the evidence
+  for each, ordered by what is worth doing first.
 - **[CHANGELOG](CHANGELOG.md)** — release notes.
 
 ## Releasing
