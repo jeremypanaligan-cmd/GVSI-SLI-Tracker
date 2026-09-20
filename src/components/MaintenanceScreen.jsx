@@ -29,34 +29,34 @@ export default function MaintenanceScreen({ maintenance, stale, onRetry }) {
 
         <div className="rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-white dark:bg-slate-900/60 backdrop-blur-xl shadow-2xl shadow-black/5 dark:shadow-black/30 p-5">
           <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
-            {maintenance?.message || 'Pansamantalang naka-off ang dashboard habang may inaayos.'}
+            {maintenance?.message || 'The dashboard is temporarily unavailable while maintenance is being carried out.'}
           </p>
 
           <dl className="mt-4 space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
             {format(since) && (
               <div className="flex justify-between gap-3">
-                <dt>Simula</dt>
+                <dt>Started</dt>
                 <dd className="font-medium text-slate-700 dark:text-slate-300">{format(since)}</dd>
               </div>
             )}
             {maintenance?.by && (
               <div className="flex justify-between gap-3">
-                <dt>Inilagay ni</dt>
+                <dt>Set by</dt>
                 <dd className="font-medium text-slate-700 dark:text-slate-300">{maintenance.by}</dd>
               </div>
             )}
             <div className="flex justify-between gap-3">
-              <dt>Sarado hanggang</dt>
+              <dt>Closed until</dt>
               <dd className="font-medium text-slate-700 dark:text-slate-300">
-                {format(until) || 'manu-manong i-off'}
+                {format(until) || 'manual turn-off'}
               </dd>
             </div>
           </dl>
 
           {stale && (
             <p className="mt-4 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-3 py-2">
-              Hindi maabot ang server — huling nalamang estado ito. Kung tapos na ang
-              maintenance, i-refresh ang page.
+              The server could not be reached, so this is the last known state. If maintenance
+              has already finished, refresh the page.
             </p>
           )}
 
@@ -65,13 +65,12 @@ export default function MaintenanceScreen({ maintenance, stale, onRetry }) {
             onClick={onRetry}
             className="mt-5 w-full rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm font-semibold py-2.5 transition-all duration-200"
           >
-            Subukan muli
+            Try again
           </button>
         </div>
 
         <p className="mt-4 text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">
-          Developer access lang ang hindi nahaharang. Tanungin ang Developer kung kailangan
-          ng agarang access.
+          Developer access is not blocked. Ask a Developer if you need immediate access.
         </p>
       </div>
     </div>

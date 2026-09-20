@@ -280,7 +280,7 @@ export default function App() {
     user,
     plan: activePlan,
     view,
-    onTokenInvalid: () => forceSignOut('Ni-revoke ang session mo. Mag-sign in muli.'),
+    onTokenInvalid: () => forceSignOut('Your session was revoked. Please sign in again.'),
   })
 
   // Developer roster — polls only while a Developer is signed in.
@@ -539,7 +539,7 @@ export default function App() {
     ...(isDeveloper ? [{
       key: 'developer',
       active: developerOpen,
-      title: `Developer console — ${roster.active.length} aktibo ngayon`,
+      title: `Developer console — ${roster.active.length} active now`,
       onClick: () => setDeveloperOpen(true),
       label: 'Developer',
       icon: (
@@ -867,13 +867,13 @@ export default function App() {
         <div className="px-4 sm:px-6 py-2 bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200 dark:border-amber-500/20 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
           <span className="inline-flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-            Naka-ON ang maintenance mode
+            Maintenance mode is on
           </span>
           <span className="font-normal opacity-80">
-            — harang ang lahat maliban sa Developer{presence.maintenance.by ? ` · ni ${presence.maintenance.by}` : ''}
+            — everyone except Developers is blocked{presence.maintenance.by ? ` · set by ${presence.maintenance.by}` : ''}
             {presence.maintenance.expiresAt
               ? ` · auto-off ${new Date(presence.maintenance.expiresAt).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}`
-              : ' · manu-manong i-off'}
+              : ' · manual turn-off'}
           </span>
         </div>
       )}

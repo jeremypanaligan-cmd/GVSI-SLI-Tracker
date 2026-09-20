@@ -2,6 +2,12 @@ import { idbGet, idbSet, idbKeys, idbRemoveMany } from './idbCache'
 import { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_ENABLED } from '../config/supabase'
 import { normalizeRawDate, getCurrentMonthYear } from './dataProcessor'
 import { APP_VERSION } from './version.js'
+import {
+  recordArchiveIndex,
+  recordArchiveMonth,
+  recordMerge,
+  payloadBytes,
+} from './dataSourceDiagnostics'
 
 /**
  * Cold archive reads: months that have already been archived to Supabase and purged
@@ -171,11 +177,19 @@ function rawRowsAndObjects(rows) {
  * the decision about which months the sheet no longer needs to supply.
  */
 export async function fetchArchivedMonths(planId, { force = false } = {}) {
-  if (!SUPABASE_ENABLED) return []
+  if (!SUPABASE_ENABLED) {
+    recordArchiveIndex(planId, { fromCache: false, months: [], error: 'Supabase is not configured.' })
+    return []
+  }
 
   const key = indexKey(planId)
   const cached = await readJson(key)
-  if (!force && cached && Date.now() - (cached.at || 0) < INDEX_TTL) return cached.months || []
+  const cachedLabels = (cached?.months || []).map((month) => month.month_label)
+
+  if (!force && cached && Date.now() - (cached.at || 0) < INDEX_TTL) {
+    recordArchiveIndex(planId, { fromCache: true, months: cachedLabels, fetchedAt: cached.at || null, error: null })
+    return cached.months || []
+  }
 
   try {
     const months = await supabaseGet(
@@ -183,11 +197,23 @@ export async function fetchArchivedMonths(planId, { force = false } = {}) {
       '&select=month_key,month_label&order=month_key.asc'
     )
     await writeJson(key, { at: Date.now(), months })
+    recordArchiveIndex(planId, {
+      fromCache: false,
+      months: months.map((month) => month.month_label),
+      fetchedAt: Date.now(),
+      error: null,
+    })
     return months
   } catch (error) {
     // A Supabase outage must never blank out the dashboard: fall back to the last
     // known list, and ultimately to the sheet alone.
     console.warn('[Archive] month list unavailable:', error.message)
+    recordArchiveIndex(planId, {
+      fromCache: Boolean(cached),
+      months: cachedLabels,
+      fetchedAt: cached?.at || null,
+      error: error.message,
+    })
     return cached ? cached.months || [] : []
   }
 }
@@ -195,20 +221,39 @@ export async function fetchArchivedMonths(planId, { force = false } = {}) {
 async function fetchMonthMtdRows(planId, monthKey) {
   const key = mtdKey(planId, monthKey)
   const cached = await readJson(key)
-  if (cached) return cached.rows
+  if (cached) {
+    recordArchiveMonth(planId, monthKey, {
+      mtdFromCache: true,
+      mtdRows: cached.rows.length,
+      mtdBytes: payloadBytes(cached.rows),
+    })
+    return cached.rows
+  }
 
   const rows = await supabaseGet(
     `sli_mtd?plan=eq.${planId}&month_key=eq.${monthKey}` +
     `&select=area,row_order,${selectList(MTD_FIELDS)}&order=row_order.asc`
   )
   await writeJson(key, { rows })
+  recordArchiveMonth(planId, monthKey, {
+    mtdFromCache: false,
+    mtdRows: rows.length,
+    mtdBytes: payloadBytes(rows),
+  })
   return rows
 }
 
 async function fetchMonthRawRows(planId, monthKey) {
   const key = rawKey(planId, monthKey)
   const cached = await readJson(key)
-  if (cached) return cached.rows
+  if (cached) {
+    recordArchiveMonth(planId, monthKey, {
+      rawFromCache: true,
+      rawRows: cached.rows.length,
+      rawBytes: payloadBytes(cached.rows),
+    })
+    return cached.rows
+  }
 
   const rows = await supabaseGet(
     `sli_raw_daily?plan=eq.${planId}&month_key=eq.${monthKey}` +
@@ -216,6 +261,11 @@ async function fetchMonthRawRows(planId, monthKey) {
     '&order=report_date.asc,row_order.asc'
   )
   await writeJson(key, { rows })
+  recordArchiveMonth(planId, monthKey, {
+    rawFromCache: false,
+    rawRows: rows.length,
+    rawBytes: payloadBytes(rows),
+  })
   return rows
 }
 
@@ -263,6 +313,26 @@ function dropArchivedMtdSections(allRows, archivedLabels) {
   return out
 }
 
+/** The month sections a set of sheet MTD rows still contains, in order of appearance. */
+function mtdMonthLabels(rows) {
+  const labels = []
+  for (const row of rows || []) {
+    const first = String(row?.[0] ?? '').trim()
+    if (isMonthLabel(first) && !labels.includes(first)) labels.push(first)
+  }
+  return labels
+}
+
+/** How many raw rows the sheet still holds per month — normally just the live month. */
+function rawMonthCounts(rows) {
+  const counts = {}
+  for (const row of rows || []) {
+    const label = monthLabelFromDateLabel(normalizeRawDate(String(row?.[0] ?? '')))
+    if (label) counts[label] = (counts[label] || 0) + 1
+  }
+  return counts
+}
+
 function dropArchivedRawRows(csv, archivedLabels) {
   if (!archivedLabels.size || !csv?.rows?.length) return csv
 
@@ -294,7 +364,20 @@ export async function mergeArchiveIntoCsv(planId, csv, selectedMonthYear) {
 
   try {
     const months = await fetchArchivedMonths(planId)
-    if (!months.length) return csv
+    if (!months.length) {
+      // Nothing archived: the sheet is the only source, which is worth showing.
+      const sheetMtd = csv.mtd.allRows || csv.mtd.rows || []
+      recordMerge(planId, {
+        supabaseMtdRows: 0,
+        supabaseRawRows: 0,
+        supabaseMonths: [],
+        sheetMtdRows: sheetMtd.length,
+        sheetRawRows: csv.raw.rows?.length || 0,
+        sheetMtdMonths: mtdMonthLabels(sheetMtd),
+        sheetRawMonths: rawMonthCounts(csv.raw.rows),
+      })
+      return csv
+    }
 
     // Only months whose rows actually loaded may override the sheet — otherwise a
     // transient fetch failure would look like "this month has no data".
@@ -310,7 +393,20 @@ export async function mergeArchiveIntoCsv(planId, csv, selectedMonthYear) {
         console.warn(`[Archive] ${planId} ${entry.month_key} MTD unavailable:`, error.message)
       }
     }
-    if (!loaded.length) return csv
+    if (!loaded.length) {
+      // Months are listed but none of their rows arrived, so the sheet stays authoritative.
+      const sheetMtd = csv.mtd.allRows || csv.mtd.rows || []
+      recordMerge(planId, {
+        supabaseMtdRows: 0,
+        supabaseRawRows: 0,
+        supabaseMonths: [],
+        sheetMtdRows: sheetMtd.length,
+        sheetRawRows: csv.raw.rows?.length || 0,
+        sheetMtdMonths: mtdMonthLabels(sheetMtd),
+        sheetRawMonths: rawMonthCounts(csv.raw.rows),
+      })
+      return csv
+    }
 
     const archivedLabels = new Set(loaded.map((entry) => entry.month_label))
 
@@ -345,6 +441,19 @@ export async function mergeArchiveIntoCsv(planId, csv, selectedMonthYear) {
       rows: [...archivedRaw.rows, ...(sheetRaw.rows || [])],
       objects: [...archivedRaw.objects, ...(sheetRaw.objects || [])],
     }
+
+    // The split, as it actually happened: which months each side supplied and how many
+    // rows each contributed. `sheetRaw` is post-drop, so these are the rows that really
+    // reached the parser.
+    recordMerge(planId, {
+      supabaseMtdRows: mtdSections.length,
+      supabaseRawRows: archivedRaw.rows.length,
+      supabaseMonths: loaded.map((entry) => entry.month_label),
+      sheetMtdRows: sheetMtdRows.length,
+      sheetRawRows: sheetRaw.rows?.length || 0,
+      sheetMtdMonths: mtdMonthLabels(sheetMtdRows),
+      sheetRawMonths: rawMonthCounts(sheetRaw.rows),
+    })
 
     return { ...csv, mtd, raw }
   } catch (error) {

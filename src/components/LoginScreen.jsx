@@ -82,8 +82,8 @@ export default function LoginScreen() {
               Maintenance mode
             </p>
             <p className="mt-1 text-[11px] leading-relaxed text-amber-700/90 dark:text-amber-300/90">
-              {maintenance.message || 'Pansamantalang naka-off ang dashboard habang may inaayos.'}
-              {' '}Puwede kang mag-sign in, pero haharangin ka hanggang matapos.
+              {maintenance.message || 'The dashboard is temporarily unavailable while maintenance is being carried out.'}
+              {' '}You can still sign in, but you will be blocked until it finishes.
             </p>
           </div>
         )}

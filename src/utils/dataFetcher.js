@@ -1,6 +1,7 @@
 import { parseCSV } from './csvParser'
 import { idbGet, idbSet, idbKeys, idbRemoveMany } from './idbCache'
 import { mergeArchiveIntoCsv } from './archiveFetcher'
+import { recordSheetRead } from './dataSourceDiagnostics'
 import { PLANS, PLAN_ORDER, DEFAULT_PLAN } from '../config/plans'
 import { APP_VERSION } from './version.js'
 
@@ -150,7 +151,10 @@ export async function getCachedData(planId = DEFAULT_PLAN, selectedMonthYear) {
   try {
     const { mtdRaw, rawRaw, agingRaw, trendRaw, timeStr } = await readCache(planId)
 
-    if (!mtdRaw && !rawRaw) return { ...EMPTY, source: 'none', timestamp: null }
+    if (!mtdRaw && !rawRaw) {
+      recordSheetRead(planId, { source: 'none', mtdBytes: 0, rawBytes: 0, mtdRows: 0, rawRows: 0 })
+      return { ...EMPTY, source: 'none', timestamp: null }
+    }
 
     const mtd = mtdRaw ? JSON.parse(mtdRaw) : { headers: [], rows: [], objects: [] }
     const raw = rawRaw ? JSON.parse(rawRaw) : { headers: [], rows: [], objects: [] }
@@ -160,6 +164,18 @@ export async function getCachedData(planId = DEFAULT_PLAN, selectedMonthYear) {
 
     const age = timestamp ? Date.now() - timestamp.getTime() : Infinity
     const source = age > CACHE_MAX_AGE ? 'stale-cache' : 'cache'
+
+    // Sizes come from what this tab actually holds; `source` says whether that is a
+    // fresh export or a copy of one.
+    recordSheetRead(planId, {
+      source,
+      cachedAt: timestamp ? timestamp.getTime() : null,
+      cacheAgeMs: Number.isFinite(age) ? age : null,
+      mtdBytes: mtdRaw ? mtdRaw.length : 0,
+      rawBytes: rawRaw ? rawRaw.length : 0,
+      mtdRows: mtd.rows.length,
+      rawRows: raw.rows.length,
+    })
 
     // Archived months are cached separately (forever) and folded in on read, so the
     // sheet cache holds one copy of the data and never grows with the archive.
@@ -200,6 +216,20 @@ export async function fetchAllData(planId = DEFAULT_PLAN, selectedMonthYear) {
       const mtd = parseCSV(mtdText)
       const raw = parseCSV(rawText)
 
+      // Recorded before the archive merge, so these figures are the sheet export alone
+      // — the thing that has to stay flat as the archive grows.
+      recordSheetRead(planId, {
+        source: 'live',
+        liveError: null,
+        fetchedAt: Date.now(),
+        cachedAt: null,
+        cacheAgeMs: null,
+        mtdBytes: mtdText.length,
+        rawBytes: rawText.length,
+        mtdRows: mtd.rows.length,
+        rawRows: raw.rows.length,
+      })
+
       // Best-effort: COMPLETED AGING REPORT (Installation SLA Breakdown) is a
       // shared, plan-agnostic report whose data currently lives in the FIBERX
       // sheet — fetched regardless of the active plan. Never fails the main load.
@@ -231,6 +261,7 @@ export async function fetchAllData(planId = DEFAULT_PLAN, selectedMonthYear) {
       const hint = err.message.includes('401') 
         ? ` — Sheet may not be published. Open the Google Sheet → File → Share → Publish to web.`
         : ''
+      recordSheetRead(planId, { source: 'error', liveError: err.message, failedAt: Date.now() })
       console.warn(`[Fetch] Live fetch failed for ${planId}${hint}`, err.message)
     }
   }
