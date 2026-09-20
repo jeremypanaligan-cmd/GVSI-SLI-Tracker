@@ -14,21 +14,31 @@ FIBERX / BIDA / SME NEW REPORT   ──┐
                                      (month-to-date)│  CSV export
                                                     ▼
                                         GVSI SLI Tracker (this app)
+                                                    ▲
+   closed months ── Archive (Apps Script) ──▶ Supabase (sli_raw_daily + sli_mtd)
+                   then PURGED from NEW REPORT          read as CSV-shaped rows
 ```
+
+Once a month is finished it leaves the spreadsheet entirely and the app reads it from
+Supabase instead. See [ARCHIVE.md](./ARCHIVE.md) for that job and
+[DATASOURCE.md](./DATASOURCE.md) for which side the app reads for which month.
 
 ## Sheets
 
 | Sheet | Who writes it | Purpose |
 |-------|---------------|---------|
 | `…  NEW REPORT` | Encoders, by hand | Source of truth. One block per day, one row per area. |
-| `RAW DATA` | Apps Script (`Import`) | Normalized continuous table: one row per date + area. **What the app reads for daily/provincial views.** |
-| `MTD` | Apps Script (`Generate MTD`) | Month-to-date summary. **What the app reads for achievement / target figures.** |
+| `RAW DATA` | Apps Script (`Import`) | Normalized continuous table: one row per date + area. **What the app reads for daily/provincial views, for the live month.** |
+| `MTD` | Apps Script (`Generate MTD`) | Month-to-date summary. **What the app reads for achievement / target figures, for the live month.** |
+| Supabase `sli_raw_daily` / `sli_mtd` | Apps Script (`Archive`) | The same two shapes for **closed** months, after they are purged from the sheet. |
+| `_ARCHIVE_BACKUP` | Apps Script (`Archive`) | Temporary pre-purge copy of the deleted `NEW REPORT` rows. Safe to delete. |
 | `CONFIG` | Apps Script (once) + you | Settings for the scripts — currently the list of retired areas. Not read by the app. |
 | `Login Credentials` | You, by hand | `Username` / `PasswordHash` (lowercase SHA-256 hex) / `FullName` / `Role` for the app's login gate. Lives in the **shared SLI TRACKER Database**, not in a plan sheet. |
 | `COMPLETED AGING REPORT` | Not managed here | Feeds the app's `SLA` view. Lives in the **shared SLI TRACKER Database**. The scripts do not touch it. |
 | `FIBERX / BIDA / SME DATA` | Not managed here | The app's rolling 30-day trend. Live in the **shared SLI TRACKER Database**, one tab per plan. The scripts do not touch them. |
 
-`RAW DATA` and `MTD` are **fully cleared and rebuilt** on every run — never edit them by hand.
+`RAW DATA` and `MTD` are **fully cleared and rebuilt** on every run — never edit them by hand. From
+the month after archiving is switched on, they only ever hold the live month.
 
 ## Apps Script files
 
@@ -40,7 +50,15 @@ Each plan has its own spreadsheet and its own Apps Script project:
 | BIDA | [BIDA SLI Tracker DB](https://docs.google.com/spreadsheets/d/1FrEowZ9Zl0jMAyLde4OZE2cQV04nIz-rjRkLi6uv99M/edit) | `BIDASCRIPT.gs` |
 | SME | [SME SLI Tracker DB](https://docs.google.com/spreadsheets/d/10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY/edit) | `SMESCRIPT.gs` |
 
-The three files are identical apart from the plan name — a fix must be applied to all three.
+The three files are identical apart from the plan name. Everything from the
+`TRIGGERS & MENU` marker to the end of the file is **generated** from one template, so a fix
+there is one edit plus one command — see [ARCHIVE.md](./ARCHIVE.md#the-three-script-files):
+
+```bash
+node scripts/apps-script/sync-gs-tail.cjs          # render the template into all three
+node scripts/apps-script/sync-gs-tail.cjs --check   # fail if they have drifted
+```
+
 `scripts/MTD.gs` + `scripts/SETUP_GUIDE.md` are the **legacy single-plan (FIBERX v1)** path and
 are no longer used.
 
@@ -104,12 +122,29 @@ are no longer used.
 | J `LAST %` | Achievement % from the last day |
 | K `TOTAL INCOMING` | Sum of `INC` for the month |
 
-## Step 3 — The app reads it
+## Step 3 — Archive: a closed month moves to Supabase
+
+`archiveClosedMonths()` — see [ARCHIVE.md](./ARCHIVE.md) for the full runbook.
+
+A month is due on **day 7 of the following month** (`ARCHIVE_AFTER_DAYS`) and only when it
+looks complete. The job then uploads that month's `RAW DATA` + `MTD`, **verifies the row
+counts and a checksum against Supabase**, and only then deletes the month's day blocks from
+`NEW REPORT` and re-runs Full Sync.
+
+> Purging `NEW REPORT` — not `RAW DATA` — is the point. The import rebuilds `RAW DATA` from
+> `NEW REPORT` every 5 minutes and on every sheet edit, so a month left in `NEW REPORT` always
+> comes back.
+
+The app merges the archived months back in before parsing, so the month picker, MoM delta and
+every past-month view keep working exactly as before.
+
+## Step 4 — The app reads it
 
 `src/config/plans.js` points each plan at the Google Sheet CSV export endpoints — `RAW DATA`
 (gid `486719298`) and `MTD` (gid `1061751267`) in that plan's own sheet, plus the shared aging
 report (gid `766491804`) and the plan's `<PLAN> DATA` trend tab in the SLI TRACKER Database.
-The full tab-by-tab mapping is in [DATASOURCE.md](./DATASOURCE.md).
+Archived months come from Supabase instead (`src/config/supabase.js`), merged on top of the
+sheet rows. The full mapping is in [DATASOURCE.md](./DATASOURCE.md).
 Results are cached (localStorage + IndexedDB) behind a versioned key, so after a sync use the
 app's **Sync Data** button (or a hard reload) to pull fresh numbers.
 
@@ -163,14 +198,21 @@ The optional auto-trigger (`Setup Auto-Trigger`) runs the same full sync on a 5-
 | Generate MTD Report | Rebuild `MTD` from `RAW DATA` |
 | Full Sync (Import + MTD) | Both, in order — use this one |
 | Setup / Edit CONFIG Sheet | Create/report the `CONFIG` tab |
-| Setup Auto-Trigger (Every 5 min) | Full sync on a 5-minute timer |
-| Stop Auto-Trigger | Remove the timer |
+| Setup Managed Triggers | Reconcile the three managed triggers (5-minute sync, daily archive, on-change full sync) |
+| Stop Managed Triggers | Remove those three only |
+| Archive Closed Months to Supabase | Archive + purge every month that is due |
+| Archive Dry Run | The same, but uploads and deletes nothing |
+
+> `Setup Auto-Trigger` / `Stop Auto-Trigger` still exist for muscle memory, but they now do
+exactly what the managed versions do — the old one removed **every** project trigger, including
+the on-change `fullSync`.
 
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 |---------|-------------|
 | A retired province still appears in MTD or in the app | Run **Full Sync** — `MTD` and the app read `RAW DATA`, and only the import rewrites it. |
+| A past month is missing from the app | Its archive rows are in Supabase but the browser could not reach it, or `ARCHIVE_ENABLED` has never been set. Check the `LAST_ARCHIVE` line in `CONFIG`. |
 | A province is back after you removed it from NEW REPORT | Check `CONFIG` — a blank/missing list falls back to the built-in default. |
 | `#REF!` / `#DIV/0!` in NEW REPORT or `RAW DATA` | Broken formulas at the source (usually after deleting rows/columns). Fix the formula; the scripts only pass the value through. |
 | Numbers look wrong for `LAST %` | It is the last day's `%` from the sheet, not recalculated by the script. |

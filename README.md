@@ -41,40 +41,62 @@ npm run preview
 ## Data Sources
 
 Each plan has its own Google Sheet for daily tracking, plus one shared database for
-cross-plan data. All are read through the CSV export endpoint, from URLs declared in
+cross-plan data. Sheets are read through the CSV export endpoint, from URLs declared in
 `src/config/plans.js`:
 
 | Spreadsheet | Holds |
 |-------------|-------|
-| [SLI TRACKER Database](https://docs.google.com/spreadsheets/d/1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/edit) *(shared)* | `Login Credentials`, `COMPLETED AGING REPORT`, `FIBERX/BIDA/SME DATA` |
+| [SLI TRACKER Database](https://docs.google.com/spreadsheets/d/1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/edit) *(shared)* | `COMPLETED AGING REPORT`, `FIBERX/BIDA/SME DATA` |
 | [FIBERX SLI Tracker DB](https://docs.google.com/spreadsheets/d/1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/edit) | `FIBERX NEW REPORT`, `RAW DATA`, `MTD` |
 | [BIDA SLI Tracker DB](https://docs.google.com/spreadsheets/d/1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M/edit) | `BIDA NEW REPORT`, `RAW DATA`, `MTD` |
 | [SME SLI Tracker DB](https://docs.google.com/spreadsheets/d/10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY/edit) | `SME NEW REPORT`, `RAW DATA`, `MTD` |
 
-Which tab each screen reads, and which cache key it lands in, is listed in
+**Supabase** (`src/config/supabase.js`) is the second source and holds two things:
+
+- the **cold archive** — a finished month is copied there and purged from the sheet, so the
+  spreadsheets stop growing forever. The app merges the archived months back in, so past-month
+  figures keep working. See **[Cold archive](docs/ARCHIVE.md)**.
+- **accounts, sessions, presence and the maintenance switch** — see
+  **[Accounts and the Developer console](docs/DEVELOPER.md)**.
+
+Which source each screen reads, and which cache key it lands in, is listed in
 **[Data Sources](docs/DATASOURCE.md)**.
 
 ## Access (Login)
 
-The dashboard sits behind a username/password screen. Credentials live in the
-**`Login Credentials`** tab of the shared **SLI TRACKER Database**
-(`Username | PasswordHash | FullName | Role`, where the hash is the lowercase SHA-256 hex of
-the password) and are verified in the browser.
+The dashboard sits behind a username/password screen. Accounts live in the `sli_users` table
+of the Supabase project (`username`, `password_hash`, `full_name`, `role`, `is_active`), and
+the password is verified **inside Postgres** by the `verify_login` function — the app sends the
+SHA-256 of what was typed and never sees a stored hash. A successful sign-in opens a session
+row and returns a token.
+
 A session lasts 30 days on the device, or 12 hours when "Keep me signed in" is off. Sign out
 from the desktop navbar utility group or the mobile ⋮ menu.
 
-> **⚠️ This is a convenience gate, not security.** The credentials tab is publicly readable
-> through the CSV export, the hashes carry no salt or key stretching, and the check runs in the
-> browser — so it can be bypassed, and its hashes can be brute-forced offline. Don't put
-> anything sensitive behind it.
+Users with `role = Developer` get a **Developer console** — who is signed in right now and for
+how long, recent sessions, and a **maintenance mode** switch that blocks everyone else. See
+**[Accounts and the Developer console](docs/DEVELOPER.md)**.
+
+> **⚠️ Still a convenience gate, not security.** The check runs in the browser and the dashboard
+> data comes from public sheet exports, so anyone willing to edit the JavaScript can bypass it —
+> and maintenance mode is a coordination tool, not an access control. What did change: password
+> hashes are no longer downloadable (the old `Login Credentials` tab was link-shared), the role
+> is checked server-side for Developer actions, and sessions can be revoked.
+>
+> Change the migrated passwords: the old hashes were publicly readable, and the scheme is
+> unsalted SHA-256.
 
 ## Documentation
 
 - **[Data Pipeline](docs/DATA_PIPELINE.md)** — how `NEW REPORT` becomes `RAW DATA` and `MTD`
   through Apps Script, the `CONFIG` tab for retired areas, and why a **Full Sync** is required
   after editing the sheet.
-- **[Data Sources](docs/DATASOURCE.md)** — which spreadsheet tab every screen reads from, and
-  how each source is cached and refreshed.
+- **[Data Sources](docs/DATASOURCE.md)** — which spreadsheet tab or Supabase table every screen
+  reads from, and how each source is cached and refreshed.
+- **[Cold archive](docs/ARCHIVE.md)** — moving a finished month to Supabase, the verification
+  gate, and how to run or roll back an archive.
+- **[Accounts and the Developer console](docs/DEVELOPER.md)** — roles, sessions, presence,
+  maintenance mode and what the public anon key can and cannot reach.
 - **[CHANGELOG](CHANGELOG.md)** — release notes.
 
 ## Releasing
