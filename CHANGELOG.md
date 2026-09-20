@@ -4,6 +4,58 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
+## [Unreleased]
+
+Hindi pa naka-tag at hindi pa binabago ang version sa `package.json`.
+
+### 🐛 Fixes
+
+- **The archive no longer reads the `MTD` sheet.** `collectMtdArchiveRows_` is replaced by
+  `deriveMtdArchiveRows_`, which sums the `RAW DATA` rows the run already holds. The old
+  reader could see a **blank** `MTD` tab: `generateMTDReport()` cleared it before rewriting
+  it, and an installable `onChange` trigger rebuilds it on *every* spreadsheet edit — so
+  enabling the archive cleared the very sheet the archive was about to read. A blank read
+  then uploaded nothing **successfully** (`POST []` is HTTP 200) and passed the old gate
+  because `0 === 0`. Verified against the live sheets for FIBERX, BIDA and SME: 4 month
+  sections, 13 fields per row, **0 differences** from what the `MTD` tab held
+- **The archive refuses when the month looks incomplete.** The gate now requires MTD rows as
+  well as RAW rows, and reports `VERIFICATION FAILED — WALANG BINURA` instead of purging.
+  This is what twice stopped a run from deleting August while its MTD figures had never been
+  uploaded — the month would have disappeared from the dashboard entirely
+- **`generateMTDReport()` writes the report once.** The grid is built in memory and written
+  with a single `setValues()`, so the sheet is never blank for more than an instant while it
+  rebuilds. The old code wrote row by row: **29 sheet round trips** between `clear()` and the
+  last value. Output is unchanged — every value, background, font, number format and merge
+  was compared cell-by-cell against the previous implementation and matches. A blank
+  `RAW DATA` no longer wipes the previous report either, since the check now runs before any
+  clearing
+- **A formula-driven sheet is never purged.** `planSheetIsFormulaDriven_` reads column A and
+  reports when the sheet is an `IMPORTRANGE` mirror. Deleting a row inside a spilled array
+  formula does not remove data — it **destroys the formula**, which is why a purge against
+  the BIDA mirror had to be restored by hand. The archive now uploads and leaves the sheet
+  alone, and the message points at the source sheet instead
+- **`scripts/apps-script/verify-archive.cjs --as-of YYYY-MM-DD`** — moves the sandbox's
+  clock so the cut-off table for any future day can be inspected now. The month-by-month
+  report reads its rules from the plan script itself (`archiveCutoff_`, `lastDayOfMonth_`,
+  `todayMidnight_`) instead of restating them, and renders dates from local components
+  rather than `toISOString()` — the script builds `new Date(y, m, d)`, so a UTC render
+  showed every date a day early
+
+### ⚙️ Configuration
+
+- **`ARCHIVE_PURGE`** (new `CONFIG` key, absent = `FALSE`) — the archive uploads a closed
+  month to Supabase but **leaves the sheet untouched** unless this is `TRUE`. Any failed
+  verification, and any formula-driven sheet, refuse regardless
+
+### 📚 Docs
+
+- **`docs/ARCHIVE.md`** — why the MTD figures are computed rather than read off the sheet,
+  the incident that proved it, the `ARCHIVE_PURGE` gate and the formula guard
+- **`docs/DATA_PIPELINE.md`** and **`docs/DATASOURCE.md`** — `NEW REPORT` is an `IMPORTRANGE`
+  mirror, not hand-encoded data, and the pipeline now says which parts come from Supabase
+
+---
+
 ## [1.14.0] — 2026-09-20
 
 ### 🗄️ Cold Archive — closed months move to Supabase

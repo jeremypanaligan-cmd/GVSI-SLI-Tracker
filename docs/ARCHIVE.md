@@ -26,17 +26,25 @@ that is due, oldest first, so nothing is skipped.
 ## What happens in one run
 
 1. **Full Sync** first, so the archive never freezes a stale view of the month.
-2. **Upload** the month's `RAW DATA` rows to `sli_raw_daily` and the month's `MTD`
-   section to `sli_mtd` — as an upsert, so re-running is harmless.
+2. **Upload** the month's `RAW DATA` rows to `sli_raw_daily`, and the month's MTD figures
+   to `sli_mtd` — both as upserts, so re-running is harmless. The MTD figures are
+   **computed from the RAW rows just read**, not read back off the `MTD` tab (see below).
 3. **Verify** by reading the counts *and* a checksum back from Supabase.
-4. **Purge** — only if step 3 matched. The month's day blocks are deleted from
-   `NEW REPORT`, then a Full Sync rebuilds `RAW DATA` and `MTD` without them.
+4. **Purge — only when asked.** With `ARCHIVE_PURGE = TRUE` *and* step 3 matched, the
+   month's day blocks are deleted from `NEW REPORT`, then a Full Sync rebuilds `RAW DATA`
+   and `MTD` without them. With `ARCHIVE_PURGE` unset or `FALSE` the run stops here: the
+   month stays in the sheet and the next run re-verifies the same rows.
 5. **Audit** — a `LAST_ARCHIVE` line is written to the `CONFIG` tab.
 
 > **Why purge `NEW REPORT` and not just `RAW DATA`:** the import clears and rebuilds
 > `RAW DATA` from `NEW REPORT` on every run — every 5 minutes, and on every sheet edit.
 > An old month left in `NEW REPORT` always comes back. Cleaning `NEW REPORT` is the only
-> step that actually shrinks the spreadsheet.
+> step that actually shrinks the spreadsheet. This is why purge is the switch that matters:
+> the sheet cannot be kept small without deleting from `NEW REPORT`.
+
+> **Why a run can look like it deleted something:** `RAW DATA` and `MTD` are cleared and
+> rebuilt by every Full Sync, and the archive runs one before it reads the month. Watching
+> a manual run, both tabs look blank for a few seconds. That is normal and nothing is lost.
 
 ### The gate
 
@@ -54,6 +62,27 @@ The `OVER ALL TOTAL` row is archived by design, flagged `is_overall_total`. It i
 always the sum of the area rows (BIDA August: total `387`, area sum `370`) and it is the
 number the dashboard showed while the month was live, so recomputing it would silently
 change closed-month figures.
+
+### Why the MTD figures are computed, not read off the sheet
+
+`MTD` is one of the two tabs every Full Sync **clears and rebuilds**, and nothing serialises
+the archive against a sync running at the same time. Reading `MTD` therefore had a window in
+which the tab is empty — and an empty read looked exactly like a valid one: the `sli_mtd`
+upsert was a no-op that still returned HTTP 200, and a gate comparing `0 === 0` called it
+verified. The purge would then delete a month whose MTD figures had never been archived,
+leaving the app with a month it could not see.
+
+On 2026-09-21 that window was hit twice on BIDA August. Nothing was lost — the second time
+the gate refused the purge — but the dependency itself is the bug. The MTD figures are
+nothing more than sums over `RAW DATA`: each area summed across the month's days, with
+`LAST MTD`, `TARGET` and `LAST %` taken from the last day. So the archive derives them from
+the rows it already holds instead of asking the sheet a second time.
+
+A derived row is checked against the live `MTD` tab for all three plans and every month the
+sheets hold — identical on every field. Two details are deliberately carried over from
+`generateMTDReport()`: the area list is the **last day's** areas rather than the union of
+all days, and the `OVER ALL TOTAL` sums **every** area on every day, listed or not, because
+that is how the sheet builds its total.
 
 ## Setup (once per plan spreadsheet)
 
@@ -78,7 +107,26 @@ bundle deliberately has no write access to any table.
 | `ARCHIVE_ENABLED` | `TRUE` / `FALSE` | `FALSE` (the default) makes the job inert |
 | `ARCHIVE_AFTER_DAYS` | `7` | days into the next month before a month is archived |
 | `ARCHIVE_DRY_RUN` | `TRUE` / `FALSE` | report only — no upload, no delete |
+| `ARCHIVE_PURGE` | `TRUE` / `FALSE` | **`FALSE` (the default) keeps the month in the sheet.** Copy only |
 | `LAST_ARCHIVE` | *(written by the script)* | audit line of the last run |
+
+`ARCHIVE_PURGE` is opt-in on purpose: copying a month to Supabase is additive and easy to
+check afterwards, while a delete is neither. With purge off the sheet stays the record of
+every month and Supabase is a second copy the app reads from — which also means each run
+re-uploads and re-verifies the same months, and the sheet keeps growing as before.
+
+> **A sheet filled by a formula cannot be purged, and the archive now refuses to try.**
+> `BIDA NEW REPORT` (and its siblings) is one `=IMPORTRANGE("…", "BIDA DAILY'!A:M")`
+> spilling the whole report, so its rows are the *output* of an array formula rather than
+> cells anyone typed. Deleting them does not remove data — it tears the formula out of `A1`,
+> which is what happened to BIDA on 2026-09-21 and had to be pasted back by hand. The archive
+> checks the sheet before deleting; finding a formula, it uploads, verifies, and reports
+> `walang binura — gawa ng formula ang BIDA NEW REPORT (IMPORTRANGE) …`. A month like that
+> has to be removed from the sheet the formula points at.
+>
+> This is also where the space problem actually lives now. The mirror pulls the source's
+> **entire** history into the sheet, so nothing the archive does here can shrink the plan's
+> `RAW DATA` / `MTD`; that has to happen in the `… DAILY` sheet the formula reads from.
 
 ### 3. Managed triggers
 
@@ -127,6 +175,7 @@ node scripts/apps-script/verify-archive.cjs bida            # dry run, offline, 
 node scripts/apps-script/verify-archive.cjs bida --dump     # + every shaped row
 node scripts/apps-script/verify-archive.cjs bida --gate-view # + what the gate measures
 node scripts/apps-script/verify-archive.cjs bida --connection # the menu's connection test
+node scripts/apps-script/verify-archive.cjs bida --as-of 2026-10-07  # run as if it were that day
 
 # the full path, including the upload, needs the privileged key in your shell:
 SUPABASE_URL=… SUPABASE_SERVICE_KEY=… node scripts/apps-script/verify-archive.cjs bida --upload
@@ -141,6 +190,12 @@ touched, and the `service_role` key stays in your environment rather than in thi
 (handy when the spreadsheet is the thing that is broken). Point it at the **anon** key to
 see the rejection you would get from a mis-pasted key — that is the fastest way to tell a
 wrong key from a wrong URL.
+
+`--as-of YYYY-MM-DD` moves the sandbox's clock and prints a cut-off table, so "what happens
+on the 7th" can be answered today. The **cut-off** column is exact (it is the same
+`archiveCutoff_` the job calls), but **COMPLETE** is judged from the rows in the sheet *now*,
+so a month that is still being written reads as incomplete until the next month has rows.
+Treat the cut-off as the answer, and the completion flag as a preview.
 
 ### How the write check works
 

@@ -14,8 +14,13 @@
 const ARCHIVE_ENABLED_KEY = 'ARCHIVE_ENABLED';
 const ARCHIVE_AFTER_DAYS_KEY = 'ARCHIVE_AFTER_DAYS';
 const ARCHIVE_DRY_RUN_KEY = 'ARCHIVE_DRY_RUN';
+const ARCHIVE_PURGE_KEY = 'ARCHIVE_PURGE';
 const ARCHIVE_LAST_KEY = 'LAST_ARCHIVE';
 const ARCHIVE_DEFAULT_AFTER_DAYS = 7;
+// Deleting from the sheet is opt-in. A month is copied to Supabase and then LEFT ALONE
+// unless purge is asked for by name, because the copy is additive and easy to check while
+// a delete is neither. With purge off the sheet stays the record of every month.
+const ARCHIVE_DEFAULT_PURGE = false;
 const ARCHIVE_BACKUP_SHEET = '_ARCHIVE_BACKUP';
 const ARCHIVE_BATCH_SIZE = 500;
 
@@ -325,67 +330,137 @@ function collectRawArchiveRows_(monthKey) {
   return rows;
 }
 
-/** MTD sheet rows belonging to one month, shaped for sli_mtd. */
-function collectMtdArchiveRows_(monthKey, monthLabel) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MTD_SHEET_NAME);
-  if (!sheet) throw new Error('MTD sheet not found.');
+/**
+ * The month's MTD rows, computed from the month's RAW DATA rows.
+ *
+ * These are the same figures the MTD sheet holds: that sheet is built from RAW DATA by
+ * summing each area across the month's days and taking LAST MTD / TARGET / LAST % from the
+ * last day. Reading the sheet made the archive depend on the one tab that every fullSync
+ * clears and rebuilds, so a read that landed inside the rebuild came back empty — which is
+ * exactly what happened on 2026-09-21, twice, the second time caught by the gate before it
+ * could purge a month whose MTD figures had never been archived.
+ *
+ * Two details are carried over from generateMTDReport deliberately:
+ *   - the area list is the LAST day's areas, not the union of every day, because that is
+ *     the set of areas the sheet lists;
+ *   - the OVER ALL TOTAL sums every area on every day, listed or not, because that is how
+ *     the sheet's total is built.
+ */
+function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
+  var SUMS = [
+    ['comp_from_total', 'comp_from_total'],
+    ['comp_from_rjo', 'comp_from_rjo'],
+    ['total_completed', 'total_completed'],
+    ['this_mo_rjo', 'rjo_incoming'],
+    ['prev_mos_rjo', 'rjo_redispatched'],
+    ['total_incoming', 'inc']
+  ];
 
-  var range = sheet.getDataRange();
-  var values = range.getValues();
-  var display = range.getDisplayValues();
-  var rows = [];
-  var columns = null;
-  var inSection = false;
+  var lastDate = null;
+  var i, f;
 
-  for (var i = 0; i < values.length; i++) {
-    var first = String(values[i][0] || '').trim();
+  for (i = 0; i < rawRows.length; i++) {
+    var date = rawRows[i].report_date;
+    if (!lastDate || date > lastDate) lastDate = date;
+  }
 
-    if (parseMonthHeader_(first)) {
-      inSection = (first === monthLabel);
-      columns = null;
-      continue;
-    }
-    if (!inSection) continue;
+  var perArea = {};
+  var lastRowOfArea = {};
+  var listed = {};
+  var overallLast = null;
+  var total = {
+    comp_from_total: 0, comp_from_rjo: 0, total_completed: 0,
+    this_mo_rjo: 0, prev_mos_rjo: 0, total_incoming: 0
+  };
 
-    if (first === 'AREA') {
-      columns = {};
-      for (var c = 0; c < values[i].length; c++) {
-        var name = String(values[i][c] || '').trim().toUpperCase();
-        if (name) columns[name] = c;
-      }
-      continue;
-    }
-    if (!columns) continue;
-    if (first === '') {
-      // generateMTDReport closes each month with blank rows.
-      if (rows.length) break;
-      continue;
-    }
-
-    var pick = function (name) {
-      var index = columns[name];
-      return (index === undefined || index < 0) ? null : num_(values[i][index]);
+  var blankSums = function () {
+    return {
+      comp_from_total: 0, comp_from_rjo: 0, total_completed: 0,
+      this_mo_rjo: 0, prev_mos_rjo: 0, total_incoming: 0
     };
+  };
 
+  for (i = 0; i < rawRows.length; i++) {
+    var row = rawRows[i];
+
+    if (row.is_overall_total) {
+      if (!overallLast || row.report_date >= overallLast.report_date) overallLast = row;
+      continue;
+    }
+
+    var area = String(row.area);
+    if (!perArea[area]) perArea[area] = blankSums();
+
+    for (f = 0; f < SUMS.length; f++) {
+      var value = Number(row[SUMS[f][1]] || 0);
+      perArea[area][SUMS[f][0]] += value;
+      total[SUMS[f][0]] += value;
+    }
+
+    if (!lastRowOfArea[area] || row.report_date >= lastRowOfArea[area].report_date) {
+      lastRowOfArea[area] = row;
+    }
+    if (row.report_date === lastDate) listed[area] = true;
+  }
+
+  var areas = [];
+  for (var name in listed) if (listed.hasOwnProperty(name)) areas.push(name);
+  areas.sort();
+
+  var rows = [];
+  var optional = function (row, field) {
+    return (row && row[field] !== null && row[field] !== undefined) ? row[field] : null;
+  };
+
+  for (i = 0; i < areas.length; i++) {
+    var sums = perArea[areas[i]];
+    var lastRow = lastRowOfArea[areas[i]];
     rows.push({
       plan: PLAN_ID,
       month_key: monthKey,
       month_label: monthLabel,
-      area: first,
-      is_overall_total: first === 'OVER ALL TOTAL',
-      comp_from_total: pick('COMPLETED FROM TOTAL'),
-      comp_from_rjo: pick('COMPLETED FROM RJO'),
-      total_completed: pick('TOTAL COMPLETED'),
-      this_mo_rjo: pick('THIS MO. RJO'),
-      prev_mos_rjo: pick('PREV MOS. RJO'),
-      total_rjo: pick('TOTAL RJO'),
-      last_mtd: pick('LAST MTD'),
-      target: pick('TARGET'),
-      total_incoming: pick('TOTAL INCOMING'),
-      last_pct: percentText_(columns['LAST %'] === undefined ? '' : display[i][columns['LAST %']]),
+      area: areas[i],
+      is_overall_total: false,
+      comp_from_total: sums.comp_from_total,
+      comp_from_rjo: sums.comp_from_rjo,
+      total_completed: sums.total_completed,
+      this_mo_rjo: sums.this_mo_rjo,
+      prev_mos_rjo: sums.prev_mos_rjo,
+      total_rjo: sums.this_mo_rjo + sums.prev_mos_rjo,
+      last_mtd: optional(lastRow, 'mtd'),
+      target: optional(lastRow, 'target'),
+      total_incoming: sums.total_incoming,
+      last_pct: percentText_(lastRow ? lastRow.pct : ''),
       row_order: rows.length
     });
   }
+
+  // The sheet ends each month with its OVER ALL TOTAL, so the archive does too.
+  if (overallLast) {
+    var lm = overallLast.mtd || 0;
+    var ltarget = overallLast.target || 0;
+    rows.push({
+      plan: PLAN_ID,
+      month_key: monthKey,
+      month_label: monthLabel,
+      area: 'OVER ALL TOTAL',
+      is_overall_total: true,
+      comp_from_total: total.comp_from_total,
+      comp_from_rjo: total.comp_from_rjo,
+      total_completed: total.total_completed,
+      this_mo_rjo: total.this_mo_rjo,
+      prev_mos_rjo: total.prev_mos_rjo,
+      total_rjo: total.this_mo_rjo + total.prev_mos_rjo,
+      last_mtd: optional(overallLast, 'mtd'),
+      target: optional(overallLast, 'target'),
+      total_incoming: total.total_incoming,
+      // A percentage, not the day's own LAST % text: that is what the sheet computes for
+      // this row (lm / ltarget) and then renders with a 0.00% number format.
+      last_pct: percentText_(ltarget > 0 ? (lm / ltarget) : 0),
+      row_order: rows.length
+    });
+  }
+
   return rows;
 }
 
@@ -482,6 +557,33 @@ function backupPurgedRows_(values, ranges) {
  * not enough: the import rebuilds it from NEW REPORT on every sync (every 5 minutes,
  * and on every edit), so an old month left in NEW REPORT always comes back.
  */
+/**
+ * True when the plan's report sheet is filled by a formula rather than by hand.
+ *
+ * `BIDA NEW REPORT` and its siblings are one `=IMPORTRANGE("…", "BIDA DAILY'!A:M")`
+ * spilling the whole report. Their rows are the OUTPUT of an array formula, so purging
+ * them does not delete data — Sheets either refuses, or the formula is torn out of A1 and
+ * has to be pasted back by hand. Which is what happened on 2026-09-21.
+ *
+ * A month like that has to be removed from the sheet the formula points at, not from the
+ * mirror. So this only ever reports; it never edits.
+ */
+function planSheetIsFormulaDriven_() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PLAN_SHEET_NAME);
+  if (!sheet) return false;
+
+  var lastRow = sheet.getLastRow();
+  if (!lastRow) return false;
+
+  // The anchor of a spilled IMPORTRANGE sits at the top-left of the block, so the first
+  // few rows of column A are enough to tell a mirror from a hand-encoded sheet.
+  var formulas = sheet.getRange(1, 1, Math.min(lastRow, 5), 1).getFormulas();
+  for (var i = 0; i < formulas.length; i++) {
+    if (String(formulas[i][0] || '').charAt(0) === '=') return true;
+  }
+  return false;
+}
+
 function purgeMonthFromNewReport_(monthKey, dryRun) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PLAN_SHEET_NAME);
   if (!sheet) throw new Error(PLAN_SHEET_NAME + ' sheet not found.');
@@ -520,9 +622,11 @@ function purgeMonthFromNewReport_(monthKey, dryRun) {
 
 // ==================== ARCHIVE: one month ====================
 
-function archiveOneMonth_(month, dryRun) {
+function archiveOneMonth_(month, dryRun, purge) {
   var rawRows = collectRawArchiveRows_(month.key);
-  var mtdRows = collectMtdArchiveRows_(month.key, month.label);
+  // Computed from the rows just read, not read back off the MTD sheet — see
+  // deriveMtdArchiveRows_ for why the sheet was the wrong source.
+  var mtdRows = deriveMtdArchiveRows_(rawRows, month.key, month.label);
 
   if (!rawRows.length) {
     return month.label + ': walang RAW DATA rows — nilaktawan.';
@@ -531,11 +635,23 @@ function archiveOneMonth_(month, dryRun) {
   var localRawSum = sumCompleted_(rawRows);
   var localMtdSum = sumCompleted_(mtdRows);
 
+  // Purging needs the rows to be real cells. When the report sheet is one spilled
+  // =IMPORTRANGE(...), its rows are the output of an array formula instead, and deleting
+  // them does not remove data — it tears the formula out of A1.
+  var formulaDriven = purge && planSheetIsFormulaDriven_();
+  var willPurge = purge && !formulaDriven;
+  var whyNoPurge = formulaDriven
+    ? 'gawa ng formula ang ' + PLAN_SHEET_NAME + ' (IMPORTRANGE), kaya hindi ito maaaring ' +
+      'burahin dito — alisin ang buwan sa pinagmulang sheet'
+    : 'hindi naka-TRUE ang ARCHIVE_PURGE';
+
   if (dryRun) {
     return month.label + ' (DRY RUN): ' + rawRows.length + ' RAW rows (sum ' + localRawSum +
-      '), ' + mtdRows.length + ' MTD rows (sum ' + localMtdSum +
-      '), ' + purgeMonthFromNewReport_(month.key, true).rows + ' NEW REPORT rows ang buburahin' +
-      ' — walang in-upload at walang binura.';
+      '), ' + mtdRows.length + ' MTD rows (sum ' + localMtdSum + '). ' +
+      (willPurge
+        ? purgeMonthFromNewReport_(month.key, true).rows + ' NEW REPORT rows ang buburahin.'
+        : 'Walang buburahin — ' + whyNoPurge + '.') +
+      ' Walang in-upload at walang binura.';
   }
 
   supabaseUpsert_('sli_raw_daily', rawRows, 'plan,report_date,area');
@@ -550,13 +666,31 @@ function archiveOneMonth_(month, dryRun) {
   var remoteMtdSum = supabaseSum_('sli_mtd',
     'plan=eq.' + PLAN_ID + '&month_key=eq.' + month.key + '&is_overall_total=eq.false', 'total_completed');
 
-  var rawOk = (remoteRawCount === rawRows.length) && (remoteRawSum === localRawSum);
-  var mtdOk = (remoteMtdCount === mtdRows.length) && (remoteMtdSum === localMtdSum);
+  // An empty expectation is NOT a pass. If the MTD sheet happened to be mid-rebuild by
+  // another execution when it was read, the collection comes back empty and `0 === 0`
+  // reads as "verified" — and then the purge deletes a month whose MTD figures were
+  // never archived. Both sides have to hold something before anything is deleted.
+  var rawOk = rawRows.length > 0 &&
+    (remoteRawCount === rawRows.length) && (remoteRawSum === localRawSum);
+  var mtdOk = mtdRows.length > 0 &&
+    (remoteMtdCount === mtdRows.length) && (remoteMtdSum === localMtdSum);
 
   if (!rawOk || !mtdOk) {
+    var empty = [];
+    if (rawRows.length === 0) empty.push('RAW DATA');
+    if (mtdRows.length === 0) empty.push('MTD');
     return month.label + ': VERIFICATION FAILED — WALANG BINURA. ' +
+      (empty.length ? 'Walang nabasang rows sa ' + empty.join(' at ') +
+        ' — may ibang takbo na gumagawa ng sheet sa parehong oras. ' : '') +
       'RAW ' + remoteRawCount + '/' + rawRows.length + ' rows, sum ' + remoteRawSum + '/' + localRawSum + ' | ' +
       'MTD ' + remoteMtdCount + '/' + mtdRows.length + ' rows, sum ' + remoteMtdSum + '/' + localMtdSum;
+  }
+
+  if (!willPurge) {
+    // Transfer only. Nothing is read from NEW REPORT again and no Full Sync is re-run, so
+    // the run is shorter and the sheet is left exactly as it was found.
+    return month.label + ': archived ' + rawRows.length + ' RAW + ' + mtdRows.length +
+      ' MTD rows sa Supabase; walang binura — ' + whyNoPurge + '.';
   }
 
   var purged = purgeMonthFromNewReport_(month.key, false);
@@ -595,6 +729,7 @@ function archiveClosedMonths() {
   var enabled = configBool_(config, ARCHIVE_ENABLED_KEY, false);
   var dryRun = configBool_(config, ARCHIVE_DRY_RUN_KEY, false);
   var afterDays = configNumber_(config, ARCHIVE_AFTER_DAYS_KEY, ARCHIVE_DEFAULT_AFTER_DAYS);
+  var purge = configBool_(config, ARCHIVE_PURGE_KEY, ARCHIVE_DEFAULT_PURGE);
   var notes = [];
 
   try {
@@ -620,7 +755,7 @@ function archiveClosedMonths() {
     }
 
     for (var i = 0; i < months.length; i++) {
-      notes.push(archiveOneMonth_(months[i], dryRun));
+      notes.push(archiveOneMonth_(months[i], dryRun, purge));
     }
     auditArchive_(notes.join(' | '), startedAt, dryRun);
   } catch (error) {
@@ -642,7 +777,8 @@ function archiveDryRun() {
   }
   try {
     SpreadsheetApp.getUi().alert('Dry run tapos na.\n\nTingnan ang LAST_ARCHIVE row sa CONFIG tab ' +
-      'para sa bilang ng rows na aarchive at buburahin.');
+      'para sa bilang ng rows na aarchive. Buburahin lamang ang sheet kapag ' +
+      'ARCHIVE_PURGE = TRUE.');
   } catch (e) {}
 }
 

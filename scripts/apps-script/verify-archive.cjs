@@ -13,6 +13,7 @@
  *   node scripts/apps-script/verify-archive.cjs bida --gate-view  # + what the gate measures
  *   node scripts/apps-script/verify-archive.cjs bida --upload     # + the real gate
  *   node scripts/apps-script/verify-archive.cjs bida --connection # the menu's connection test
+ *   node scripts/apps-script/verify-archive.cjs bida --as-of 2026-10-07  # run as if it were that day
  *
  * What each pass does:
  *
@@ -29,6 +30,12 @@
  *              that Postgres rejects on a not-null constraint, so it proves the key may
  *              write while leaving the archive tables untouched. Point it at the anon
  *              key to see the failure path (`SUPABASE_SERVICE_KEY=<anon key>`).
+ *   --as-of YYYY-MM-DD
+ *              Moves the sandbox's clock to that day and prints the cut-off table, so
+ *              "what will happen on the 7th" can be answered now. The cut-off maths is
+ *              pure date arithmetic and is exact; the COMPLETE column is not, because it
+ *              is judged from the rows in the sheet today — a month still being written
+ *              reads as incomplete until the next month's rows actually exist.
  *
  * Fidelity notes, so you know exactly what is and is not the real thing:
  *
@@ -353,6 +360,85 @@ function loadPlan(planId, props, options) {
   return { plan, sheets, context, logs, mails, scriptProps }
 }
 
+// ── Time travel ─────────────────────────────────────────────────────────────
+
+/**
+ * Moves the sandbox's clock. `eligibleMonths_` asks `new Date()` three times (`today`,
+ * the cut-off and the month's last day), so replacing the context's Date is enough to
+ * evaluate the whole decision as of another day — no date maths is duplicated here.
+ *
+ * The hour is fixed at noon UTC so a timezone offset cannot push the answer onto the
+ * neighbouring day; the cut-off is a whole-day comparison either way.
+ */
+function setClock(context, isoDate) {
+  const epoch = Date.parse(`${isoDate}T12:00:00Z`)
+  if (Number.isNaN(epoch)) {
+    throw new Error(`--as-of wants YYYY-MM-DD (e.g. 2026-10-07), got "${isoDate}"`)
+  }
+  vm.runInContext(`
+    (function () {
+      var Real = Date;
+      var fixed = ${epoch};
+      function FakeDate() {
+        if (arguments.length === 0) return new Real(fixed);
+        // Reflect.construct keeps every arity working, so new Date(y, m, d) does not
+        // silently become an Invalid Date from a padded-out undefined milliseconds arg.
+        return Reflect.construct(Real, Array.prototype.slice.call(arguments));
+      }
+      FakeDate.prototype = Real.prototype;
+      FakeDate.now = function () { return fixed; };
+      FakeDate.parse = Real.parse;
+      FakeDate.UTC = Real.UTC;
+      globalThis.Date = FakeDate;
+    })();
+  `, context)
+}
+
+// ── Report the cut-off, month by month ──────────────────────────────────────
+
+/**
+ * Every month in RAW DATA with the three dates the decision turns on. The rules are
+ * read from the plan script itself (`archiveCutoff_`, `lastDayOfMonth_`, `todayMidnight_`)
+ * rather than reimplemented, so this cannot disagree with what the job will do.
+ */
+function cutoffTable(context, sheets, afterDays) {
+  const grid = (sheets['RAW DATA'] || { rows: [] }).rows
+  const months = new Map()
+  let overallLast = null
+
+  for (let i = 1; i < grid.length; i++) {
+    const date = context.parseAnyDate_(grid[i][0])
+    if (!date) continue
+    if (!overallLast || date.getTime() > overallLast.getTime()) overallLast = date
+    const key = context.monthKeyOf_(date)
+    if (!months.has(key)) months.set(key, { first: date, last: date })
+    const entry = months.get(key)
+    if (date.getTime() < entry.first.getTime()) entry.first = date
+    if (date.getTime() > entry.last.getTime()) entry.last = date
+  }
+
+  const today = context.todayMidnight_()
+  // Local components, never toISOString(): the script builds its dates with
+  // `new Date(y, m, d)`, so a UTC render shows every one of them a day early
+  // anywhere east of Greenwich — which is exactly where this runs.
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-` +
+    `${String(d.getDate()).padStart(2, '0')}`
+  const rows = []
+
+  for (const [key, entry] of [...months.entries()].sort()) {
+    const cutoff = context.archiveCutoff_(entry.first, afterDays)
+    const monthEnd = context.lastDayOfMonth_(entry.first)
+    const cutoffPassed = cutoff.getTime() <= today.getTime()
+    // Same two clauses as eligibleMonths_: the last calendar day is encoded, or
+    // encoding has already moved on to a later month (which is what happens to a
+    // just-finished month once the new month's first rows land).
+    let complete = entry.last.getTime() >= monthEnd.getTime()
+    if (!complete && overallLast && context.monthKeyOf_(overallLast) > key) complete = true
+    rows.push({ key, entry, cutoff, monthEnd, cutoffPassed, complete })
+  }
+  return { rows, iso, overallLast }
+}
+
 // ── Reporting ───────────────────────────────────────────────────────────────
 
 const ok = (s) => `\x1b[32m${s}\x1b[0m`
@@ -382,6 +468,13 @@ function main() {
   const dump = args.includes('--dump')
   const gateView = args.includes('--gate-view')
   const connection = args.includes('--connection')
+  const asOfIndex = args.indexOf('--as-of')
+  const asOf = asOfIndex === -1 ? null : (args[asOfIndex + 1] || '')
+  if (asOfIndex !== -1 && !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
+    console.error(`--as-of wants YYYY-MM-DD (e.g. 2026-10-07)`)
+    process.exit(2)
+  }
+  const afterDaysForReport = 7
 
   const props = {
     SUPABASE_URL: process.env.SUPABASE_URL || process.env.SUPABASE_URL_OVERRIDE || '',
@@ -419,6 +512,26 @@ function main() {
     return
   }
 
+  if (asOf) {
+    // Before anything reads the clock — every later section then behaves as if it were
+    // that day, including the purge blocks the gate would release.
+    setClock(context, asOf)
+    rule(`1a. Cut-off table — as if today were ${asOf}`)
+    const table = cutoffTable(context, sheets, afterDaysForReport)
+    if (!table.rows.length) console.log(dim('  RAW DATA has no dated rows.'))
+    for (const r of table.rows) {
+      console.log(`  ${r.key}  ${(r.cutoffPassed ? 'past cut-off' : 'before cut-off').padEnd(15)}` +
+        ` cut-off ${table.iso(r.cutoff)}` +
+        `  month ends ${table.iso(r.monthEnd)}` +
+        `  encoded to ${table.iso(r.entry.last)}` +
+        `  ${r.complete ? ok('COMPLETE') : 'incomplete'}`)
+    }
+    console.log(dim('\n  The cut-off column is exact. COMPLETE is judged from the rows in the sheet' +
+      '\n  TODAY, so a month that is still being written reads as incomplete until the' +
+      '\n  next month has rows — on the real day that clause is what releases it.'))
+  }
+
+
   // CONFIG in memory, so the spreadsheet's own CONFIG tab is never touched.
   const setConfig = (dryRun) => {
     sheets['CONFIG'] = new Sheet('CONFIG', [
@@ -432,7 +545,7 @@ function main() {
 
   const due = () => context.eligibleMonths_(7)
 
-  rule('1. Which months are due')
+  rule('1b. Which months are due')
   const months = due()
   if (!months.length) {
     console.log('Nothing is due — no month is past month-end + 7 days, or none looks complete.')
@@ -455,7 +568,7 @@ function main() {
     } else {
       months.forEach((month) => {
         const rawRows = context.collectRawArchiveRows_(month.key)
-        const mtdRows = context.collectMtdArchiveRows_(month.key, month.label)
+        const mtdRows = context.deriveMtdArchiveRows_(rawRows, month.key, month.label)
         console.log(`  sli_raw_daily — ${rawRows.length} rows (${month.key})`)
         rawRows.forEach((r) => console.log(`    ${r.report_date}  ${String(r.area).padEnd(18)} ` +
           `overall=${String(r.is_overall_total).padEnd(5)} bf=${r.bf} inc=${r.inc} ` +

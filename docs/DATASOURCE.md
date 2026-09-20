@@ -156,8 +156,10 @@ A failed MTD or RAW fetch fails the whole sync; a failed aging or trend fetch on
 
 ## Gotchas
 
-- **`NEW REPORT` is never read by the app.** It is the hand-encoded source of truth; Apps Script
-  turns it into `RAW DATA` and `MTD`. Editing it changes nothing until **Full Sync** runs.
+- **`NEW REPORT` is never read by the app.** It is the source of truth; Apps Script turns it
+  into `RAW DATA` and `MTD`. Editing it changes nothing until **Full Sync** runs. It is
+  currently a live `=IMPORTRANGE(…)` mirror of the plan's `… DAILY` sheet, so edit the source
+  sheet — and note that rows in a mirror cannot be deleted.
 - **`RAW DATA`, not `MTD`, drives the daily and provincial views** — and both are rebuilt from
   scratch on every script run, so never edit them by hand.
 - **`MTD` and `RAW DATA` still live in the per-plan sheets** — but only for the live month once

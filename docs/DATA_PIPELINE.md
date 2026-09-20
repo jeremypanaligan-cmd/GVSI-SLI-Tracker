@@ -27,10 +27,10 @@ Supabase instead. See [ARCHIVE.md](./ARCHIVE.md) for that job and
 
 | Sheet | Who writes it | Purpose |
 |-------|---------------|---------|
-| `…  NEW REPORT` | Encoders, by hand | Source of truth. One block per day, one row per area. |
+| `…  NEW REPORT` | `=IMPORTRANGE(…)` from the plan's `… DAILY` sheet | Source of truth. One block per day, one row per area. A **live mirror**, so its rows are formula output and cannot be deleted — see [ARCHIVE.md](./ARCHIVE.md). |
 | `RAW DATA` | Apps Script (`Import`) | Normalized continuous table: one row per date + area. **What the app reads for daily/provincial views, for the live month.** |
 | `MTD` | Apps Script (`Generate MTD`) | Month-to-date summary. **What the app reads for achievement / target figures, for the live month.** |
-| Supabase `sli_raw_daily` / `sli_mtd` | Apps Script (`Archive`) | The same two shapes for **closed** months, after they are purged from the sheet. |
+| Supabase `sli_raw_daily` / `sli_mtd` | Apps Script (`Archive`) | The same two shapes for **closed** months. Purged from the sheet only when `ARCHIVE_PURGE = TRUE` (off by default), and never when the sheet is a formula mirror. |
 | `_ARCHIVE_BACKUP` | Apps Script (`Archive`) | Temporary pre-purge copy of the deleted `NEW REPORT` rows. Safe to delete. |
 | `CONFIG` | Apps Script (once) + you | Settings for the scripts — currently the list of retired areas. Not read by the app. |
 | `Login Credentials` | You, by hand | `Username` / `PasswordHash` (lowercase SHA-256 hex) / `FullName` / `Role` for the app's login gate. Lives in the **shared SLI TRACKER Database**, not in a plan sheet. |
@@ -127,9 +127,16 @@ are no longer used.
 `archiveClosedMonths()` — see [ARCHIVE.md](./ARCHIVE.md) for the full runbook.
 
 A month is due on **day 7 of the following month** (`ARCHIVE_AFTER_DAYS`) and only when it
-looks complete. The job then uploads that month's `RAW DATA` + `MTD`, **verifies the row
-counts and a checksum against Supabase**, and only then deletes the month's day blocks from
-`NEW REPORT` and re-runs Full Sync.
+looks complete. The job then uploads that month's `RAW DATA`, plus the MTD figures it
+**computes from those same rows** rather than re-reading the `MTD` tab — that tab is cleared
+and rebuilt by every Full Sync, so reading it was a race the archive could lose. It then
+**verifies the row counts and a checksum against Supabase**.
+
+Only then does it delete anything — and **only if the `CONFIG` tab sets `ARCHIVE_PURGE =
+TRUE`**. That switch is off by default: the archive copies a month to Supabase and leaves
+the sheet alone, so the sheet stays the record of every month and Supabase is a second copy
+the app reads from. With purge on, the month's day blocks are deleted from `NEW REPORT` and
+a Full Sync rebuilds `RAW DATA` and `MTD` without them.
 
 > Purging `NEW REPORT` — not `RAW DATA` — is the point. The import rebuilds `RAW DATA` from
 > `NEW REPORT` every 5 minutes and on every sheet edit, so a month left in `NEW REPORT` always
