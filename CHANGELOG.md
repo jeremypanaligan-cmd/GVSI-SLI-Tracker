@@ -4,6 +4,138 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
+## [1.14.0] — 2026-09-20
+
+### 🗄️ Cold Archive — closed months move to Supabase
+
+The sheet was going to grow forever: `RAW DATA` and `MTD` are rebuilt from `NEW REPORT` on
+every sync, so every day of every month stayed in the spreadsheet. A finished month is now
+copied to Supabase and purged from the sheet, and the app reads past months from there.
+
+- **`supabase/schema.sql`** (new) — `sli_raw_daily` + `sli_mtd`, RLS on with no anonymous
+  policy, upsert-safe unique keys so a re-run can never duplicate a month
+- **Apps Script `archiveClosedMonths()`** — a month is due on day 7 of the following month
+  (`ARCHIVE_AFTER_DAYS`, in the `CONFIG` tab) and only once it looks complete. Upload →
+  **verify row counts AND a checksum** → purge the month's day blocks from `NEW REPORT` →
+  Full Sync. A failed verification deletes nothing
+- **`OVER ALL TOTAL` rows are archived verbatim**, flagged `is_overall_total`, never
+  recomputed: they are not always the sum of the area rows (BIDA August: total `387`, area
+  sum `370`) and they are the number the dashboard showed while the month was live
+- **Purging `NEW REPORT` is the point** — `RAW DATA` alone is not enough, because the import
+  rebuilds it from `NEW REPORT` every 5 minutes and on every edit, so an old month always
+  came back
+- **`scripts/apps-script/gs-tail.template.txt` + `sync-gs-tail.cjs`** — the `TRIGGERS & MENU`
+  section onwards of the three plan scripts is now generated from one template, so the three
+  copies cannot drift
+- **`src/utils/archiveFetcher.js`** (new) — renders archived months back into the exact row
+  shape the Google Sheet export produces (same column order, same `September 1, 2026` date
+  key, same `91.20%` percent text), so `dataProcessor` needed no changes at all. The merge
+  happens in `dataFetcher` before parsing, which means every consumer — Executive, Compare,
+  prefetch — gets it for free
+- **Archive-aware cache:** the month index has a 5-minute TTL, while a month's rows are cached
+  **without a TTL** because they never change. The Google Sheet payload therefore stays flat as
+  the archive grows, and a past month is fetched once per browser
+- **`App.jsx` month → date sync:** selecting a month now moves the date-driven views into it,
+  so an archived August shows August's Daily To-Date and Provincial Breakdown instead of the
+  live month's. Also fixes the `handleMonthChange` stale closure
+- **MoM delta keeps working** for a month the sheet no longer holds, because the archived month
+  section is prepended to the sheet's own
+- **Supabase being unreachable is not an outage:** the merge is best-effort and the app falls
+  back to sheet-only data without throwing
+- **`GVSI Auto-DB → Test Supabase Connection`** (new) — says whether the Script Properties
+  key can reach and *write* the archive tables, before anything is switched on. It reads the
+  key's JWT role, so a pasted `anon` key is named as that instead of surfacing as a mystery
+  permission error, and it proves write access with an **empty-row insert**: Postgres checks
+  the grant and RLS before constraints, so a permitted key gets a not-null rejection and
+  **nothing is stored**, while a key that may not write gets `42501`. Also reachable from the
+  shell as `verify-archive.cjs <plan> --connection`, which skips the sheets entirely
+
+### 🔐 Login moves to Supabase, with real sessions
+
+The `Login Credentials` tab was link-shared, so every password hash was downloadable by anyone
+with the URL.
+
+- **`sli_users` + `verify_login`** — accounts live in a table with RLS on and no anonymous
+  policy; the browser sends the SHA-256 of the password and Postgres compares it. Verified:
+  `GET /rest/v1/sli_users` with the public anon key returns `401 permission denied`
+- **Session tokens** — a sign-in opens a `sli_sessions` row and returns its token, so sessions
+  can finally be revoked. A session stored by an older version is discarded (one re-login)
+- **`src/utils/auth.js`** — `fetchCredentials`/`verifyCredentials` are replaced by a single
+  `signIn()`; the credentials prefetch on the login screen is gone
+- **Offline sign-in still works** through the remembered session; the first sign-in needs the
+  network, exactly as before
+- The old sheet path is kept behind `SUPABASE_ENABLED` as a kill switch, **not** as a fallback
+
+### 🛠️ Developer Console
+
+`role = Developer` unlocks a console (desktop utility icon + mobile ⋮ menu) that no one else
+can see — and, more importantly, cannot use: every action calls an RPC that re-checks the role
+against the caller's session token inside Postgres.
+
+- **Active now** — who is signed in, their plan/view, session start, a live-ticking duration
+  and a badge count, from a one-minute heartbeat (`presence_ping`), which also reports whether
+  the token is still valid so a revoked session signs itself out
+- **Maintenance mode** — blocks every non-Developer behind a message screen, shows Developers an
+  amber banner instead so they can verify the state they set, and **auto-offs after 2 hours by
+  default** (enforced by the app *and* the server, so a forgotten switch cannot lock the team
+  out). When Supabase is unreachable it **fails open** and keeps working
+- **Recent sessions + Force sign-out all** — the audit trail and the "everyone re-logs in" button
+- **Honest scope:** maintenance mode is a coordination tool, not a security control — the check
+  runs in the browser and the data still comes from public sheet exports
+- **`src/components/MaintenanceScreen.jsx`**, **`src/components/DeveloperPanel.jsx`**,
+  **`src/utils/presence.js`**, **`src/hooks/usePresence.js`** (all new)
+
+### ⚙️ Apps Script triggers
+
+- **`setupManagedTriggers()`** reconciles exactly three triggers — `autoSync` every 5 minutes,
+  `archiveClosedMonths` daily at 02:00, and `fullSync` on spreadsheet change — and leaves every
+  other trigger alone
+- **Footgun removed:** the old `setupAutoTrigger()` deleted **every** project trigger before
+  installing its timer, which silently removed the hand-made on-change `fullSync` trigger. The
+  on-change trigger is now created by code, and the old function names simply delegate
+- New menu items: **Setup / Stop Managed Triggers**, **Archive Closed Months to Supabase**,
+  **Archive Dry Run**
+
+### 🐛 Fixes
+
+- **`src/App.jsx`** — a month picked in the Executive Overview no longer snaps back to the
+  live one. Switching plan fetches in the background, and `applyPlanData` reset
+  `selectedMonthYear` to the current month when that result landed seconds later — so
+  picking August and then watching the dropdown jump to September was really the fetch
+  overwriting the choice. The reset now happens once, eagerly, as the switch starts, and a
+  late result is dropped if the month has moved on, which also keeps the hero and the
+  tables from being parsed for a different month than the dropdown names
+- **`scripts/apps-script/verify-archive.cjs`** (new) — runs a plan's `.gs` verbatim in Node
+  against the live sheets and Supabase, so the archive gate can be exercised before the day
+  it purges: every `deleteRows` is recorded instead of applied
+
+### 📚 Documentation
+
+- **`docs/ARCHIVE.md`** (new) — the archive runbook: cut-off rule, the verification gate,
+  Script Properties, the `CONFIG` keys, first-run dry run, backups and rollback, troubleshooting
+- **`docs/DEVELOPER.md`** (new) — accounts, sessions, presence, the console, maintenance mode
+  and every RLS boundary
+- **`docs/DATASOURCE.md`** — Supabase as a second source, the "current month → sheet / previous
+  months → Supabase" rule, the archive cache keys
+- **`docs/DATA_PIPELINE.md`** — the archive step, the new `CONFIG` keys and menu, and the
+  generated script tail
+- **`README.md`** — security posture updated: what changed (hashes no longer downloadable,
+  server-side roles, revocable sessions) and what did not (still a browser-side gate)
+
+> **Kailangang i-rotate ang mga password:** ang limang hash na na-migrate mula sa sheet ay
+> publikong mababasa dati, at unsalted SHA-256 ang scheme.
+
+---
+
+**Version:** package.json bumped 1.13.0 → **1.14.0** — the only edit a release needs,
+because the service worker cache names, the versioned manifest and the archive cache keys
+all derive from it. Every other change here is code or documentation; the database side
+(`supabase/schema.sql`) is applied separately and is not part of the bundle.
+
+A pushed `v*` tag then publishes the GitHub release from this section.
+
+---
+
 ## [1.13.0] — 2026-09-15
 
 ### 📈 30-Day Trend Sparkline
