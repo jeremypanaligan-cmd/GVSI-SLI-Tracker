@@ -1,0 +1,72 @@
+name: Release
+
+# A release is cut by pushing an annotated version tag. The tag, the version in
+# package.json and the matching CHANGELOG.md section are checked to agree first,
+# and that section becomes the release notes — written in one place, so they cannot
+# drift from the changelog. Re-running the job re-syncs the notes rather than failing.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The version lives in package.json alone (it feeds the service worker cache
+      # names and the versioned manifest), so a tag that disagrees with it would ship
+      # a release whose notes and cache names describe a different build.
+      - name: Verify the tag matches package.json
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json (v$version). Bump the version in the same commit before tagging."
+            exit 1
+          fi
+
+      - name: Extract the release notes
+        run: |
+          set -euo pipefail
+          node scripts/extract-changelog-section.cjs "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md"
+          echo "notes: $(wc -c < "$RUNNER_TEMP/notes.md") bytes"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Annotated tags carry a hand-written summary ("GVSI SLI Tracker v1.13.0");
+          # fall back to the tag name for a lightweight one.
+          objecttype=$(git for-each-ref --format='%(objecttype)' "refs/tags/$GITHUB_REF_NAME")
+          if [ "$objecttype" = "tag" ]; then
+            title=$(git for-each-ref --format='%(contents:subject)' "refs/tags/$GITHUB_REF_NAME")
+          else
+            title="GVSI SLI Tracker $GITHUB_REF_NAME"
+          fi
+          echo "title: $title"
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "$title" \
+              --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$title" \
+              --notes-file "$RUNNER_TEMP/notes.md" \
+              --verify-tag
+          fi
