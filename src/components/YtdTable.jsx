@@ -11,6 +11,7 @@
  */
 import { useMemo, useState } from 'react'
 import { formatNumber, getBadgeStyle, getPaceBadgeStyle } from '../utils/dataProcessor'
+import { exportYtdCSV } from '../utils/exportCSV'
 
 const PACE_FILTERS = [
   { value: 'all', label: 'All' },
@@ -250,6 +251,19 @@ export default function YtdTable({ ytd, accent, planName }) {
               {filter.label}
             </button>
           ))}
+
+          {/* The pace filter narrows what is on screen; the file always holds every province,
+              because the OVER ALL TOTAL row it carries covers all of them. */}
+          <button
+            onClick={() => exportYtdCSV(ytd, { planName })}
+            title="Export this table as CSV — all provinces, one row each, with the overall total"
+            aria-label="Export year-to-date table as CSV"
+            className="ml-1 p-1.5 rounded-full border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60 hover:text-slate-700 dark:hover:text-slate-200 transition-all duration-200"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </button>
         </div>
       </div>
 
