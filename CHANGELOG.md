@@ -6,6 +6,35 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.16.1] — 2026-09-23
+
+### ✨ Features
+
+- **The Provincial Year-to-Date table now shows the share of the annual target each province has
+  actually completed.** A new `% OF TGT` column sits beside `ANNUAL TGT`, so the two yardsticks in
+  the table are finally both stated: `% OF PLAN` (YTD against the months elapsed — the fair read
+  mid-year) and `% OF TGT` (YTD against the whole year). On mobile, where there is only room for
+  one, the card now carries the annual figure and labels it `of target`, because the annual target
+  is what the year is judged on
+- **The annual figure is tinted by the pace verdict, not by its own percentage.** 46% in September
+  is not a failure, so the monthly thresholds would have painted the entire column red and taught
+  the reader to ignore it. The chip now takes the colour of the `PACE` column beside it — green,
+  amber, red — so one row never carries two contradicting verdicts, and a province with no verdict
+  yet stays neutral
+- **The Year-to-Date table's last column is now called `PACE`, not `STATUS`.** It holds the same
+  verdict the daily table's `PACE` column holds, from the same three-way vocabulary as the filter
+  chips above both tables, so the two tables now name the same thing the same way
+
+### 🐛 Fixes
+
+- **A province with no pace verdict now says why, instead of showing a dash.** BIDA and FIBERX
+  Aurora are 0 in the worksheet for every month JAN–AUG and 26/28/25/26 and 83/83/85/83 from SEP
+  on — its target has not started, so there is no finished-month target to measure August against
+  and the app refuses to invent a verdict from zero. `—` read as missing data, so the cell now
+  reads **`Starts Sep`**, a province with no target at all reads **`No target`**, and January reads
+  **`Too early`**. The remaining-month pace is unaffected and still shown: Aurora needs **81/month**
+  for the last three months against a 334 target
+
 ## [1.16.0] — 2026-09-23
 
 ### ✨ Features
