@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { fetchAllData, getCachedData, prefetchAllPlans } from './utils/dataFetcher'
+import { fetchAllData, getCachedData, prefetchAllPlans, fetchYearTables } from './utils/dataFetcher'
 import { fetchArchivedMonths } from './utils/archiveFetcher'
+import { recordYearDependency } from './utils/dataSourceDiagnostics'
 import {
   parseMTDData, extractExecutiveMetrics,
   parseRawDailyData, parseAgingReport, getTodayStr, findClosestDate,
@@ -16,9 +17,11 @@ import DatePicker from './components/DatePicker'
 import SyncIcon from './components/SyncIcon'
 import ThemeToggle from './components/ThemeToggle'
 import PlanSelector from './components/PlanSelector'
-import { PLANS, PLAN_ORDER, DEFAULT_PLAN } from './config/plans'
+import { PLANS, PLAN_ORDER, DEFAULT_PLAN, YTD_YEAR } from './config/plans'
+import { parseYearTable, computeYtd, buildOverrides, monthLabelParts, monthProgress, summarizeWorksheetDependency } from './utils/yearTables'
+import YtdTable from './components/YtdTable'
 import PWAInstallBanner from './components/PWAInstallBanner'
-import UpdatePrompt from './components/UpdatePrompt'
+
 import AppLogo from './components/AppLogo'
 import { useAuth } from './context/AuthContext'
 import { usePresence, useDevRoster } from './hooks/usePresence'
@@ -89,6 +92,8 @@ export default function App() {
   const [rawDaily, setRawDaily] = useState(null)
   const [agingData, setAgingData] = useState(null)
   const [trendData, setTrendData] = useState(null)
+  // The shared year tabs (`YTD 2026` / `TARGET 2026`) — raw CSV, shared by every plan
+  const [yearTables, setYearTables] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [source, setSource] = useState('none')
@@ -129,7 +134,13 @@ export default function App() {
         await fetchArchivedMonths(activePlan, { force: true }).catch(() => {})
       }
 
-      const result = await fetchAllData(activePlan, selectedMonthYear)
+      // The year tabs ride along with the live load — they are two small payloads on a
+      // 24h cache, and a failure there must not fail the load.
+      const [result, year] = await Promise.all([
+        fetchAllData(activePlan, selectedMonthYear),
+        fetchYearTables({ force: showSyncing }),
+      ])
+      setYearTables(year)
 
       const parsed = parseMTDData(result.mtd, selectedMonthYear)
       setMtdData(parsed)
@@ -165,6 +176,7 @@ export default function App() {
       }
     } catch (err) {
       setError(err.message)
+      setYearTables(await fetchYearTables())
       const cached = await getCachedData(activePlan, selectedMonthYear)
       if (cached.mtd) {
         setMtdData(parseMTDData(cached.mtd, selectedMonthYear))
@@ -372,6 +384,70 @@ export default function App() {
   const availableDates = rawDaily?.dates || []
   const latestDataDate = findLatestDataDate(rawDaily)
   const executiveMetrics = extractExecutiveMetrics(mtdData, dailyBlock)
+
+  // ---- Year-to-date, from the shared `YTD 2026` / `TARGET 2026` tabs ----
+
+  // Parsed once per payload rather than once per plan: each tab carries a block for every
+  // plan, so the two fetches serve all three plans.
+  const yearData = useMemo(() => {
+    if (!yearTables?.actual || !yearTables?.target) return null
+    const actual = parseYearTable(yearTables.actual)
+    const target = parseYearTable(yearTables.target)
+    return actual && target ? { actual, target } : null
+  }, [yearTables])
+
+  // The app's own record supersedes the worksheet for any month it holds — the same rule
+  // the RAW/MTD merge already follows. This is also what makes BIDA's August right: the
+  // worksheet's August column holds August's *target*, while the record holds 31, 36, 53…
+  const ytdOverrides = useMemo(
+    () => buildOverrides(mtdData?.sections, YTD_YEAR),
+    [mtdData],
+  )
+
+  // How far into the selected month the data reaches. Only sizes the projection: without
+  // it, the projection falls back to whole months, which understates the year-end figure.
+  const monthProgressValue = useMemo(
+    () => monthProgress(latestDataDate, selectedMonthYear),
+    [latestDataDate, selectedMonthYear],
+  )
+
+  const ytdMetrics = useMemo(() => {
+    if (!yearData) return null
+    const parts = monthLabelParts(selectedMonthYear)
+    // The tabs hold one year's plan, so against any other year there is nothing to show —
+    // better an absent section than one that mislabels itself.
+    if (!parts || parts.year !== YTD_YEAR) return null
+    return computeYtd({
+      actual: yearData.actual,
+      target: yearData.target,
+      planId: activePlan,
+      monthIndex: parts.monthIndex,
+      overrides: ytdOverrides,
+      progress: monthProgressValue,
+    })
+  }, [yearData, activePlan, selectedMonthYear, ytdOverrides, monthProgressValue])
+
+  // Who supplied those actuals — the tracker's own record, or the `YTD 2026` worksheet.
+  // Nothing on the dashboard shows this (an actual is an actual either way), so it is
+  // handed to the Developer console instead: `recordYearDependency` is observation only
+  // and nothing here reads it back.
+  const ytdDependency = useMemo(() => {
+    if (!yearData) return null
+    const parts = monthLabelParts(selectedMonthYear)
+    if (!parts || parts.year !== YTD_YEAR) return null
+    return summarizeWorksheetDependency({
+      actual: yearData.actual,
+      target: yearData.target,
+      planId: activePlan,
+      monthIndex: parts.monthIndex,
+      overrides: ytdOverrides,
+      year: parts.year,
+    })
+  }, [yearData, activePlan, selectedMonthYear, ytdOverrides])
+
+  useEffect(() => {
+    recordYearDependency(activePlan, ytdDependency)
+  }, [activePlan, ytdDependency])
 
   // Phase 2 — F1 trend analytics
   // MoM: current MTD achievement % vs the previous available month (if any)
@@ -921,6 +997,8 @@ export default function App() {
             momDelta={momDelta}
             dailyTrends={dailyTrends}
             trend30Day={trend30Day}
+            ytd={ytdMetrics}
+            planName={currentPlan.name}
           />
         ) : (
           <div className="h-full flex flex-col">
@@ -954,6 +1032,10 @@ export default function App() {
             {/* Daily table */}
             <div className="flex-1 overflow-auto">
               <DailyTable dateData={dailyBlock} refDate={selectedDate || latestDataDate} areaTrends={areaTrends} accent={currentPlan.accentClasses} />
+
+              {/* Year-to-date, under the daily block — the second half of the
+                  Provincial Breakdown */}
+              <YtdTable ytd={ytdMetrics} accent={currentPlan.accentClasses} planName={currentPlan.name} />
             </div>
           </div>
         )}
@@ -1014,8 +1096,7 @@ export default function App() {
       {/* PWA Install Banner */}
       <PWAInstallBanner />
 
-      {/* "New version ready" prompt (service worker update) */}
-      <UpdatePrompt />
+
 
       {/* Executive Report (print / PDF) */}
       {reportOpen && (

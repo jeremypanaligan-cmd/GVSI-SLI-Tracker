@@ -11,6 +11,27 @@
 
 const SHEET_BASE = 'https://docs.google.com/spreadsheets/d/'
 
+// Year-to-date actuals and the year's monthly target plan, from the same shared
+// workbook as the aging report. One tab each, with a block per plan inside it, so the
+// URLs are plan-agnostic and every plan reads the same two payloads.
+//
+//   YTD 2026     → gid 1253792447 — completed installations, one column per month
+//   TARGET 2026  → gid 1221052795 — the monthly target plan, same shape
+//
+// Both are year-specific, in the tab name and in the title cell, so the app has to
+// know which year it is holding. See docs/YTD_SCOPING.md.
+export const YTD_YEAR = 2026
+
+// A closed month becomes eligible for archiving this many days into the following month
+// — `ARCHIVE_AFTER_DAYS_KEY` in the Apps Script CONFIG tab, whose default this mirrors
+// (`archiveCutoff_` in the .gs files). The app never archives anything, it only dates the
+// next conversion in the Developer console, so if the CONFIG value is changed the panel's
+// countdown is the one place that has to be told.
+export const ARCHIVE_AFTER_DAYS = 7
+const SHARED_SHEET = `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs`
+export const YTD_URL = `${SHARED_SHEET}/export?format=csv&gid=1253792447`
+export const TARGET_URL = `${SHARED_SHEET}/export?format=csv&gid=1221052795`
+
 // Login credentials live in a dedicated sheet, shared by every plan.
 // Tab: "Login Credentials" — Username | PasswordHash | FullName | Role
 // (PasswordHash = lowercase SHA-256 hex of the plain password)

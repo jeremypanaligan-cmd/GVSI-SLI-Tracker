@@ -2,8 +2,9 @@ import { getBadgeStyle, getTodayStr, projectRunRate, getPaceBadgeStyle } from '.
 import DatePicker from './DatePicker'
 import Sparkline from './Sparkline'
 import VelocityReport from './VelocityReport'
+import YtdReport from './YtdReport'
 
-export default function ExecutiveOverview({ metrics, selectedDate, availableDates, latestDataDate, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail, plan, momDelta, dailyTrends, trend30Day }) {
+export default function ExecutiveOverview({ metrics, selectedDate, availableDates, latestDataDate, onDateSelect, onMonthSelect, selectedMonthYear, availableMonths, onGoToDetail, plan, momDelta, dailyTrends, trend30Day, ytd, planName }) {
   if (!metrics) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
@@ -316,6 +317,11 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
           </div>
         )}
       </section>
+
+      {/* YEAR-TO-DATE — the shared YTD/target tabs, one section per year rather than per
+          month. Like the projection above, it is judged on finished months, so it holds
+          for a past month too: a year-to-date total is a fact either way. */}
+      <YtdReport ytd={ytd} plan={plan} planName={planName} />
 
       {/* VIEW BREAKDOWN */}
       <button onClick={onGoToDetail}

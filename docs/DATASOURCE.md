@@ -38,6 +38,38 @@ plan-specific trend tabs.
 | `FIBERX DATA` | `0` | Executive Overview 30-day trend (FIBERX) | `PLANS.fiberx.trendUrl` |
 | `BIDA DATA` | `721299435` | Executive Overview 30-day trend (BIDA) | `PLANS.bida.trendUrl` |
 | `SME DATA` | `1854320942` | Executive Overview 30-day trend (SME) | `PLANS.sme.trendUrl` |
+| `YTD 2026` | `1253792447` | Executive Overview Year-to-Date · Provincial YTD table | `YTD_URL` (all three plans) |
+| `TARGET 2026` | `1221052795` | Same, target side — monthly and annual targets | `TARGET_URL` (all three plans) |
+
+`YTD 2026` and `TARGET 2026` hold a block per plan (13 provinces × `JAN…DEC` + `TOTAL`),
+so they are read **once** for every plan and cached for 24 hours rather than five minutes —
+an annual table cannot change between two loads. There is **no `SME` block** in either tab,
+so the Year-to-Date sections say so instead of rendering an empty table.
+
+For those two tabs only, the rule above is refined: the app's own recorded month supersedes
+the worksheet for that month (`buildOverrides` in `src/utils/yearTables.js`). It is not
+academic — BIDA's `AUG` column in `YTD 2026` holds **August's target**, not August's
+completions, so the August figure comes from `sli_mtd` instead, and the sections disclose
+which month was substituted. See [YTD_SCOPING.md](./YTD_SCOPING.md).
+
+Which side supplied each figure is reported, per province and per month, in the
+**Developer console → Data source diagnostics → Worksheet dependency**
+(`summarizeWorksheetDependency` in the same module). It exists because nothing on the
+dashboard can show the difference — an actual reads the same whichever tab it came from —
+while the dependency itself shrinks every month as the archive fills. For BIDA in
+September 2026 it reads: 98 of 117 province-months are the worksheet's, August comes from
+Supabase and September from the live `MTD` tab, Cagayan, Kalinga and Apayao have no record
+yet (the Apps Script import used to filter those three out of `RAW DATA`, so re-archiving
+August is what gives them one — see
+[DATA_PIPELINE.md](./DATA_PIPELINE.md#the-area-list)), and `JAN–JUL` can never convert
+because they fall before the first month the tracker held. The target side is reported as permanent instead: every target cell in the
+year comes from `TARGET 2026`, so it gets no countdown.
+
+A closed month converts `ARCHIVE_AFTER_DAYS` days into the following month — the
+`CONFIG` key the Apps Script reads (`ARCHIVE_AFTER_DAYS_KEY`, default `7`). The app never
+archives anything; it mirrors the number as `ARCHIVE_AFTER_DAYS` in `src/config/plans.js`
+so the console can date the next conversion. If the `CONFIG` value is changed, that
+constant is the one place to update.
 
 ### 2. FIBERX SLI TRACKER DB
 

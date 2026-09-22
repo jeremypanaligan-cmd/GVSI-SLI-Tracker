@@ -209,6 +209,10 @@ export function parseMTDData(mtdData, selectedMonthYear) {
     ...data,
     availableMonths: months,
     overallByMonth,
+    // Every month's rows, not just the selected one. The year-to-date section needs the
+    // months already recorded here (including archived ones merged into the CSV) to
+    // supersede the same months in the YTD worksheet — see yearTables.js.
+    sections,
     selectedMonthYear: sections[targetMonth] ? targetMonth : (sections[currentMonthYear] ? currentMonthYear : months[months.length - 1]),
   }
 }

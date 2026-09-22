@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { setMaintenance, forceSignOutAll, formatDuration } from '../utils/presence'
 import { fetchArchivedMonths } from '../utils/archiveFetcher'
 import { getDiagnostics } from '../utils/dataSourceDiagnostics'
+import { monthLabelParts, archiveDate } from '../utils/yearTables'
+import { ARCHIVE_AFTER_DAYS } from '../config/plans'
 import { SUPABASE_ENABLED } from '../config/supabase'
 import { PLANS } from '../config/plans'
 import { APP_VERSION } from '../utils/version'
@@ -57,6 +59,252 @@ function loadedBundle() {
     .find((value) => /\/assets\/.+\.js$/.test(value))
   return src ? src.split('/').pop().split('?')[0] : '—'
 }
+
+const formatDay = (date) =>
+  date.toLocaleDateString('en-PH', { day: 'numeric', month: 'short', year: 'numeric' })
+
+/**
+ * Where one province-month's actual came from. `worksheet` is the one that matters: the
+ * figure is someone else's cell in `YTD 2026`, not the tracker's own measurement.
+ */
+const MONTH_SOURCE = {
+  worksheet: {
+    letter: 'W',
+    label: 'YTD 2026 worksheet',
+    cell: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+  },
+  archive: {
+    letter: 'S',
+    label: 'Supabase archive',
+    cell: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+  },
+  live: {
+    letter: 'L',
+    label: 'live sheet tab',
+    cell: 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300',
+  },
+  record: {
+    letter: 'R',
+    label: 'the tracker\u2019s record',
+    cell: 'bg-slate-100 text-slate-600 dark:bg-slate-700/40 dark:text-slate-300',
+  },
+}
+
+/**
+ * Which provinces and months still need the `YTD 2026` worksheet, and how that shrinks as
+ * the archive fills.
+ *
+ * The split is decided by the app (`summarizeWorksheetDependency`), not here — this only
+ * names the record side more precisely, using what the archive merge already reported:
+ * a month the archive listed is Supabase, a month the sheet still exports is the live tab.
+ */
+function WorksheetDependency({ dependency, merge, now }) {
+  const { totals } = dependency
+  const archiveMonths = new Set(
+    (merge?.supabaseMonths || []).map((label) => monthLabelParts(label)?.monthIndex).filter((v) => v != null),
+  )
+  const sheetMonths = new Set(
+    (merge?.sheetMtdMonths || []).map((label) => monthLabelParts(label)?.monthIndex).filter((v) => v != null),
+  )
+
+  const sourceFor = (area, index) => {
+    if (!area.recordMonths.includes(index)) return 'worksheet'
+    if (archiveMonths.has(index)) return 'archive'
+    if (sheetMonths.has(index)) return 'live'
+    return 'record'
+  }
+
+  const elapsed = dependency.monthDetail
+  const permanent = totals.permanentWorksheetMonths || []
+  const upcoming = []
+  for (let index = 0; index < 12; index++) {
+    const date = archiveDate(dependency.year, index)
+    if (date.getTime() > now) upcoming.push({ index, date })
+  }
+
+  // Which closed months are already past their cutoff, and which of those the archive
+  // actually holds. A plan with due months and nothing archived is the plan whose
+  // countdown is not going to move, and that is worth saying out loud rather than
+  // showing a date that will pass silently.
+  const due = []
+  for (let index = 0; index < 12; index++) {
+    if (archiveDate(dependency.year, index).getTime() <= now) due.push(index)
+  }
+  const dueArchived = due.filter((index) => archiveMonths.has(index)).length
+
+  const recordMonths = elapsed.filter((month) => month.record > 0)
+  const worksheetPct = Math.round((totals.fromWorksheet / Math.max(totals.provinceMonths, 1)) * 100)
+  const yearEndPct = Math.round((permanent.length / 12) * 100)
+
+  return (
+    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/20 p-3">
+      <div className="flex items-baseline justify-between gap-3 mb-2">
+        <h5 className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+          Worksheet dependency
+        </h5>
+        <span className="text-[10px] text-slate-400 dark:text-slate-500">
+          {`${dependency.year} \u00b7 through ${elapsed[elapsed.length - 1]?.label}`}
+        </span>
+      </div>
+
+      <div className="space-y-1.5 text-[11px] text-slate-700 dark:text-slate-200">
+        <p>
+          <span className="font-semibold text-amber-700 dark:text-amber-300">{totals.fromWorksheet}</span>
+          {' of '}
+          {formatCount(totals.provinceMonths)} province-months are the worksheet’s
+          {` \u00b7 ${worksheetPct}%`}
+          {' \u2014 the other '}
+          {formatCount(totals.fromRecord)}
+          {' come from the tracker\u2019s own record.'}
+        </p>
+
+        {recordMonths.length > 0 && (
+          <p>
+            <span className="text-slate-400 dark:text-slate-500">Record months: </span>
+            {recordMonths.map((month, index) => (
+              <span key={month.index}>
+                {index > 0 ? ' \u00b7 ' : ''}
+                <span className="font-semibold">{month.label}</span>
+                {month.record < totals.areaCount ? ` (${month.record} of ${totals.areaCount} provinces)` : ''}
+                {` \u2014 ${monthSourceName(month, archiveMonths, sheetMonths, merge)}`}
+              </span>
+            ))}
+          </p>
+        )}
+
+        <p>
+          <span className="text-slate-400 dark:text-slate-500">Worksheet only: </span>
+          {totals.areasWithNoRecord.length ? (
+            <>
+              <span className="font-semibold text-amber-700 dark:text-amber-300">{totals.areasWithNoRecord.length}</span>
+              {` of ${totals.areaCount} provinces have never appeared in the record \u2014 `}
+              {dependency.areas
+                .filter((area) => area.noRecordAtAll)
+                .map((area) => area.name)
+                .join(', ')}
+              {'. Their months come from the worksheet and nothing can correct them.'}
+            </>
+          ) : (
+            'every province appears in the record for at least one month.'
+          )}
+        </p>
+
+        <p>
+          <span className="text-slate-400 dark:text-slate-500">Targets: </span>
+          {`all ${dependency.target.months} months \u00d7 ${dependency.target.areaCount} provinces `}
+          {`(${formatCount(dependency.target.cells)} cells) come from TARGET 2026, always. No countdown \u2014 there is no record side.`}
+        </p>
+      </div>
+
+      {/* Province \u00d7 month. Elapsed months only, so the grid stays the width of the year so far. */}
+      <div className="mt-3 overflow-x-auto">
+        <div
+          className="grid gap-0.5 min-w-max text-[10px]"
+          style={{ gridTemplateColumns: `minmax(8rem, 14rem) repeat(${elapsed.length}, 1.15rem)` }}
+        >
+          <span className="text-slate-400 dark:text-slate-500" />
+          {elapsed.map((month) => (
+            <span key={month.index} className="text-center text-slate-400 dark:text-slate-500 font-semibold">
+              {month.label.slice(0, 1)}
+            </span>
+          ))}
+
+          {dependency.areas.map((area) => (
+            <Fragment key={area.key}>
+              <span className="truncate pr-2 text-slate-600 dark:text-slate-300" title={area.name}>
+                {area.name}
+              </span>
+              {elapsed.map((month) => {
+                const source = MONTH_SOURCE[sourceFor(area, month.index)]
+                return (
+                  <span
+                    key={month.index}
+                    title={`${area.name} \u00b7 ${month.label} \u2014 ${source.label}`}
+                    className={`text-center font-bold rounded-sm py-0.5 ${source.cell}`}
+                  >
+                    {source.letter}
+                  </span>
+                )
+              })}
+            </Fragment>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500 dark:text-slate-400">
+        {Object.entries(MONTH_SOURCE).map(([key, source]) => (
+          <span key={key} className="flex items-center gap-1">
+            <span className={`inline-block w-3.5 text-center font-bold rounded-sm ${source.cell}`}>{source.letter}</span>
+            {source.label}
+          </span>
+        ))}
+      </div>
+
+      {/* The countdown: the archive only reaches months the plan's own tabs still carry, so a
+          month from before the first record is stuck on the worksheet for good. */}
+      <div className="mt-3 pt-2 border-t border-slate-200 dark:border-slate-800 text-[11px] space-y-1">
+        {merge && due.length > 0 && (
+          <p className={dueArchived === 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200'}>
+            {`${due.length} closed month${due.length === 1 ? '' : 's'} passed the cutoff`}
+            {dueArchived === 0
+              ? ' \u2014 none is archived, so either ARCHIVE_ENABLED is off in CONFIG or the archive has not run yet. The countdown below will not move until it does.'
+              : ` \u2014 ${dueArchived} archived in Supabase.`}
+          </p>
+        )}
+        <p className="text-slate-700 dark:text-slate-200">
+          <span className="text-slate-400 dark:text-slate-500">Next conversion: </span>
+          {upcoming.length ? (
+            <>
+              <span className="font-semibold">{monthNameOf(upcoming[0].index)}</span>
+              {` becomes eligible ${formatDay(upcoming[0].date)} `}
+              {`(in ${Math.max(Math.ceil((upcoming[0].date.getTime() - now) / 86400000), 0)} days, `}
+              {`CONFIG ARCHIVE_AFTER_DAYS = ${ARCHIVE_AFTER_DAYS}).`}
+            </>
+          ) : (
+            'none left this year.'
+          )}
+        </p>
+
+        {upcoming.length > 1 && (
+          <p className="text-slate-500 dark:text-slate-400">
+            Then{' '}
+            {upcoming.slice(1, 4).map((entry, index) => (
+              <span key={entry.index}>
+                {index > 0 ? ' \u00b7 ' : ''}
+                {`${monthNameOf(entry.index)} \u2192 ${formatDay(entry.date)}`}
+              </span>
+            ))}
+            {upcoming.length > 4 ? ` \u00b7 \u2026` : ''}
+          </p>
+        )}
+
+        {permanent.length > 0 && (
+          <p className="text-slate-500 dark:text-slate-400">
+            {permanent.map((index) => dependency.months[index]).join(', ')}
+            {` will not convert \u2014 they fall before the earliest month the tracker holds `}
+            {`(${monthNameOf(totals.earliestRecordMonth)} ${dependency.year}), and the archive only takes a month the sheet still carries. `}
+            {`So at year end the worksheet holds ${permanent.length} of 12 actual months (${yearEndPct}%), not fewer.`}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Which tab supplied a month's record rows, as reported by the archive merge. */
+function monthSourceName(month, archiveMonths, sheetMonths, merge) {
+  if (!merge) return 'record'
+  if (archiveMonths.has(month.index)) return 'Supabase archive'
+  if (sheetMonths.has(month.index)) return 'live sheet tab'
+  return 'record'
+}
+
+const FULL_MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+const monthNameOf = (index) => (Number.isInteger(index) ? FULL_MONTHS[index] : '\u2014')
 
 /**
  * Developer-only console: which build is running, where each plan's data came from,
@@ -294,6 +542,47 @@ export default function DeveloperPanel({
             <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
               Data source diagnostics
             </h3>
+
+            {/* The shared year tabs. Read once for every plan, on a 24h cache, so this
+                is the one row that does not repeat per plan. */}
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 mb-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">YTD 2026 / TARGET 2026</h4>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                  {diag.year?.at ? formatAge(diag.year.at) : 'not loaded in this tab yet'}
+                </span>
+              </div>
+              {diag.year ? (
+                <dl className="grid gap-x-4 gap-y-1.5 sm:grid-cols-[9rem_1fr] text-[11px] mt-2">
+                  <dt className="text-slate-400 dark:text-slate-500">Source</dt>
+                  <dd className="text-slate-700 dark:text-slate-200">
+                    <span className="font-semibold">{SOURCE_LABELS[diag.year.source] || 'Unknown'}</span>
+                    {diag.year.cacheAgeMs != null ? ` · cached ${formatDuration(diag.year.cacheAgeMs / 1000)} ago` : ''}
+                    {` · TTL 24h`}
+                  </dd>
+                  <dt className="text-slate-400 dark:text-slate-500">Payload</dt>
+                  <dd className="text-slate-700 dark:text-slate-200">
+                    {formatBytes(diag.year.actualBytes)} YTD · {formatBytes(diag.year.targetBytes)} target
+                  </dd>
+                  {diag.year.liveError && (
+                    <>
+                      <dt className="text-slate-400 dark:text-slate-500">Error</dt>
+                      <dd className="text-rose-600 dark:text-rose-400">{diag.year.liveError}</dd>
+                    </>
+                  )}
+                </dl>
+              ) : (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
+                  Open the dashboard, then reopen this console.
+                </p>
+              )}
+              <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-2">
+                Shared by all three plans, so it is read once per 24 hours rather than per plan.
+                Months the tracker already holds a record for come from that record, not from
+                the worksheet.
+              </p>
+            </div>
+
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
               {Object.values(PLANS).map((plan) => {
                 const entry = diag.plans[plan.id]
@@ -378,6 +667,14 @@ export default function DeveloperPanel({
                             : '—'}
                         </dd>
                       </dl>
+                    )}
+
+                    {entry?.dependency && (
+                      <WorksheetDependency
+                        dependency={entry.dependency}
+                        merge={entry.merge}
+                        now={now}
+                      />
                     )}
                   </div>
                 )
