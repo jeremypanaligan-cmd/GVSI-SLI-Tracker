@@ -52,6 +52,12 @@ function num(cell) {
   return Number.isFinite(value) ? value : null
 }
 
+/** `SEP` → `Sep`, for the labels that face a reader. */
+function monthAbbr(index) {
+  const month = MONTHS[index] || ''
+  return month ? month[0] + month.slice(1).toLowerCase() : ''
+}
+
 function sum(values) {
   return values.reduce((total, value) => total + (typeof value === 'number' ? value : 0), 0)
 }
@@ -391,8 +397,16 @@ export function computeYtd({ actual, target, planId, monthIndex, overrides = {},
     const projected = ytd + paceMonthly * monthsAhead
     const projectedPct = annualTarget > 0 ? (projected / annualTarget) * 100 : null
 
+    // The verdict needs a denominator. A province whose target has not started yet — BIDA's
+    // Aurora is 0 for JAN–AUG and 26/28/25/26 from SEP on — cannot be on pace or behind, and
+    // guessing either would be a lie. So say why instead of leaving a bare dash, which reads
+    // as "missing data" rather than "nothing to judge yet".
     let pace = null
-    if (annualTarget > 0 && completedMonths > 0 && completedTarget > 0) {
+    let paceNote = null
+    if (annualTarget <= 0) paceNote = 'No target'
+    else if (completedMonths === 0) paceNote = 'Too early'
+    else if (completedTarget <= 0) paceNote = `Starts ${monthAbbr(monthIndex)}`
+    else {
       pace = completedActual >= completedTarget ? 'on-pace'
         : completedActual >= completedTarget * 0.8 ? 'behind'
           : 'critical'
@@ -420,6 +434,8 @@ export function computeYtd({ actual, target, planId, monthIndex, overrides = {},
       projected,
       projectedPct,
       pace,
+      // Why there is no `pace`, when there isn't one. Rendered in place of the verdict.
+      paceNote,
       series: {
         actual: seriesActual.slice(0, monthIndex + 1),
         target: seriesTarget,

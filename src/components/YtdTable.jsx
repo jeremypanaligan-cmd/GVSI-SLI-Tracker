@@ -28,10 +28,11 @@ const COLUMNS = [
   { key: 'planToDate', label: 'PLAN TO DATE', tooltip: 'Target for every month up to and including the selected one', align: 'right', sortable: true, width: 116 },
   { key: 'pctOfPlan', label: '% OF PLAN', tooltip: 'YTD against the plan to date — the fair yardstick mid-year', align: 'center', sortable: true, width: 100 },
   { key: 'annualTarget', label: 'ANNUAL TGT', tooltip: 'Full-year target for this province', align: 'right', sortable: true, width: 108 },
+  { key: 'pct', label: '% OF TGT', tooltip: 'YTD against the whole-year target — where this province stands if the year ended today, unlike % OF PLAN, which only judges the months already elapsed. Tinted by the pace verdict, not by this percentage: mid-year every province is short of the annual target.', align: 'center', sortable: true, width: 100 },
   { key: 'remaining', label: 'REMAINING', tooltip: 'Annual target minus YTD — what is left for the rest of the year', align: 'right', sortable: true, width: 108 },
   { key: 'requiredPerMonth', label: 'REQ / MO', tooltip: 'Installations needed per remaining month, after this month’s own target', align: 'right', bold: true, sortable: true, width: 96 },
   { key: 'projected', label: 'PROJ', tooltip: 'Projected year-end if the finished months keep their average pace', align: 'right', sortable: true, width: 92 },
-  { key: 'pace', label: 'STATUS', tooltip: 'Judged on finished months — on pace, behind, or critical', align: 'center', sortable: false, stickyRight: 0, width: 118 },
+  { key: 'pace', label: 'PACE', tooltip: 'Judged on finished months — on pace, behind, or critical. A province whose target has not started yet says so instead of being given a verdict.', align: 'center', sortable: false, stickyRight: 0, width: 118 },
 ]
 
 const DEFAULT_HEAD_ACCENT = {
@@ -51,21 +52,40 @@ function monthName(index) {
   return MONTH_LABELS[index] || ''
 }
 
-function PctCell({ value }) {
+/**
+ * A percentage chip. Pass `pace` for figures measured against the annual target: those are
+ * *progress*, not a verdict — 46% in September is not a failure — and the monthly thresholds
+ * would paint the whole column red. Tinted by the row's pace instead, the chip agrees with the
+ * STATUS column beside it, so one row never carries two verdicts.
+ */
+function PctCell({ value, pace }) {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return <span className="text-slate-300 dark:text-slate-600">—</span>
   }
-  const badge = getBadgeStyle(value)
+  const badge = pace !== undefined ? getPaceBadgeStyle(pace) : getBadgeStyle(value)
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badge.bg} ${badge.color} ${badge.border}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badge.bg} ${badge.color} ${badge.border || 'border-slate-300 dark:border-slate-600'}`}>
       {badge.pulse && <span className="w-1.5 h-1.5 rounded-full mr-1 bg-emerald-500 animate-pulse" />}
       {formatNumber(value, '%')}
     </span>
   )
 }
 
-function StatusCell({ pace }) {
-  if (!pace) return <span className="text-slate-300 dark:text-slate-600">—</span>
+function StatusCell({ pace, note }) {
+  if (!pace) {
+    // "—" reads as missing data. When there is a reason for having no verdict, name it.
+    if (note) {
+      return (
+        <span
+          className="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600"
+          title="No pace to report yet"
+        >
+          {note}
+        </span>
+      )
+    }
+    return <span className="text-slate-300 dark:text-slate-600">—</span>
+  }
   const badge = getPaceBadgeStyle(pace)
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badge.bg} ${badge.color} ${badge.border}`}>
@@ -121,8 +141,13 @@ function MobileRow({ row, totalAccent = DEFAULT_TOTAL_ACCENT, overall = false })
           {row.name}
         </p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
-          <StatusCell pace={row.pace} />
-          <PctCell value={row.pctOfPlan} />
+          <StatusCell pace={row.pace} note={row.paceNote} />
+          {/* Mobile has no column header to name the yardstick, so the badge is labelled
+              here — and the label is the annual one, matching the target printed below it. */}
+          <span className="inline-flex items-baseline gap-1" title="YTD against the whole-year target">
+            <PctCell value={row.pct} pace={row.pace} />
+            <span className="text-[10px] text-slate-400 dark:text-slate-500">of target</span>
+          </span>
         </div>
         <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
           Annual target {formatNumber(row.annualTarget)}
@@ -243,7 +268,7 @@ export default function YtdTable({ ytd, accent, planName }) {
 
       {/* Desktop table (sm+) */}
       <div className="hidden sm:block w-full overflow-x-auto">
-        <table className="w-full border-collapse" style={{ minWidth: '1000px' }}>
+        <table className="w-full border-collapse" style={{ minWidth: '1100px' }}>
           <thead>
             <tr className={`${headAccent.bg} border-b ${headAccent.border}`}>
               {COLUMNS.map((col) => (
@@ -278,6 +303,7 @@ export default function YtdTable({ ytd, accent, planName }) {
                   <Td align="right">{formatNumber(row.planToDate)}</Td>
                   <Td align="center"><PctCell value={row.pctOfPlan} /></Td>
                   <Td align="right">{formatNumber(row.annualTarget)}</Td>
+                  <Td align="center"><PctCell value={row.pct} pace={row.pace} /></Td>
                   <Td align="right">
                     <span title={row.deficit > 0 ? `${formatNumber(row.deficit)} behind the plan to date` : `${formatNumber(-row.deficit)} ahead of the plan to date`}>
                       {formatNumber(row.remaining)}
@@ -285,7 +311,7 @@ export default function YtdTable({ ytd, accent, planName }) {
                   </Td>
                   <Td align="right" bold>{paceDisplay(row.requiredPerMonth)}</Td>
                   <Td align="right">{formatNumber(Math.round(row.projected))}</Td>
-                  <Td align="center" stickyRight={0} width={118} bgColor={bg}><StatusCell pace={row.pace} /></Td>
+                  <Td align="center" stickyRight={0} width={118} bgColor={bg}><StatusCell pace={row.pace} note={row.paceNote} /></Td>
                 </tr>
               )
             })}
@@ -298,10 +324,11 @@ export default function YtdTable({ ytd, accent, planName }) {
               <Td align="right">{formatNumber(overall.planToDate)}</Td>
               <Td align="center" className={totalAccent.text}><PctCell value={overall.pctOfPlan} /></Td>
               <Td align="right">{formatNumber(overall.annualTarget)}</Td>
+              <Td align="center" className={totalAccent.text}><PctCell value={overall.pct} pace={overall.pace} /></Td>
               <Td align="right">{formatNumber(overall.remaining)}</Td>
               <Td align="right" bold>{paceDisplay(overall.requiredPerMonth)}</Td>
               <Td align="right">{formatNumber(Math.round(overall.projected))}</Td>
-              <Td align="center" stickyRight={0} width={118} bgColor={`${totalAccent.bg} ${totalAccent.text}`}><StatusCell pace={overall.pace} /></Td>
+              <Td align="center" stickyRight={0} width={118} bgColor={`${totalAccent.bg} ${totalAccent.text}`}><StatusCell pace={overall.pace} note={overall.paceNote} /></Td>
             </tr>
 
             {areas.length === 0 && (
