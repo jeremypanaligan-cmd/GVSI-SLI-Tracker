@@ -4,6 +4,105 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ---
 
+## [Unreleased]
+
+## [1.16.0] — 2026-09-23
+
+### ✨ Features
+
+- **The dashboard now answers for the year, not only the month.** The Executive Overview gains a
+  **Year-to-Date** section and the Provincial Breakdown a **Year-to-Date** table, both driven by
+  two new tabs in the shared workbook — `YTD 2026` (completed installations, one column per month)
+  and `TARGET 2026` (that same grid as the monthly target plan, plus each province's annual
+  target). Neither exists anywhere in the app today for the months before August 2026, and the
+  targets for the months still ahead existed nowhere at all
+- **The projection is stated as work, not as a percentage.** Per province and for the portfolio:
+  remaining installations to the annual target, the pace the remaining months need after this
+  month's own target is accounted for, and where the year lands if the finished months keep their
+  average pace. Example — BIDA Benguet, September 2026: 470 achieved against 526 planned, 181 left
+  after September's target, so **60 per month** across October–December
+- **The verdict is judged on finished months, never on a partial one.** A province is not called
+  behind on the 2nd of the month for not yet delivering the whole month. The headline percentage
+  is measured against the **plan to date** rather than the annual target — in September, 47% of a
+  year is not a failure, and a bar measured against December would say it was — while the progress
+  bar fills against the annual target, because that is the number being filled
+- **Every figure that supersedes the worksheet says so.** BIDA's `AUG` column in `YTD 2026` holds
+  **August's target** — 1,044 for the block, province for province identical to the target column —
+  where the archive holds 31, 36, 53… The app therefore prefers its own recorded month over the
+  worksheet for any month it holds, the same rule the RAW/MTD merge already follows, and the YTD
+  table states which month was substituted
+- **A plan with no block is explained, not left blank.** The two tabs cover BIDA and FIBERX only,
+  so SME's Year-to-Date section says so instead of rendering an empty table
+- Both tabs are read **once for every plan** and cached for **24 hours** — an annual table cannot
+  change between two page loads, so the two extra requests are not paid per plan or per visit. The
+  Developer console shows that read (source, payload, cache age) beside the per-plan sheet reads
+- **The Developer console now says which provinces and months still need `YTD 2026`.** A new
+  **Worksheet dependency** panel reports it per plan, with a province × month grid marking each
+  elapsed month as the worksheet's, Supabase's, or the live sheet tab's. Nothing on the dashboard
+  could show this — an actual reads the same whichever tab it came from — and the countdown is the
+  point: each closed month converts to the archive `ARCHIVE_AFTER_DAYS` days later, so the
+  worksheet's share shrinks on its own. For BIDA in September 2026 it is **98 of 117
+  province-months**. It also states what will *not* move: `JAN–JUL` never converts (they fall before
+  the first month the tracker held), Cagayan, Kalinga and Apayao have no record yet, and every
+  target cell is the worksheet's permanently, so the target side is reported without a countdown
+  rather than with one that can never count down
+- **A plan whose archive is not running is called out, not left to hope.** The panel compares the
+  closed months that have passed their cutoff against the months Supabase actually holds, and names
+  the mismatch — FIBERX and SME have eight due months and none archived, so `ARCHIVE_ENABLED` is off
+  in `CONFIG` for them; saying so beats printing a conversion date that will pass in silence
+
+### 🐛 Fixes
+
+- **The import no longer second-guesses which provinces a month has.** The Apps Script held an
+  exclusion list (`EXCLUDED_AREAS`, defaulting to `CAGAYAN, APAYAO, KALINGA`) that was applied after
+  reading a NEW REPORT block, so `RAW DATA` and `MTD` carried nine provinces while the
+  `OVER ALL TOTAL` row — copied from the sheet unchanged, and the row the MTD generator takes its
+  `LAST MTD` from — still counted the twelve the block lists. BIDA's August 2026 read **523** for a
+  month whose imported rows summed to **370**, which is what the Daily To-Date card and the archive
+  were showing. The list is gone, with the reader and the cache behind it: every row a block carries
+  is imported, so the sheet is the only area list. Retiring a province now means removing it from
+  NEW REPORT, and its numbers leave the total with it because the total is the sheet's own
+- **The `CONFIG` tab is kept for the archive settings it actually holds.** `Setup / Edit CONFIG
+  Sheet` seeds a missing `ARCHIVE_*` key with the value the archive already falls back to and never
+  overwrites an existing one, instead of managing a retired-area key that nothing reads
+- **The app refuses to run a build the server has already replaced.** A stale bundle signed
+  users out the morning after a release, and a hard refresh was the only cure. The root cause
+  was in the service worker: the app's own document was cached stale-while-revalidate, and that
+  document is what names the current bundle — so a release reached nobody whose browser had
+  opened the app before. The document is now network-first, with the cached copy kept only as
+  the offline fallback, and it is loaded *before* the shell-asset branch instead of after it.
+  On top of that, every launch now reads `version.json` — written from `package.json` at build
+  time, like the manifest — and if the version it holds is not the one on the device the app
+  **does not start**: an "Update required" screen replaces the whole app, the login form
+  included, and its one button unregisters the service worker, drops every cache and reloads
+  onto the new build. A missing or unreachable `version.json` counts as "cannot tell" and never
+  blocks, so offline launches and rollouts keep working
+- **The dismissible "New version ready" prompt is replaced by that gate.** It arrived after the
+  app had already been used, and "Later" was one tap away — the wrong shape for a build that
+  can no longer read its own data source
+- **The service worker no longer registers on the dev server.** It was caching `/src/*.jsx` and
+  Vite's pre-bundled dependencies, so after the dev server re-optimized them a page could load a
+  mix of old and new modules — which showed up as `Invalid hook call` / two copies of React behind
+  the error boundary, and cleared only when the caches were dropped. Production is unaffected:
+  the guard folds to `true` at build time and the bundle is byte-identical
+
+### 📚 Documentation
+
+- `README.md` — the *Releasing* section now names `version.json` and documents the update gate,
+  including the one release it cannot cover: the first one, whose users are still on a build
+  with no gate to show
+- `docs/DATA_PIPELINE.md` — the `CONFIG` tab section is now **The area list**: the scripts hold no
+  list, the import filters nothing, the `OVER ALL TOTAL` reconciliation is spelled out, and the
+  retired key is documented as retired rather than as a setting
+- **`docs/YTD_SCOPING.md`** — what the two tabs contain, what they add over the sheet the app
+  already reads (the `MTD` tab's `TARGET` column already equals `TARGET 2026` for the live month,
+  so the new value is the rest of the year), the August column that needs correcting, the YTD
+  arithmetic, and the open decisions
+- `docs/DATASOURCE.md` — the two new tabs, their gids, and the one rule that differs from the rest
+  of the app: for these tabs, the app's own recorded month wins. Now also where the worksheet
+  dependency is reported, and how the app's mirrored `ARCHIVE_AFTER_DAYS` relates to the Apps Script
+  `CONFIG` key
+
 ## [1.15.0] — 2026-09-21
 
 ### 🐛 Fixes
