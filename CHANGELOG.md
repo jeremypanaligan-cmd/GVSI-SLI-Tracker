@@ -6,6 +6,22 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.17.0] — 2026-09-23
+
+### ✨ Features
+
+- **The Provincial Year-to-Date table exports to CSV.** One row per province plus the overall
+  total, with every column the table shows — `YTD`, `PLAN TO DATE`, `% OF PLAN`, `ANNUAL TGT`,
+  `% OF TGT`, `REMAINING`, `REQ / MO`, `PROJ` and the `PACE` verdict — behind a small download
+  button in the table's own header. `PLAN` and `THROUGH` lead every row, so the file still says
+  what it covers after the filename is gone, and percentages and rates are rounded to two decimals
+  rather than flattened to the table's own rounding, so a reader can check the fraction
+- The file always holds **every province**, even with a pace filter applied: the `OVER ALL TOTAL`
+  row it carries covers all of them, and a filtered file would contradict its own total. A province
+  with no verdict exports the reason (`Starts Sep`), not the machine value, and the build is a pure
+  function (`buildYtdCSV`) separate from the download (`exportYtdCSV`), so the exact bytes can be
+  tested without a browser
+
 ## [1.16.1] — 2026-09-23
 
 ### ✨ Features
