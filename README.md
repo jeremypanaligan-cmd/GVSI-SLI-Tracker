@@ -110,5 +110,24 @@ drives everything else:
 - the service worker cache names, read by `public/sw.js` from its own `?v=` query
 - the `{{VERSION}}` placeholder in `public/manifest.json` (icon cache-buster)
 - the versioned data-cache keys, plus the sweep that retires the previous version
+- **`version.json`**, written next to `manifest.json` at build time — the file the running
+  app compares itself against before it lets anyone in
 
 Nothing else has to be kept in sync by hand.
+
+### The update gate
+
+`version.json` is fetched on every launch (and whenever the app returns to the foreground)
+with `cache: 'no-store'` and a unique query, so no cache layer can answer it. If the version
+it holds is not the one the device is running, **the app does not start**: it shows an
+"Update required" screen whose only way forward is to unregister the service worker, drop
+the caches and reload onto the new build. The login form is behind that gate on purpose —
+a stale bundle is what breaks sign-in, because it points at the previous credentials source.
+
+Two properties keep the gate from becoming its own outage: an unreachable or absent
+`version.json` counts as "cannot tell" and never blocks, and only a **known** different
+version blocks. See `src/utils/appUpdate.js` for the reasoning.
+
+> The release that first ships this gate cannot gate itself: devices still on the previous
+> build have no gate to show. Those users need one manual refresh, and every release after
+> that is covered.

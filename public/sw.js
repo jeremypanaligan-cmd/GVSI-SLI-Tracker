@@ -47,6 +47,38 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return
 
+  // ── The version file: NETWORK-ONLY, no cache at all ──
+  //
+  // The page compares this with the version it is running to decide whether the user
+  // may continue. A cached copy would answer "you are up to date" forever, so it is
+  // never stored — not even as an offline fallback.
+  if (url.pathname === BASE + '/version.json') {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }))
+    return
+  }
+
+  // ── The HTML document: NETWORK-FIRST, cache only as the offline fallback ──
+  //
+  // This branch comes BEFORE the shell assets on purpose. The document names the hashed
+  // bundle, so a cached document pinned every user to the previous build until they
+  // hard-refreshed — which is how a stale bundle kept serving the old login path and
+  // locked people out the morning after a release (2026-09-21). Only the offline copy
+  // is kept, under one URL, so the fallback stays a single entry.
+  if (event.request.mode === 'navigate' || isHtmlRequest(url)) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const clone = response.clone()
+          caches.open(CACHE_NAME).then((cache) => cache.put(BASE + '/index.html', clone)).catch(() => {})
+          return response
+        })
+        .catch(() =>
+          caches.match(event.request).then((hit) => hit || caches.match(BASE + '/index.html'))
+        )
+    )
+    return
+  }
+
   // ── Google Sheets CSV data: NETWORK-FIRST ──
   if (url.hostname === 'docs.google.com' && url.pathname.includes('/export')) {
     if (!url.searchParams.has('t')) {
@@ -60,20 +92,6 @@ self.addEventListener('fetch', (event) => {
   // ── App shell & static assets: STALE-WHILE-REVALIDATE ──
   if (isShellAsset(url)) {
     event.respondWith(staleWhileRevalidate(event.request, CACHE_NAME))
-    return
-  }
-
-  // ── Navigation requests: NETWORK with OFFLINE FALLBACK ──
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const clone = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone))
-          return response
-        })
-        .catch(() => caches.match(BASE + '/index.html'))
-    )
     return
   }
 
@@ -135,10 +153,20 @@ function cacheFirst(request, cacheName) {
   })
 }
 
+/** 'index.html', '/GVSI-SLI-Tracker/' — anything that is an HTML document. */
+function isHtmlRequest(url) {
+  const path = url.pathname.replace(/\/$/, '/')
+  return path.endsWith('.html') || path === BASE + '/' || path === BASE || path === '/'
+}
+
 /**
  * Check if URL is a pre-cached shell asset.
+ *
+ * HTML is deliberately excluded: the document must always come from the network (see the
+ * fetch handler), because it is what names the current bundle.
  */
 function isShellAsset(url) {
+  if (isHtmlRequest(url)) return false
   return (
     url.origin === self.location.origin &&
     (url.pathname.endsWith('.js') ||
@@ -146,8 +174,6 @@ function isShellAsset(url) {
       url.pathname.endsWith('.png') ||
       url.pathname.endsWith('.svg') ||
       url.pathname.endsWith('.woff2') ||
-      url.pathname.endsWith('.ico') ||
-      url.pathname === BASE + '/' ||
-      url.pathname === BASE)
+      url.pathname.endsWith('.ico'))
   )
 }

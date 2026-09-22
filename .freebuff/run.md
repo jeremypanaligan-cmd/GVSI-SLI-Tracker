@@ -25,9 +25,14 @@ powershell -NoProfile -Command "(Start-Process -FilePath 'npm.cmd' -ArgumentList
 Notes:
 - The default Vite port is **5173**, but it (and 5174) are commonly occupied by
   earlier preview servers in this workspace — check `netstat -ano | grep LISTENING`
-  first and pick the first free port (currently **5175**).
+  first and pick the first free port. The most recent run used **5173**; before that
+  **5175**. Pass `--strictPort` so a taken port fails loudly instead of silently
+  moving.
 - The app base path is `/GVSI-SLI-Tracker/`, so the app URL is
-  `http://localhost:5175/GVSI-SLI-Tracker/` (not the bare root).
+  `http://localhost:<port>/GVSI-SLI-Tracker/` (not the bare root).
+- The pid to register is the **`node …vite.js` process holding the port**, not the
+  `npm.cmd` wrapper: `Get-NetTCPConnection -LocalPort <port> -State Listen |
+  Select-Object -First 1 -ExpandProperty OwningProcess`.
 - `npm.cmd` must be the executable passed to Start-Process (shell shims like `npm`
   are not resolved by Start-Process).
 - The wrapper may time out from bash even though the server started — verify with
