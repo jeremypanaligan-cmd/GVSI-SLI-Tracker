@@ -70,7 +70,7 @@ function configNumber_(map, key, fallback) {
   return isNaN(n) ? fallback : n;
 }
 
-/** Writes one CONFIG value; every other row (EXCLUDED_AREAS included) is untouched. */
+/** Writes one CONFIG value; every other row in the tab is untouched. */
 function writeConfigValue_(key, value) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(CONFIG_SHEET_NAME);

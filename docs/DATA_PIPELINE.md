@@ -32,7 +32,7 @@ Supabase instead. See [ARCHIVE.md](./ARCHIVE.md) for that job and
 | `MTD` | Apps Script (`Generate MTD`) | Month-to-date summary. **What the app reads for achievement / target figures, for the live month.** |
 | Supabase `sli_raw_daily` / `sli_mtd` | Apps Script (`Archive`) | The same two shapes for **closed** months. Purged from the sheet only when `ARCHIVE_PURGE = TRUE` (off by default), and never when the sheet is a formula mirror. |
 | `_ARCHIVE_BACKUP` | Apps Script (`Archive`) | Temporary pre-purge copy of the deleted `NEW REPORT` rows. Safe to delete. |
-| `CONFIG` | Apps Script (once) + you | Settings for the scripts — currently the list of retired areas. Not read by the app. |
+| `CONFIG` | Apps Script (once) + you | Archive settings (`ARCHIVE_*`) and the `LAST_ARCHIVE` audit line. **No area list lives here any more** — see [The area list](#the-area-list). Not read by the app. |
 | `Login Credentials` | You, by hand | `Username` / `PasswordHash` (lowercase SHA-256 hex) / `FullName` / `Role` for the app's login gate. Lives in the **shared SLI TRACKER Database**, not in a plan sheet. |
 | `COMPLETED AGING REPORT` | Not managed here | Feeds the app's `SLA` view. Lives in the **shared SLI TRACKER Database**. The scripts do not touch it. |
 | `FIBERX / BIDA / SME DATA` | Not managed here | The app's rolling 30-day trend. Live in the **shared SLI TRACKER Database**, one tab per plan. The scripts do not touch them. |
@@ -70,7 +70,7 @@ are no longer used.
 2. Walks the NEW REPORT rows. The current date comes from each day's block header:
    `SLI DAILY TRACKING REPORT as of __Sept. 1, 2026__`.
 3. Writes one row per area per day, in sheet order, plus the `OVER ALL TOTAL` row.
-4. Areas listed in `CONFIG` are skipped (see below).
+4. **Nothing is filtered** — every row the block lists is imported (see [The area list](#the-area-list)).
 5. Writes data from row 2 down and reapplies number formatting.
 
 ### Column mapping
@@ -101,9 +101,11 @@ are no longer used.
 2. Rows are grouped by month (oldest → newest), each month getting a merged month title row and
    a header row.
 3. **The area list for a month is taken from that month's last day block.** A province that
-   appears on the last day appears in the month; areas listed in `CONFIG` never do.
+   appears on the last day appears in the month — the sheet is the only area list there is.
 4. Values that accumulate over the month are summed across every day of the month; snapshot
-   values (`LAST MTD`, `TARGET`, `LAST %`) are taken from the last day.
+   values (`LAST MTD`, `TARGET`, `LAST %`) are taken from the last day. `LAST MTD` and `TARGET`
+   of the `OVER ALL TOTAL` row come from the **sheet's own total row**, not from a re-sum, so
+   that row must list every row the total counted.
 5. An `OVER ALL TOTAL` row (black/teal styling) closes each month section.
 
 ### MTD columns
@@ -155,36 +157,33 @@ sheet rows. The full mapping is in [DATASOURCE.md](./DATASOURCE.md).
 Results are cached (localStorage + IndexedDB) behind a versioned key, so after a sync use the
 app's **Sync Data** button (or a hard reload) to pull fresh numbers.
 
-## The CONFIG tab
+## The area list
 
-Retired areas are configured **in the spreadsheet**, not in the code. The scripts read the
-`CONFIG` tab and skip those areas during the import *and* during MTD generation — so they are
-absent from the reports and from the `OVER ALL TOTAL` totals.
+There is **no area list in the scripts**, and no province is excluded by name. The import copies
+every row a day's block in NEW REPORT carries, in sheet order, so a province is added or dropped
+by editing that sheet — the reports follow on the next **Full Sync**, with no code edit and no
+setting to remember.
 
-### Format
+That is not only about flexibility. A block's `OVER ALL TOTAL` row is copied from the sheet
+**unchanged**, and `MTD` takes its `LAST MTD` from that same row. An exclusion list made the two
+disagree: BIDA's August block totalled **523** while the imported rows summed to **370**, because
+Cagayan, Kalinga and Apayao were filtered out *after* the sheet's total had counted them — and
+the panel's `OVER ALL TOTAL` said 523 for a month whose rows added up to 370. Importing every row
+brings the rows and the total back into agreement (all twelve August rows sum to 523).
 
-| | A | B |
-|---|---|---|
-| **1** | `SETTING` | `VALUE` |
-| **2** | `EXCLUDED_AREAS` | `CAGAYAN, APAYAO, KALINGA` |
+> **To retire a province, remove it from NEW REPORT** (or from the `… DAILY` sheet it mirrors).
+> The next Full Sync drops it from `RAW DATA` and `MTD` — and, because `OVER ALL TOTAL` comes
+> from the sheet, its numbers leave the total with it.
 
-### Rules
+### The `CONFIG` tab (archive settings)
 
-- **Separators** — comma, semicolon, slash or a new line: `Cagayan, Apayao`, `Cagayan; Apayao`.
-- **One area per row** — repeat the key on consecutive rows instead of listing them in one cell.
-- **Loose key matching** — `EXCLUDED_AREAS`, `excluded_areas`, `Excluded Areas` and
-  `EXCLUDED_AREA` all work (case and spaces are ignored).
-- **Blank value = exclude nothing** — every area is reported.
-- **Missing tab or missing key = safe fallback** — the built-in default
-  (`CAGAYAN, APAYAO, KALINGA`) is used, so a deleted tab can never silently blank out the reports.
-- Names are matched case-insensitively, so `Cagayan` and `CAGAYAN` are the same.
-- Settings are read **once per sync run**, so adding areas costs nothing at runtime.
+The tab still exists, but only for the archive: `ARCHIVE_ENABLED`, `ARCHIVE_AFTER_DAYS`,
+`ARCHIVE_DRY_RUN`, `ARCHIVE_PURGE`, plus `LAST_ARCHIVE` as a read-only audit line. Anything the
+archive reads is optional — the script falls back to its own default when a key is missing.
 
-### Creating it
-
-Reload the spreadsheet, then **GVSI Auto-DB → Setup / Edit CONFIG Sheet**. This creates the tab
-with the header and the current list, and reports what is configured. Existing values are never
-overwritten — edit column B and run **Full Sync**.
+Reload the spreadsheet, then **GVSI Auto-DB → Setup / Edit CONFIG Sheet**. It creates the tab if
+needed, seeds a missing key with the value the archive already falls back to, and **never
+overwrites an existing value**.
 
 ## Full Sync is required
 
@@ -218,9 +217,9 @@ the on-change `fullSync`.
 
 | Symptom | Cause / fix |
 |---------|-------------|
-| A retired province still appears in MTD or in the app | Run **Full Sync** — `MTD` and the app read `RAW DATA`, and only the import rewrites it. |
+| A province you removed still appears in MTD or in the app | Run **Full Sync** — `MTD` and the app read `RAW DATA`, and only the import rewrites it. If it persists, the province is still in that day's NEW REPORT block. |
 | A past month is missing from the app | Its archive rows are in Supabase but the browser could not reach it, or `ARCHIVE_ENABLED` has never been set. Check the `LAST_ARCHIVE` line in `CONFIG`. |
-| A province is back after you removed it from NEW REPORT | Check `CONFIG` — a blank/missing list falls back to the built-in default. |
+| Rows and `OVER ALL TOTAL` disagree in `RAW DATA` or `MTD` | The sheet's own total counts a row the block no longer lists. The scripts import and copy rows verbatim, so fix the block (or its total formula) in NEW REPORT. |
 | `#REF!` / `#DIV/0!` in NEW REPORT or `RAW DATA` | Broken formulas at the source (usually after deleting rows/columns). Fix the formula; the scripts only pass the value through. |
 | Numbers look wrong for `LAST %` | It is the last day's `%` from the sheet, not recalculated by the script. |
 | The app still shows old figures | Cached — press **Sync Data** in the navbar or hard-reload. |

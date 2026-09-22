@@ -1,6 +1,6 @@
 /**
  * GVSI SLI Tracker - Automated Database Management v9
- * Excluded areas are now read from the CONFIG tab (see AREA CONFIG below).
+ * Areas are whatever the plan's NEW REPORT sheet lists — nothing is excluded in code.
  * 
  * BIDA NEW REPORT format (Column J removed):
 
@@ -26,112 +26,72 @@ const BIDA_SHEET_NAME = 'BIDA NEW REPORT';
 const RAW_DATA_SHEET_NAME = 'RAW DATA';
 const MTD_SHEET_NAME = 'MTD';
 
-// ==================== AREA CONFIG (spreadsheet-driven) ====================
-// Areas are dynamically detected from RAW DATA. Which of them to SKIP is read from a
-// CONFIG tab instead of being hardcoded, so provinces can be added or removed in the
-// sheet — no code edit needed:
+// ==================== AREAS (read from the NEW REPORT sheet) ====================
+// There is no area list in this script, and nothing is excluded by name. Every row a
+// daily block in BIDA NEW REPORT carries is imported exactly as the sheet lists it, so a
+// province is added or dropped by editing that sheet — the reports follow on the next
+// Full Sync, with no code edit and no CONFIG value to remember.
 //
-//   CONFIG tab:
-//     A1: SETTING          B1: VALUE
-//     A2: EXCLUDED_AREAS   B2: CAGAYAN, APAYAO, KALINGA
+// Keeping the import unfiltered is not cosmetic: a block's OVER ALL TOTAL row is copied
+// from the sheet unchanged, and that row is the sum of the rows above it. Filtering a
+// province out here left the total counting a row the report no longer listed — BIDA's
+// August block read 523 while its nine imported rows summed to 370 — and the MTD
+// generator takes its LAST MTD from that same total.
 //
-//   - Separate names with comma, semicolon, slash or a new line.
-//   - Repeat the key row to list one area per row (EXCLUDED_AREA also works).
-//   - Leave the value blank to exclude nothing.
-//   - Missing CONFIG tab or missing key → DEFAULT_EXCLUDED_AREAS below is used instead,
-//     so a deleted tab can never silently blank out the reports.
-//
-// Run 'Setup / Edit CONFIG Sheet' from the GVSI Auto-DB menu to create the tab.
-// Excluded areas are skipped by BOTH the RAW DATA import and MTD generation.
+// The CONFIG tab still exists, for the archive settings the menu writes (ARCHIVE_*).
+// Run 'Setup / Edit CONFIG Sheet' from the GVSI Auto-DB menu to create or inspect it.
 const CONFIG_SHEET_NAME = 'CONFIG';
-const CONFIG_EXCLUDED_KEY = 'EXCLUDED_AREAS';
-const DEFAULT_EXCLUDED_AREAS = ['CAGAYAN', 'APAYAO', 'KALINGA'];
-
-var _excludedAreasCache = null;
-
-function getExcludedAreas() {
-  if (_excludedAreasCache === null) {
-    var fromConfig = readExcludedAreasFromConfig();
-    _excludedAreasCache = (fromConfig === null) ? DEFAULT_EXCLUDED_AREAS : fromConfig;
-  }
-  return _excludedAreasCache;
-}
 
 /**
- * Reads the EXCLUDED_AREAS list from the CONFIG tab (uppercased).
- * Returns [] when the key exists but is blank, or null when it cannot be found.
- */
-function readExcludedAreasFromConfig() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
-  if (!sheet) return null;
-  
-  var values = sheet.getDataRange().getValues();
-  var found = false;
-  var list = [];
-  
-  for (var i = 0; i < values.length; i++) {
-    var key = String(values[i][0]).trim().toUpperCase().replace(/\s+/g, '_');
-    if (key !== CONFIG_EXCLUDED_KEY && key !== 'EXCLUDED_AREA') continue;
-    found = true;
-    
-    var parts = String(values[i][1] || '').split(/[,;\/|\r\n]+/);
-    for (var p = 0; p < parts.length; p++) {
-      var name = parts[p].trim();
-      if (name) list.push(name.toUpperCase());
-    }
-  }
-  
-  return found ? list : null;
-}
-
-function isExcludedArea(areaName) {
-  var name = String(areaName).trim().toUpperCase();
-  var excluded = getExcludedAreas();
-  for (var i = 0; i < excluded.length; i++) {
-    if (name === excluded[i]) return true;
-  }
-  return false;
-}
-
-/**
- * Creates the CONFIG tab (header + EXCLUDED_AREAS row) when it is missing.
- * Existing values are never overwritten — it only reports what is configured.
+ * Creates the CONFIG tab when it is missing, and reports the archive settings.
+ *
+ * Existing values are never overwritten. Seeding a missing key with its effective
+ * default only makes the tab readable — those defaults are what the archive already
+ * falls back to, so nothing about a run changes.
  */
 function setupConfigSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(CONFIG_SHEET_NAME);
   var created = false;
-  
+
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG_SHEET_NAME);
     created = true;
   }
-  
+
+  var defaults = [
+    [ARCHIVE_ENABLED_KEY, 'FALSE'],
+    [ARCHIVE_AFTER_DAYS_KEY, String(ARCHIVE_DEFAULT_AFTER_DAYS)],
+    [ARCHIVE_DRY_RUN_KEY, 'FALSE'],
+    [ARCHIVE_PURGE_KEY, 'FALSE']
+  ];
+
   var values = sheet.getDataRange().getValues();
-  var hasKey = false;
+  var present = {};
   for (var i = 0; i < values.length; i++) {
     var key = String(values[i][0]).trim().toUpperCase().replace(/\s+/g, '_');
-    if (key === CONFIG_EXCLUDED_KEY || key === 'EXCLUDED_AREA') { hasKey = true; break; }
+    if (key) present[key] = true;
   }
-  
-  if (!hasKey) {
-    var startRow = sheet.getLastRow() + 1;
-    if (startRow === 1) {
+
+  var seeded = [];
+  for (var d = 0; d < defaults.length; d++) {
+    if (present[defaults[d][0]]) continue;
+    var row = sheet.getLastRow() + 1;
+    if (row === 1) {
       sheet.getRange(1, 1, 1, 2).setValues([['SETTING', 'VALUE']]).setFontWeight('bold');
-      startRow = 2;
+      row = 2;
     }
-    sheet.getRange(startRow, 1, 1, 2).setValues([[CONFIG_EXCLUDED_KEY, DEFAULT_EXCLUDED_AREAS.join(', ')]]);
-    sheet.autoResizeColumns(1, 2);
+    sheet.getRange(row, 1, 1, 2).setValues([defaults[d]]);
+    seeded.push(defaults[d][0]);
   }
-  
-  _excludedAreasCache = null;
-  var current = getExcludedAreas();
-  var summary = current.length ? current.join(', ') : '(none)';
-  
+  if (seeded.length) sheet.autoResizeColumns(1, 2);
+
   try {
     SpreadsheetApp.getUi().alert('CONFIG sheet ready!' + (created ? '\n\nCreated the CONFIG tab.' : '') +
-      '\n\nEXCLUDED_AREAS = ' + summary +
-      '\n\nThese areas are skipped by the import and by MTD generation.\nEdit column B, then run Full Sync.');
+      (seeded.length ? '\n\nIdinagdag: ' + seeded.join(', ') : '') +
+      '\n\nWalang area list dito. Ang bawat row ng ' + PLAN_SHEET_NAME + ' block ang ' +
+      'ipinapasok sa RAW DATA at MTD — walang lalawigan na itinatapon ng script.' +
+      '\n\nAng CONFIG tab ay para sa ARCHIVE_* settings ng archiving.');
   } catch(e) {}
 }
 
@@ -222,7 +182,10 @@ function importBIDAToRawData() {
       areaName = firstCell;
     }
     
-    if (areaName && !isExcludedArea(areaName)) {
+    if (areaName) {
+      // Every row the block lists is imported — the sheet is the area list. Filtering one
+      // out here would leave the OVER ALL TOTAL row summing a row the report no longer
+      // holds, and the MTD generator takes its LAST MTD from that row.
       // RAW DATA columns: Date(0) AREA(1) BF(2) INC(3) TotalJo(4)
       //   CompFromTotal(5) CompFromRjo(6) TotalCompleted(7)
       //   RjoIncoming(8) RjoRedispatched(8) TotalRjo(9)
@@ -536,8 +499,8 @@ function parseRawData(rawData) {
     
     if (areaStr === 'OVER ALL TOTAL') {
       currentBlock.overallTotal = entry;
-    } else if (areaStr && areaStr !== 'AREA' && !isExcludedArea(areaStr)) {
-      // Use the exact area name from RAW DATA (EXCLUDED_AREAS already filtered out)
+    } else if (areaStr && areaStr !== 'AREA') {
+      // The exact area name as RAW DATA holds it — the import no longer filters any out.
       currentBlock.areas[areaStr] = entry;
     }
   }
@@ -655,7 +618,7 @@ function configNumber_(map, key, fallback) {
   return isNaN(n) ? fallback : n;
 }
 
-/** Writes one CONFIG value; every other row (EXCLUDED_AREAS included) is untouched. */
+/** Writes one CONFIG value; every other row in the tab is untouched. */
 function writeConfigValue_(key, value) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(CONFIG_SHEET_NAME);
