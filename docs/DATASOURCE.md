@@ -191,13 +191,17 @@ A failed MTD or RAW fetch fails the whole sync; a failed aging or trend fetch on
 - **`NEW REPORT` is never read by the app.** It is the source of truth; Apps Script turns it
   into `RAW DATA` and `MTD`. Editing it changes nothing until **Full Sync** runs. It is
   currently a live `=IMPORTRANGE(…)` mirror of the plan's `… DAILY` sheet, so edit the source
-  sheet — and note that rows in a mirror cannot be deleted.
+  sheet — and note that rows in a mirror cannot be deleted. What the archive does instead,
+  once a closed month is verified in Supabase, is move the mirror's range start past it, so
+  the window stops reaching back over months the app now reads from the archive.
 - **`RAW DATA`, not `MTD`, drives the daily and provincial views** — and both are rebuilt from
   scratch on every script run, so never edit them by hand.
 - **`MTD` and `RAW DATA` still live in the per-plan sheets** — but only for the live month once
   archiving is switched on. A closed month is read from Supabase, and the merge replaces any
-  sheet rows for that month (the archive wins), so a month can never be counted twice even if a
-  purge has not run yet.
+  sheet rows for that month (the archive wins), so a month can never be counted twice even if
+  the sheet still carries it — which is the normal state with `ARCHIVE_TRIM = FALSE` (for a
+  mirror) or `ARCHIVE_PURGE = FALSE` (for a hand-encoded tab), and a transient one while a trim
+  settles after it is.
 - **An archived month is fetched once and cached without a TTL.** Bump `APP_VERSION` (i.e. release)
   and those caches are retired — that is the only way their shape changes.
 - **The app tolerates Supabase being down.** Archived months simply do not appear and every view

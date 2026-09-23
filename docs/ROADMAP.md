@@ -76,27 +76,9 @@ race is still there and still slows every run.
 **Done when:** `fullSync` (and the archive) takes a script lock, so the second execution
 waits instead of interleaving.
 
-### 4. The sheet can never shrink
-
-`BIDA NEW REPORT` cell `A1` is `=IMPORTRANGE("…/1fTxL4PY…", "BIDA DAILY'!A:M")` — a live
-mirror of a master workbook, not hand-encoded data. Deleting a row inside the spill does not
-remove data, it **destroys the formula**, which is why a purge against that sheet had to be
-restored by hand. The archive therefore refuses to purge a formula-driven sheet, and
-`ARCHIVE_PURGE` defaults to `FALSE` anyway.
-
-So the original goal — *the spreadsheet should not get heavy as it grows past a year* — is
-not met yet. The mirror pulls the master's whole history forever.
-
-**Done when:** a decision is implemented, either of:
-
-- narrow the imported range to the months the dashboard still needs live, or
-- purge the month in the **source** workbook once Supabase holds it.
-
----
-
 ## 🟠 Operations
 
-### 5. Pasting three `.gs` files by hand
+### 4. Pasting three `.gs` files by hand
 
 The plan scripts live in the repo and are deployed by copy-paste into the Apps Script
 editor. There is no check that what runs is what the repo says, and this has already bitten
@@ -106,7 +88,7 @@ only way to tell was to read the audit trail afterwards.
 **Done when:** `clasp push` (or an equivalent) deploys all three, or a small script reports
 which functions differ between the repo and the deployed project.
 
-### 6. `applyMTDFormatting` still makes ~160 sheet calls
+### 5. `applyMTDFormatting` still makes ~160 sheet calls
 
 `generateMTDReport` was rewritten to build its grid in memory and write once, which cut the
 round trips between `clear()` and the last value from **29 to 1**. The total only fell from
@@ -115,7 +97,7 @@ window, it is still pure running time against the six-minute limit.
 
 **Done when:** the formatting pass is a handful of range operations rather than ~160.
 
-### 7. FIBERX and SME archives are not active
+### 6. FIBERX and SME archives are not active
 
 Only BIDA has `ARCHIVE_ENABLED = TRUE` with `ARCHIVE_DRY_RUN = FALSE`. The other two are
 still dry-run, so their closed months stay in their sheets and grow.
@@ -123,7 +105,7 @@ still dry-run, so their closed months stay in their sheets and grow.
 **Done when:** both have archived at least one real month and the verification gate has
 passed for each.
 
-### 8. A release is still four manual steps
+### 7. A release is still four manual steps
 
 Today a release means bumping `package.json`, promoting the CHANGELOG's `[Unreleased]`
 section to `[x.y.z]`, committing, and pushing a tag. The release workflow then verifies the
@@ -138,7 +120,7 @@ needs, so this is mostly assembling parts that exist.
 
 ## 🟢 Analytics
 
-### 9. A per-province trailing trend
+### 8. A per-province trailing trend
 
 The 30-day sparkline is portfolio-level. The most common question this report invites —
 *is this one province slipping, or is everyone?* — cannot be answered from the dashboard
@@ -147,7 +129,7 @@ only the view is missing.
 
 **Done when:** selecting a province shows its own trailing window, not just its current row.
 
-### 10. Pace alerting per province
+### 9. Pace alerting per province
 
 The velocity report knows the required daily rate for the portfolio. A province that is
 behind that pace is visible only by reading the table and doing the arithmetic. Flagging the
@@ -156,14 +138,14 @@ ones below pace would turn a table into a worklist.
 **Done when:** provinces below the required rate are marked wherever they appear, from the
 same rule the velocity report uses.
 
-### 11. Export the current view
+### 10. Export the current view
 
 There is no way to get a table out of the app. Management reporting still means
 screenshots. Excel or PDF export of the visible view would remove that step.
 
 **Done when:** the current table can be exported with its selected month, plan and filters.
 
-### 12. SLA breach drill-down
+### 11. SLA breach drill-down
 
 The Installation SLA Breakdown buckets tickets by age; it does not say **which** tickets are
 in the oldest bucket, or which area they belong to. That is the next question after "how
@@ -171,7 +153,7 @@ many breached".
 
 **Done when:** a bucket can be opened to see the jobs inside it, grouped by area.
 
-### 13. Project the month from trailing velocity, not linear pace
+### 12. Project the month from trailing velocity, not linear pace
 
 The month-end projection is linear: completed so far, divided by elapsed days, extrapolated.
 A team that started slowly and accelerated is projected as if it never accelerated. The
@@ -184,7 +166,7 @@ basis it used.
 
 ## 🔵 Architecture
 
-### 14. One chunk holds the whole app
+### 13. One chunk holds the whole app
 
 The production build is a single `index-*.js` of about 334 kB (93 kB gzip) containing every
 screen, including the ones most sessions never open: `CompareView`, `AgingReport` and
@@ -193,7 +175,7 @@ Developer console in particular is opened by a handful of accounts.
 
 **Done when:** the initial chunk excludes the screens that are not on the default view.
 
-### 15. Supabase for the live month too
+### 14. Supabase for the live month too
 
 Closed months come from Supabase; the current month still comes from the Google Sheet's CSV
 export, which is a published link rather than an API — no shaping, no filtering, the whole
@@ -204,7 +186,7 @@ This is the natural end state of the cold-archive design, and the largest item h
 
 **Done when:** no dashboard request reads a spreadsheet CSV.
 
-### 16. Real offline support
+### 15. Real offline support
 
 The service worker is cache-first for assets, so the app opens without a network — but the
 data is fetched on load, so an offline open shows an error rather than the last known
@@ -212,7 +194,7 @@ figures. For a dashboard people check on site visits, the cached view is worth h
 
 **Done when:** opening offline renders the last cached month with a clear "as of" marker.
 
-### 17. Supabase Auth instead of custom session tokens
+### 16. Supabase Auth instead of custom session tokens
 
 Sessions are built on a hand-rolled `verify_login` RPC returning a token, with presence,
 revocation and maintenance checks layered on top. It works, and it was the right call when
@@ -221,7 +203,7 @@ a maintained implementation and give password reset and rotation for free.
 
 **Done when:** sessions are issued by Supabase Auth and the custom token path is gone.
 
-### 18. Role-based views
+### 17. Role-based views
 
 `sli_users.role` exists and `Developer` unlocks the console, but nothing else is gated: a
 `Supervisor` and a `Viewer` see the same thing. Deciding what each role should see is a
@@ -229,7 +211,7 @@ product question; the column to support the answer is already there.
 
 **Done when:** at least one role difference is enforced and documented.
 
-### 19. An audit trail of exports and views
+### 18. An audit trail of exports and views
 
 Presence records who is signed in. Nothing records who exported a month, or who looked at a
 closed one. For figures that go into customer-facing reporting, that history is worth having.
@@ -246,8 +228,13 @@ Kept here so the same ground is not re-covered.
   before deleting anything, and `OVER ALL TOTAL` archived verbatim (`docs/ARCHIVE.md`).
 - **MTD figures are computed from the RAW rows** the archive run already holds, instead of
   re-reading the `MTD` tab — the tab could be caught blank mid-rebuild.
-- **The archive refuses rather than damages**: an empty read, or a formula-driven sheet,
-  results in `VERIFICATION FAILED — WALANG BINURA`.
+- **The archive refuses rather than damages**: an empty read, or a count/checksum mismatch,
+  results in `VERIFICATION FAILED — WALANG BINURA AT WALANG TRIM`.
+- **The sheet can shrink past a year**: on a mirror the archive moves the `IMPORTRANGE`
+  window's start row past the archived months instead of deleting formula output — the goal
+  the sheet could not previously meet at all. Gated by `ARCHIVE_TRIM` (on by default; a move
+  is reversible) and per-plan `PLAN_SHEET_TRIM_ENABLED`, guarded by the checksum, a gap check
+  and a post-write spill check (`docs/ARCHIVE.md`).
 - **`generateMTDReport` writes its grid once**, so the report is never blank while it
   rebuilds, and a blank `RAW DATA` no longer wipes the previous one.
 - **Accounts, sessions and maintenance mode** moved off the sheet and onto Supabase

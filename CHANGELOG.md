@@ -6,6 +6,54 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### ✨ Features
+
+- **The spreadsheet can finally stop growing.** A month that has been copied to Supabase and
+  verified can now be taken out of `NEW REPORT` even when that tab is a live `IMPORTRANGE`
+  mirror — by moving the range's start row past it, `A1:M` to `A19:M`, instead of deleting
+  formula output. The archive previously refused outright: removing a spilled formula's rows
+  does not remove data, it tears the formula out of `A1`, which is what had to be pasted back
+  by hand on 2026-09-21. The mirror's block layout, cell types and 13-column contract are
+  untouched, because the range still spills whole rows straight from the source
+- **The new start row is read from the source spreadsheet**, not counted in the mirror. The id
+  and tab name come out of the formula itself, so the answer stays correct when rows near the
+  top of `BIDA DAILY` are deleted; if the source cannot be opened it falls back to counting in
+  the mirror, and the audit line says which was used
+- It runs **once per archive run**, after every due month has been uploaded and verified. The
+  trim now has **its own switch, `ARCHIVE_TRIM`, and it is `TRUE` by default** — pressing
+  *Archive Closed Months to Supabase* (or letting the 02:00 trigger run) is now enough for the
+  archived month to leave `NEW REPORT` as soon as Supabase is verified to hold it, with no
+  second setting to remember. It no longer rides on `ARCHIVE_PURGE`, which stays `FALSE` by
+  default because deleting rows from a hand-encoded tab is the one step that cannot be taken
+  back: a window move is a single range that **Restore Full History** undoes, so the two acts
+  are gated separately. `Setup / Edit CONFIG Sheet` seeds the new key
+- The two switches now answer different questions, and the audit line says so. With
+  `ARCHIVE_TRIM = FALSE` the run reports `hindi naka-TRUE ang ARCHIVE_TRIM, kaya hindi
+  gumagalaw ang window ng …` instead of a generic "nothing was deleted", so the reason a sheet
+  did not shrink is readable from `LAST_ARCHIVE` alone
+- Two new menu items: **Preview Formula Trim** (the formula it would write and each guard's
+  verdict, writing nothing) and **Restore NEW REPORT Formula (full history)** (back to `A1:M`,
+  then a Full Sync). Enabled for BIDA only (`PLAN_SHEET_TRIM_ENABLED`); FIBERX and SME keep
+  their windows until their own months are verifiably reaching Supabase
+
+### 🐛 Fixes
+
+- The archive harness now proves the trim end to end: one **real** (non-dry) run of
+  `archiveClosedMonths` with `ARCHIVE_PURGE = FALSE` and `ARCHIVE_TRIM = TRUE`, with the three
+  Supabase calls held in memory so the checksum gate is judged against what the run actually
+  uploaded rather than against a hand-fed answer. It asserts the month is archived, the window
+  moves to September in the same pass, no rows are deleted, and the run's own `LAST_ARCHIVE`
+  line records both halves
+- **The window never narrows past a month the database does not have.** Every month older than
+  the new start must have been archived *in that same run*, or the trim refuses and reports
+  which month it would have dropped. It also refuses when there is no later month to start at —
+  a month whose successor has not been filled yet stays in the sheet for a day rather than
+  leaving the mirror empty — and it never moves backwards
+- **A move that does not land is undone.** `IMPORTRANGE` recalculates asynchronously, so after
+  writing the formula the run waits for the spill to actually reach the new month; if it does
+  not settle within 20 seconds the old formula is written back and the audit line says so. That
+  check is also what catches a source sheet whose rows shifted under the trim
+
 ## [1.17.0] — 2026-09-23
 
 ### ✨ Features

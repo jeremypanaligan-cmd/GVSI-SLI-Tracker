@@ -27,11 +27,11 @@ Supabase instead. See [ARCHIVE.md](./ARCHIVE.md) for that job and
 
 | Sheet | Who writes it | Purpose |
 |-------|---------------|---------|
-| `…  NEW REPORT` | `=IMPORTRANGE(…)` from the plan's `… DAILY` sheet | Source of truth. One block per day, one row per area. A **live mirror**, so its rows are formula output and cannot be deleted — see [ARCHIVE.md](./ARCHIVE.md). |
+| `…  NEW REPORT` | `=IMPORTRANGE(…)` from the plan's `… DAILY` sheet | Source of truth. One block per day, one row per area. A **live mirror**, so its rows are formula output and cannot be deleted — the archive narrows its range instead, on the plans where `PLAN_SHEET_TRIM_ENABLED` allows it. See [ARCHIVE.md](./ARCHIVE.md). |
 | `RAW DATA` | Apps Script (`Import`) | Normalized continuous table: one row per date + area. **What the app reads for daily/provincial views, for the live month.** |
 | `MTD` | Apps Script (`Generate MTD`) | Month-to-date summary. **What the app reads for achievement / target figures, for the live month.** |
-| Supabase `sli_raw_daily` / `sli_mtd` | Apps Script (`Archive`) | The same two shapes for **closed** months. Purged from the sheet only when `ARCHIVE_PURGE = TRUE` (off by default), and never when the sheet is a formula mirror. |
-| `_ARCHIVE_BACKUP` | Apps Script (`Archive`) | Temporary pre-purge copy of the deleted `NEW REPORT` rows. Safe to delete. |
+| Supabase `sli_raw_daily` / `sli_mtd` | Apps Script (`Archive`) | The same two shapes for **closed** months. Taken out of the sheet only when `ARCHIVE_PURGE = TRUE` (off by default): the day blocks are deleted on a hand-encoded tab, or dropped by moving the `IMPORTRANGE` window's start row on a mirror. |
+| `_ARCHIVE_BACKUP` | Apps Script (`Archive`) | Temporary pre-purge copy of the deleted `NEW REPORT` rows, on the hand-encoded path only — a mirror is never deleted from, so nothing needs backing up. Safe to delete. |
 | `CONFIG` | Apps Script (once) + you | Archive settings (`ARCHIVE_*`) and the `LAST_ARCHIVE` audit line. **No area list lives here any more** — see [The area list](#the-area-list). Not read by the app. |
 | `Login Credentials` | You, by hand | `Username` / `PasswordHash` (lowercase SHA-256 hex) / `FullName` / `Role` for the app's login gate. Lives in the **shared SLI TRACKER Database**, not in a plan sheet. |
 | `COMPLETED AGING REPORT` | Not managed here | Feeds the app's `SLA` view. Lives in the **shared SLI TRACKER Database**. The scripts do not touch it. |
@@ -134,15 +134,23 @@ looks complete. The job then uploads that month's `RAW DATA`, plus the MTD figur
 and rebuilt by every Full Sync, so reading it was a race the archive could lose. It then
 **verifies the row counts and a checksum against Supabase**.
 
-Only then does it delete anything — and **only if the `CONFIG` tab sets `ARCHIVE_PURGE =
-TRUE`**. That switch is off by default: the archive copies a month to Supabase and leaves
-the sheet alone, so the sheet stays the record of every month and Supabase is a second copy
-the app reads from. With purge on, the month's day blocks are deleted from `NEW REPORT` and
-a Full Sync rebuilds `RAW DATA` and `MTD` without them.
+Only then does it shrink anything, and **which switch decides depends on what the tab is**:
 
-> Purging `NEW REPORT` — not `RAW DATA` — is the point. The import rebuilds `RAW DATA` from
-> `NEW REPORT` every 5 minutes and on every sheet edit, so a month left in `NEW REPORT` always
-> comes back.
+| `NEW REPORT` is… | Setting | Default | What happens |
+|---|---|---|---|
+| a **mirror** (one spilled `IMPORTRANGE`) | `ARCHIVE_TRIM` | **`TRUE`** | the range's start row moves past the archived month — one cell, undone by **Restore Full History** |
+| **hand-encoded** (cells someone typed) | `ARCHIVE_PURGE` | `FALSE` | the month's day blocks are deleted |
+
+The asymmetry is deliberate. Moving a window is reversible and happens only after the month
+is verified in Supabase, so it is on by default; deleting rows is not reversible from the
+sheet, so it stays opt-in. Either way `NEW REPORT` stops carrying the month and a Full Sync
+rebuilds `RAW DATA` and `MTD` without it. With both switches off the archive copies a month
+to Supabase and leaves the sheet alone — the sheet stays the record of every month and
+Supabase is a second copy the app reads from.
+
+> Retiring the month from `NEW REPORT` — not `RAW DATA` — is the point. The import rebuilds
+> `RAW DATA` from `NEW REPORT` every 5 minutes and on every sheet edit, so a month left in
+> `NEW REPORT` always comes back.
 
 The app merges the archived months back in before parsing, so the month picker, MoM delta and
 every past-month view keep working exactly as before.
@@ -178,8 +186,9 @@ brings the rows and the total back into agreement (all twelve August rows sum to
 ### The `CONFIG` tab (archive settings)
 
 The tab still exists, but only for the archive: `ARCHIVE_ENABLED`, `ARCHIVE_AFTER_DAYS`,
-`ARCHIVE_DRY_RUN`, `ARCHIVE_PURGE`, plus `LAST_ARCHIVE` as a read-only audit line. Anything the
-archive reads is optional — the script falls back to its own default when a key is missing.
+`ARCHIVE_DRY_RUN`, `ARCHIVE_PURGE`, `ARCHIVE_TRIM`, plus `LAST_ARCHIVE` as a read-only audit
+line. Anything the archive reads is optional — the script falls back to its own default when a
+key is missing, which is why a missing `ARCHIVE_TRIM` row already means `TRUE`.
 
 Reload the spreadsheet, then **GVSI Auto-DB → Setup / Edit CONFIG Sheet**. It creates the tab if
 needed, seeds a missing key with the value the archive already falls back to, and **never

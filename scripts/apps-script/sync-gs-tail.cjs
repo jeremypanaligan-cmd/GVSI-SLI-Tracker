@@ -24,6 +24,7 @@ const PLANS = [
     planLabel: 'FIBERX',
     sheetConst: 'FIBERX_SHEET_NAME',
     importFn: 'importFiberxToRawData',
+    trimEnabled: false,
   },
   {
     file: 'BIDASCRIPT.gs',
@@ -31,6 +32,7 @@ const PLANS = [
     planLabel: 'BIDA',
     sheetConst: 'BIDA_SHEET_NAME',
     importFn: 'importBIDAToRawData',
+    trimEnabled: true,
   },
   {
     file: 'SMESCRIPT.gs',
@@ -38,6 +40,7 @@ const PLANS = [
     planLabel: 'SME',
     sheetConst: 'SME_SHEET_NAME',
     importFn: 'importSMEToRawData',
+    trimEnabled: false,
   },
 ]
 
@@ -54,6 +57,7 @@ function render(plan) {
       .replace(/\{\{PLAN_LABEL\}\}/g, plan.planLabel)
       .replace(/\{\{PLAN_SHEET_CONST\}\}/g, plan.sheetConst)
       .replace(/\{\{IMPORT_FN\}\}/g, plan.importFn)
+      .replace(/\{\{PLAN_TRIM_ENABLED\}\}/g, plan.trimEnabled ? 'true' : 'false')
       .replace(/^/, ''),
   )
 }

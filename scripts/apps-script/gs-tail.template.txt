@@ -15,14 +15,42 @@ const ARCHIVE_ENABLED_KEY = 'ARCHIVE_ENABLED';
 const ARCHIVE_AFTER_DAYS_KEY = 'ARCHIVE_AFTER_DAYS';
 const ARCHIVE_DRY_RUN_KEY = 'ARCHIVE_DRY_RUN';
 const ARCHIVE_PURGE_KEY = 'ARCHIVE_PURGE';
+const ARCHIVE_TRIM_KEY = 'ARCHIVE_TRIM';
 const ARCHIVE_LAST_KEY = 'LAST_ARCHIVE';
 const ARCHIVE_DEFAULT_AFTER_DAYS = 7;
 // Deleting from the sheet is opt-in. A month is copied to Supabase and then LEFT ALONE
 // unless purge is asked for by name, because the copy is additive and easy to check while
 // a delete is neither. With purge off the sheet stays the record of every month.
 const ARCHIVE_DEFAULT_PURGE = false;
+// Narrowing a MIRROR is a different act from deleting rows, and it is ON by default.
+// The month is already verified in Supabase before the window moves, the move is one cell
+// write instead of a row deletion, and 'Restore Full History' puts the window back — so a
+// mirror can be kept lean without anyone opting in, which is the whole point of archiving.
+// A hand-encoded tab is unaffected: it is `purge`, and that stays opt-in.
+const ARCHIVE_DEFAULT_TRIM = true;
 const ARCHIVE_BACKUP_SHEET = '_ARCHIVE_BACKUP';
 const ARCHIVE_BATCH_SIZE = 500;
+
+// Shrinking the workbook after a month is archived takes one of two shapes, decided by
+// what PLAN_SHEET_NAME actually is:
+//
+//   hand-encoded  → the month's day blocks are DELETED      (purgeMonthFromNewReport_)
+//   a mirror      → the IMPORTRANGE range's start row MOVES (trimPlanSheetFormula_)
+//                   =IMPORTRANGE("…", "'BIDA DAILY'!A1:M")  →  …!A19:M
+//
+// A mirror cannot be deleted from: its rows are the output of an array formula, and
+// removing them does not remove data — it tears the formula out of A1, which is what
+// happened on 2026-09-21. Moving the range instead leaves the mirror a plain IMPORTRANGE,
+// so every row still arrives with the sheet's own types and nothing needs re-parsing.
+//
+// Two switches have to agree before a window moves. PLAN_SHEET_TRIM_ENABLED is per plan
+// and lives in this file, because a window may only narrow where that plan's months really
+// are reaching Supabase — otherwise the app would lose a month from the sheet and the
+// database at the same time. ARCHIVE_TRIM (CONFIG) is the runtime switch for the run.
+// Neither of them is ARCHIVE_PURGE: that one governs row deletion on a hand-encoded tab.
+const PLAN_SHEET_TRIM_ENABLED = {{PLAN_TRIM_ENABLED}};
+const PLAN_SHEET_TRIM_POLL_MS = 2000;
+const PLAN_SHEET_TRIM_VERIFY_MS = 20000;
 
 // Which plan this script belongs to. PLAN_ID must match the app's plan id
 // (src/config/plans.js: fiberx | bida | sme).
@@ -565,8 +593,8 @@ function backupPurgedRows_(values, ranges) {
  * them does not delete data — Sheets either refuses, or the formula is torn out of A1 and
  * has to be pasted back by hand. Which is what happened on 2026-09-21.
  *
- * A month like that has to be removed from the sheet the formula points at, not from the
- * mirror. So this only ever reports; it never edits.
+ * A month like that is retired by MOVING the range instead — see trimPlanSheetFormula_.
+ * This function only classifies; it never edits.
  */
 function planSheetIsFormulaDriven_() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PLAN_SHEET_NAME);
@@ -620,38 +648,362 @@ function purgeMonthFromNewReport_(monthKey, dryRun) {
   return { rows: rowCount, labels: labels };
 }
 
+// ==================== ARCHIVE: the formula window ====================
+//
+// On a mirror the only way to retire an archived month is to move the range the formula
+// points at. The window is recomputed from scratch on every run, from the SOURCE sheet, so
+// it stays right when rows above it are deleted there; and the mirror's own layout is
+// never rewritten — only the starting row changes.
+
+/** Reporting must work from a trigger too, where there is no UI. */
+function planSheetAlert_(message) {
+  try { SpreadsheetApp.getUi().alert(message); } catch (e) { Logger.log(message); }
+}
+
+/** '=IMPORTRANGE("url", "'BIDA DAILY'!A1:M")' → its four facts, or null. */
+function parseImportRangeFormula_(formula) {
+  var text = String(formula || '').trim();
+  if (text.charAt(0) !== '=') return null;
+
+  var urlMatch = text.match(/IMPORTRANGE\s*\(\s*"([^"]+)"/i);
+  if (!urlMatch) return null;
+  var rangeMatch = text.match(/,\s*"([^"]*)"\s*\)\s*$/);
+  if (!rangeMatch) return null;
+  var idMatch = urlMatch[1].match(/\/d\/([A-Za-z0-9_-]+)/);
+  if (!idMatch) return null;
+
+  var spec = rangeMatch[1].match(/^'?([^'!]+)'?!A(\d+):([A-Z]+)$/);
+  if (!spec) return null;
+
+  return {
+    url: urlMatch[1],
+    sourceId: idMatch[1],
+    tab: spec[1],
+    startRow: parseInt(spec[2], 10),
+    endCol: spec[3]
+  };
+}
+
+function buildImportRangeFormula_(parsed, startRow) {
+  return '=IMPORTRANGE("' + parsed.url + '", "\'' + parsed.tab + '\'!A' + startRow + ':' +
+    parsed.endCol + '")';
+}
+
+/** The plan sheet's A1, or null when the tab is missing. */
+function planSheetAnchorCell_() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PLAN_SHEET_NAME);
+  return sheet ? sheet.getRange(1, 1) : null;
+}
+
+/**
+ * Every day block in the plan sheet, oldest first: its title row and the month it belongs
+ * to. The title is the only place the date lives, so this is also how a mirror's coverage
+ * is read.
+ */
+function mirrorBlocks_() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PLAN_SHEET_NAME);
+  if (!sheet) return [];
+
+  var values = sheet.getDataRange().getValues();
+  var blocks = [];
+  for (var i = 0; i < values.length; i++) {
+    var date = blockDateOf_(values[i][0]);
+    if (!date) continue;
+    blocks.push({ monthKey: monthKeyOf_(date), row: i + 1, date: date });
+  }
+  return blocks;
+}
+
+/** The month_keys the window currently shows, in order and without repeats. */
+function mirrorMonthKeys_() {
+  var blocks = mirrorBlocks_();
+  var seen = {};
+  var keys = [];
+  for (var i = 0; i < blocks.length; i++) {
+    if (seen[blocks[i].monthKey]) continue;
+    seen[blocks[i].monthKey] = true;
+    keys.push(blocks[i].monthKey);
+  }
+  return keys;
+}
+
+/**
+ * The 1-based row of `monthKey`'s first day block in the SOURCE spreadsheet.
+ *
+ * Read from the source rather than counted in the mirror on purpose: the mirror's row
+ * numbers only equal the source's while nothing above the window changes, and one row
+ * deleted in `BIDA DAILY` would silently shift every month after it. Returns
+ * { row, reason } — `row` is null when the source cannot be opened or does not hold the
+ * month, and the caller then falls back to counting in the mirror.
+ */
+function firstBlockRowForMonthInSource_(sourceId, tab, monthKey) {
+  var source;
+  try {
+    source = SpreadsheetApp.openById(sourceId);
+  } catch (e) {
+    return { row: null, reason: 'hindi mabuksan ang source sheet (' +
+      (e && e.message ? e.message : String(e)) + ')' };
+  }
+
+  var sheet = source.getSheetByName(tab);
+  if (!sheet) return { row: null, reason: 'walang "' + tab + '" tab sa source sheet' };
+
+  var values = sheet.getDataRange().getValues();
+  for (var i = 0; i < values.length; i++) {
+    var date = blockDateOf_(values[i][0]);
+    if (date && monthKeyOf_(date) === monthKey) return { row: i + 1, reason: '' };
+  }
+  return { row: null, reason: 'wala pang ' + monthKey + ' na block sa source sheet' };
+}
+
+/**
+ * Moves PLAN_SHEET_NAME's IMPORTRANGE window so it starts at the first month NEWER than
+ * every month that was just archived and verified.
+ *
+ * Never reached for a hand-encoded sheet (that path deletes rows), never with ARCHIVE_TRIM
+ * off, and never for a plan with PLAN_SHEET_TRIM_ENABLED off. ARCHIVE_PURGE is not one of
+ * its gates on purpose: a move is reversible, a deletion is not.
+ *
+ * Three guards, all of them refusals rather than fixes:
+ *   * nothing older than the new start may still be un-archived, or narrowing the window
+ *     would drop that month from the sheet without Supabase having it;
+ *   * there has to be a later month to start at, or the window would become empty;
+ *   * the spill must actually land on the month the formula now names, and the old formula
+ *     goes back if it does not. IMPORTRANGE recalculates asynchronously, so this is the
+ *     only way to know that what the sheet shows is what the formula says — and it catches
+ *     a source sheet whose rows moved under us.
+ */
+function trimPlanSheetFormula_(archivedMonthKeys, dryRun) {
+  if (!PLAN_SHEET_TRIM_ENABLED) {
+    return { changed: false, reason: 'hindi naka-enable ang formula trim para sa ' + PLAN_ID +
+      ' (PLAN_SHEET_TRIM_ENABLED = false)' };
+  }
+
+  var cell = planSheetAnchorCell_();
+  if (!cell) return { changed: false, reason: PLAN_SHEET_NAME + ' sheet not found.' };
+
+  var formula = cell.getFormula();
+  var parsed = parseImportRangeFormula_(formula);
+  if (!parsed) {
+    return { changed: false, reason: 'ang A1 ng ' + PLAN_SHEET_NAME + ' ay hindi IMPORTRANGE ' +
+      'na may A<n>:M — hindi hinahawakan' };
+  }
+
+  var archived = {};
+  var maxArchived = '';
+  for (var a = 0; a < archivedMonthKeys.length; a++) {
+    archived[archivedMonthKeys[a]] = true;
+    if (archivedMonthKeys[a] > maxArchived) maxArchived = archivedMonthKeys[a];
+  }
+  if (!maxArchived) return { changed: false, reason: 'walang na-archive sa run na ito' };
+
+  // One read of the window: its months in order, and where each one starts.
+  var blocks = mirrorBlocks_();
+  if (!blocks.length) return { changed: false, reason: 'walang day block sa ' + PLAN_SHEET_NAME };
+
+  var keys = [];
+  var seenKey = {};
+  for (var kb = 0; kb < blocks.length; kb++) {
+    if (seenKey[blocks[kb].monthKey]) continue;
+    seenKey[blocks[kb].monthKey] = true;
+    keys.push(blocks[kb].monthKey);
+  }
+
+  // The earliest month the window still shows that is newer than everything archived.
+  var targetKey = '';
+  for (var t = 0; t < keys.length; t++) {
+    if (keys[t] > maxArchived && (!targetKey || keys[t] < targetKey)) targetKey = keys[t];
+  }
+  if (!targetKey) {
+    return { changed: false, reason: 'walang buwan na mas bago sa ' + maxArchived + ' sa ' +
+      PLAN_SHEET_NAME + ' — hindi ito tinatrim' };
+  }
+
+  // GUARD: nothing older than the new window start may be left behind un-archived.
+  var leftBehind = [];
+  for (var b = 0; b < keys.length; b++) {
+    if (keys[b] < targetKey && !archived[keys[b]]) leftBehind.push(keys[b]);
+  }
+  if (leftBehind.length) {
+    return { changed: false, reason: 'hindi tinatrim — may buwan pang hindi archived bago ang ' +
+      targetKey + ': ' + leftBehind.join(', ') + '. I-archive muna ang mga iyon (o itaas ang ' +
+      'ARCHIVE_AFTER_DAYS) bago itrim ang window.' };
+  }
+
+  // Where that month starts in the window as it is right now — used only as the fallback
+  // when the source sheet cannot be read.
+  var targetRow = 0;
+  for (var m = 0; m < blocks.length; m++) {
+    if (blocks[m].monthKey === targetKey) { targetRow = blocks[m].row; break; }
+  }
+  if (!targetRow) return { changed: false, reason: 'hindi mahanap ang ' + targetKey + ' sa sheet' };
+
+  var fromSource = firstBlockRowForMonthInSource_(parsed.sourceId, parsed.tab, targetKey);
+  var sourceRow = fromSource.row;
+  var note = fromSource.row
+    ? 'row mula sa source sheet'
+    : 'galing sa mirror — ' + fromSource.reason;
+  if (!sourceRow) sourceRow = parsed.startRow + targetRow - 1;
+
+  // GUARD: the window only ever moves forward.
+  if (!(sourceRow > parsed.startRow)) {
+    return { changed: false, reason: 'hindi tinatrim — ang row ' + sourceRow +
+      ' ay hindi mas mataas sa kasalukuyang ' + parsed.startRow };
+  }
+
+  var newFormula = buildImportRangeFormula_(parsed, sourceRow);
+  if (dryRun) {
+    return { changed: false, dryRun: true, monthKey: targetKey, from: parsed.startRow,
+      to: sourceRow, endCol: parsed.endCol, formula: newFormula, note: note };
+  }
+
+  cell.setFormula(newFormula);
+  SpreadsheetApp.flush();
+
+  // GUARD: wait for the spill to land on the month the formula now names.
+  var settled = false;
+  var waited = 0;
+  while (waited < PLAN_SHEET_TRIM_VERIFY_MS) {
+    Utilities.sleep(PLAN_SHEET_TRIM_POLL_MS);
+    waited += PLAN_SHEET_TRIM_POLL_MS;
+    var first = mirrorBlocks_()[0];
+    if (first && first.monthKey === targetKey) { settled = true; break; }
+  }
+
+  if (!settled) {
+    cell.setFormula(formula);
+    SpreadsheetApp.flush();
+    return { changed: false, reason: 'hindi nag-settle ang IMPORTRANGE sa ' +
+      (PLAN_SHEET_TRIM_VERIFY_MS / 1000) + 's kaya ibinalik ang dating formula ' +
+      '(A' + parsed.startRow + ':' + parsed.endCol + ')' };
+  }
+
+  return { changed: true, monthKey: targetKey, from: parsed.startRow, to: sourceRow,
+    endCol: parsed.endCol, formula: newFormula, note: note };
+}
+
+/** Menu: what the trim would do, without writing anything. */
+function previewPlanSheetTrim() {
+  var config = readConfigMap_();
+  var afterDays = configNumber_(config, ARCHIVE_AFTER_DAYS_KEY, ARCHIVE_DEFAULT_AFTER_DAYS);
+  var enabled = configBool_(config, ARCHIVE_ENABLED_KEY, false);
+  var purge = configBool_(config, ARCHIVE_PURGE_KEY, ARCHIVE_DEFAULT_PURGE);
+  var trim = configBool_(config, ARCHIVE_TRIM_KEY, ARCHIVE_DEFAULT_TRIM);
+  var due = eligibleMonths_(afterDays);
+  var keys = [];
+  for (var i = 0; i < due.length; i++) keys.push(due[i].key);
+
+  var lines = [];
+  lines.push(PLAN_SHEET_NAME + ' — formula window');
+  lines.push('');
+  lines.push('PLAN_SHEET_TRIM_ENABLED: ' + PLAN_SHEET_TRIM_ENABLED);
+  lines.push('ARCHIVE_ENABLED: ' + enabled + '   ARCHIVE_PURGE: ' + purge +
+    '   ARCHIVE_TRIM: ' + trim);
+  lines.push('Buwan na due ngayon: ' + (keys.length ? keys.join(', ') : 'wala'));
+  lines.push('Mga buwan sa sheet: ' + (mirrorMonthKeys_().join(', ') || 'wala'));
+  lines.push('');
+
+  if (!keys.length) {
+    lines.push('Wala pang due na buwan, kaya walang itatrim. Lumalabas ang preview kapag may ' +
+      'buwan nang nakalampas sa cut-off.');
+  } else {
+    var preview = trimPlanSheetFormula_(keys, true);
+    if (preview.dryRun) {
+      lines.push('Kasalukuyang window: A' + preview.from + ':' + preview.endCol);
+      lines.push('Iminumungkahing window:');
+      lines.push('  ' + preview.formula);
+      lines.push('Magsisimula sa ' + preview.monthKey + ' (source row ' + preview.to + ')');
+      lines.push('Pinagmulan ng row: ' + preview.note);
+    } else {
+      lines.push('Hindi itatrim: ' + preview.reason);
+    }
+  }
+
+  lines.push('');
+  lines.push('Walang isinulat sa sheet. Ang aktwal na pagtrim ay tumatakbo pagkatapos ng ' +
+    'archive kapag ARCHIVE_TRIM = TRUE at naka-enable ang trim para sa ' + PLAN_ID + ' ' +
+    '(ngayon: ' + PLAN_SHEET_TRIM_ENABLED + ').');
+  planSheetAlert_(lines.join('\n'));
+}
+
+/** Menu: puts the full-history range back, so the sheet holds every month again. */
+function restorePlanSheetFormula() {
+  var cell = planSheetAnchorCell_();
+  if (!cell) { planSheetAlert_(PLAN_SHEET_NAME + ' sheet not found.'); return; }
+
+  var parsed = parseImportRangeFormula_(cell.getFormula());
+  if (!parsed) {
+    planSheetAlert_('Ang A1 ng ' + PLAN_SHEET_NAME + ' ay hindi IMPORTRANGE na may A<n>:M — ' +
+      'walang ibabalik.');
+    return;
+  }
+  if (parsed.startRow === 1) {
+    planSheetAlert_('Naka-A1:' + parsed.endCol + ' na ang ' + PLAN_SHEET_NAME +
+      ' — buo na ang kasaysayan.');
+    return;
+  }
+
+  cell.setFormula(buildImportRangeFormula_(parsed, 1));
+  SpreadsheetApp.flush();
+  fullSync();
+  planSheetAlert_('Ibinalik ang ' + PLAN_SHEET_NAME + ' sa A1:' + parsed.endCol + ' (dating A' +
+    parsed.startRow + ':' + parsed.endCol + ').\n\n' +
+    'Buong kasaysayan na ulit ang nasa sheet, at ni-rebuild ang RAW DATA at MTD.\n' +
+    'Tandaan: itatrim itong muli ng susunod na archive run hangga\'t ARCHIVE_TRIM = TRUE.');
+}
+
 // ==================== ARCHIVE: one month ====================
 
-function archiveOneMonth_(month, dryRun, purge) {
+function archiveOneMonth_(month, dryRun, purge, trim) {
   var rawRows = collectRawArchiveRows_(month.key);
   // Computed from the rows just read, not read back off the MTD sheet — see
   // deriveMtdArchiveRows_ for why the sheet was the wrong source.
   var mtdRows = deriveMtdArchiveRows_(rawRows, month.key, month.label);
 
   if (!rawRows.length) {
-    return month.label + ': walang RAW DATA rows — nilaktawan.';
+    return { note: month.label + ': walang RAW DATA rows — nilaktawan.', verified: false };
   }
 
   var localRawSum = sumCompleted_(rawRows);
   var localMtdSum = sumCompleted_(mtdRows);
 
-  // Purging needs the rows to be real cells. When the report sheet is one spilled
-  // =IMPORTRANGE(...), its rows are the output of an array formula instead, and deleting
-  // them does not remove data — it tears the formula out of A1.
-  var formulaDriven = purge && planSheetIsFormulaDriven_();
-  var willPurge = purge && !formulaDriven;
-  var whyNoPurge = formulaDriven
-    ? 'gawa ng formula ang ' + PLAN_SHEET_NAME + ' (IMPORTRANGE), kaya hindi ito maaaring ' +
-      'burahin dito — alisin ang buwan sa pinagmulang sheet'
+  // Which way this sheet shrinks. Purging needs the rows to be real cells; when the report
+  // sheet is one spilled =IMPORTRANGE(...) its rows are an array formula's output, and
+  // deleting them does not remove data — it tears the formula out of A1. A mirror is
+  // narrowed once, after the loop, by moving the range (trimPlanSheetFormula_).
+  var mirror = planSheetIsFormulaDriven_();
+  var willPurge = purge && !mirror;
+  var willTrim = trim && mirror && PLAN_SHEET_TRIM_ENABLED;
+  var whyNoShrink = mirror
+    ? (PLAN_SHEET_TRIM_ENABLED
+        ? (trim
+            ? 'formula-driven — ang window ng ' + PLAN_SHEET_NAME +
+              ' ang itatrim pagkatapos ng lahat ng buwan'
+            : 'hindi naka-TRUE ang ARCHIVE_TRIM, kaya hindi gumagalaw ang window ng ' +
+              PLAN_SHEET_NAME)
+        : 'gawa ng formula ang ' + PLAN_SHEET_NAME + ' (IMPORTRANGE), kaya hindi ito maaaring ' +
+          'burahin dito — alisin ang buwan sa pinagmulang sheet')
     : 'hindi naka-TRUE ang ARCHIVE_PURGE';
 
   if (dryRun) {
-    return month.label + ' (DRY RUN): ' + rawRows.length + ' RAW rows (sum ' + localRawSum +
-      '), ' + mtdRows.length + ' MTD rows (sum ' + localMtdSum + '). ' +
-      (willPurge
-        ? purgeMonthFromNewReport_(month.key, true).rows + ' NEW REPORT rows ang buburahin.'
-        : 'Walang buburahin — ' + whyNoPurge + '.') +
-      ' Walang in-upload at walang binura.';
+    var shrink;
+    if (willTrim) {
+      var preview = trimPlanSheetFormula_([month.key], true);
+      shrink = preview.dryRun
+        ? 'ang window ng ' + PLAN_SHEET_NAME + ' ay A' + preview.from + ':' + preview.endCol +
+          ' → A' + preview.to + ':' + preview.endCol + ' (magsisimula sa ' + preview.monthKey + ').'
+        : 'walang itatrim sa formula — ' + preview.reason + '.';
+    } else if (willPurge) {
+      shrink = purgeMonthFromNewReport_(month.key, true).rows + ' NEW REPORT rows ang buburahin.';
+    } else {
+      shrink = 'Walang buburahin — ' + whyNoShrink + '.';
+    }
+    return {
+      note: month.label + ' (DRY RUN): ' + rawRows.length + ' RAW rows (sum ' + localRawSum +
+        '), ' + mtdRows.length + ' MTD rows (sum ' + localMtdSum + '). ' + shrink +
+        ' Walang in-upload at walang binura.',
+      verified: false
+    };
   }
 
   supabaseUpsert_('sli_raw_daily', rawRows, 'plan,report_date,area');
@@ -679,26 +1031,36 @@ function archiveOneMonth_(month, dryRun, purge) {
     var empty = [];
     if (rawRows.length === 0) empty.push('RAW DATA');
     if (mtdRows.length === 0) empty.push('MTD');
-    return month.label + ': VERIFICATION FAILED — WALANG BINURA. ' +
-      (empty.length ? 'Walang nabasang rows sa ' + empty.join(' at ') +
-        ' — may ibang takbo na gumagawa ng sheet sa parehong oras. ' : '') +
-      'RAW ' + remoteRawCount + '/' + rawRows.length + ' rows, sum ' + remoteRawSum + '/' + localRawSum + ' | ' +
-      'MTD ' + remoteMtdCount + '/' + mtdRows.length + ' rows, sum ' + remoteMtdSum + '/' + localMtdSum;
+    return {
+      note: month.label + ': VERIFICATION FAILED — WALANG BINURA AT WALANG TRIM. ' +
+        (empty.length ? 'Walang nabasang rows sa ' + empty.join(' at ') +
+          ' — may ibang takbo na gumagawa ng sheet sa parehong oras. ' : '') +
+        'RAW ' + remoteRawCount + '/' + rawRows.length + ' rows, sum ' + remoteRawSum + '/' +
+        localRawSum + ' | ' + 'MTD ' + remoteMtdCount + '/' + mtdRows.length + ' rows, sum ' +
+        remoteMtdSum + '/' + localMtdSum,
+      verified: false
+    };
   }
 
   if (!willPurge) {
     // Transfer only. Nothing is read from NEW REPORT again and no Full Sync is re-run, so
     // the run is shorter and the sheet is left exactly as it was found.
-    return month.label + ': archived ' + rawRows.length + ' RAW + ' + mtdRows.length +
-      ' MTD rows sa Supabase; walang binura — ' + whyNoPurge + '.';
+    return {
+      note: month.label + ': archived ' + rawRows.length + ' RAW + ' + mtdRows.length +
+        ' MTD rows sa Supabase; walang binura — ' + whyNoShrink + '.',
+      verified: true
+    };
   }
 
   var purged = purgeMonthFromNewReport_(month.key, false);
   fullSync();
 
-  return month.label + ': archived ' + rawRows.length + ' RAW + ' + mtdRows.length + ' MTD rows; ' +
-    'purged ' + purged.rows + ' NEW REPORT rows (' + purged.labels.length + ' day blocks, ' +
-    purged.labels.join(', ') + ').';
+  return {
+    note: month.label + ': archived ' + rawRows.length + ' RAW + ' + mtdRows.length +
+      ' MTD rows; purged ' + purged.rows + ' NEW REPORT rows (' + purged.labels.length +
+      ' day blocks, ' + purged.labels.join(', ') + ').',
+    verified: true
+  };
 }
 
 function auditArchive_(summary, startedAt, dryRun) {
@@ -747,6 +1109,7 @@ function archiveClosedMonths() {
       fullSync();
     }
 
+    var trim = configBool_(config, ARCHIVE_TRIM_KEY, ARCHIVE_DEFAULT_TRIM);
     var months = eligibleMonths_(afterDays);
     if (!months.length) {
       auditArchive_('Walang buwang due pa (kailangan ang ' + afterDays +
@@ -754,9 +1117,31 @@ function archiveClosedMonths() {
       return;
     }
 
+    var verified = [];
     for (var i = 0; i < months.length; i++) {
-      notes.push(archiveOneMonth_(months[i], dryRun, purge));
+      var outcome = archiveOneMonth_(months[i], dryRun, purge, trim);
+      notes.push(outcome.note);
+      if (outcome.verified) verified.push(months[i].key);
     }
+
+    // The window moves ONCE, after every due month has been uploaded and verified. Doing
+    // it per month would slide the rows out from under the next month's read — and the
+    // months it is allowed to skip past are exactly the ones this run verified.
+    //
+    // Mirrors only: on a hand-encoded tab each month was already deleted as it was
+    // archived, and there is no range to move.
+    if (!dryRun && trim && verified.length && planSheetIsFormulaDriven_()) {
+      var trim = trimPlanSheetFormula_(verified, false);
+      if (trim.changed) {
+        notes.push('Formula trim: ' + PLAN_SHEET_NAME + ' A' + trim.from + ':' + trim.endCol +
+          ' → A' + trim.to + ':' + trim.endCol + ' (mula na lang sa ' + trim.monthKey + '; ' +
+          trim.note + ').');
+        fullSync();
+      } else {
+        notes.push('Formula trim: hindi isinagawa — ' + trim.reason + '.');
+      }
+    }
+
     auditArchive_(notes.join(' | '), startedAt, dryRun);
   } catch (error) {
     notes.push('FAILED: ' + (error && error.message ? error.message : String(error)));
@@ -777,8 +1162,10 @@ function archiveDryRun() {
   }
   try {
     SpreadsheetApp.getUi().alert('Dry run tapos na.\n\nTingnan ang LAST_ARCHIVE row sa CONFIG tab ' +
-      'para sa bilang ng rows na aarchive. Buburahin lamang ang sheet kapag ' +
-      'ARCHIVE_PURGE = TRUE.');
+      'para sa bilang ng rows na aarchive. Paliliitin lamang ang sheet kapag sumasang-ayon ' +
+      'ang dalawang switch, at kung paano depende sa sheet: deleteRows sa hand-encoded ' +
+      '(ARCHIVE_PURGE = TRUE), o paghakbang ng IMPORTRANGE window sa mirror ' +
+      '(ARCHIVE_TRIM = TRUE at naka-enable ang trim para sa planong ito).');
   } catch (e) {}
 }
 
@@ -1024,6 +1411,8 @@ function onOpen() {
     .addSeparator()
     .addItem('Archive Closed Months to Supabase', 'archiveClosedMonths')
     .addItem('Archive Dry Run', 'archiveDryRun')
+    .addItem('Preview Formula Trim', 'previewPlanSheetTrim')
+    .addItem('Restore NEW REPORT Formula (full history)', 'restorePlanSheetFormula')
     .addSeparator()
     .addItem('Test Supabase Connection', 'testSupabaseConnection')
     .addToUi();

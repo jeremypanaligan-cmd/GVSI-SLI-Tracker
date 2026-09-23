@@ -65,16 +65,29 @@ const PLANS = {
     script: 'FIBERXSCRIPT.gs',
     sheetId: '1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0',
     tabs: { 'FIBERX NEW REPORT': '1425609870', 'RAW DATA': '486719298', 'MTD': '1061751267' },
+    // A mirror like BIDA's, but PLAN_SHEET_TRIM_ENABLED is false for this plan, so nothing
+    // ever calls openById on its source and the id here is only needed to make
+    // planSheetIsFormulaDriven_() see a formula-driven sheet. That is the real shape.
+    mirrorFormula: `=IMPORTRANGE("https://docs.google.com/spreadsheets/d/FIBERXSOURCEUNKNOWN00000000000/edit", "'FIBERX DAILY'!A1:M")`,
   },
   bida: {
     script: 'BIDASCRIPT.gs',
     sheetId: '1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M',
     tabs: { 'BIDA NEW REPORT': '1425609870', 'RAW DATA': '486719298', 'MTD': '1061751267' },
+    // The mirror's IMPORTRANGE points here, so the window trim can be exercised against
+    // the rows it really spills from.
+    mirrorFormula: `=IMPORTRANGE("https://docs.google.com/spreadsheets/d/1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0/edit", "'BIDA DAILY'!A1:M")`,
+    mirrorSource: {
+      id: '1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0',
+      tab: 'BIDA DAILY',
+      csvUrl: 'https://docs.google.com/spreadsheets/d/1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0/export?format=csv',
+    },
   },
   sme: {
     script: 'SMESCRIPT.gs',
     sheetId: '10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY',
     tabs: { 'SME NEW REPORT': '1425609870', 'RAW DATA': '486719298', 'MTD': '1061751267' },
+    mirrorFormula: `=IMPORTRANGE("https://docs.google.com/spreadsheets/d/SMESOURCEUNKNOWN00000000000000/edit", "'SME DAILY'!A1:M")`,
   },
 }
 
@@ -108,6 +121,13 @@ function csvToGrid(csv) {
   return rows
 }
 
+/** 'A' → 1, 'M' → 13 — the column a mirror's range ends at. */
+function colNumber(letters) {
+  let n = 0
+  for (const ch of letters) n = n * 26 + (ch.charCodeAt(0) - 64)
+  return n
+}
+
 function fetchText(url) {
   return execFileSync('curl', ['-sS', '-L', '--max-time', '60', url], {
     maxBuffer: 128 * 1024 * 1024,
@@ -117,6 +137,10 @@ function fetchText(url) {
 // ── Apps Script sheet stubs ─────────────────────────────────────────────────
 
 const purgeLog = []
+
+// Spreadsheets other than the active one. Only a plan with PLAN_SHEET_TRIM_ENABLED needs
+// one, because only the trim calls SpreadsheetApp.openById.
+const externalSheets = {}
 
 class Range {
   constructor(sheet, row, col, numRows, numCols) {
@@ -145,6 +169,27 @@ class Range {
     return out
   }
   getDisplayValues() { return this.getValues() }
+  // Formula support is not cosmetic: the window trim reads A1's formula, and the generic
+  // stub below used to swallow setFormula() into a silent no-op — a test that "passed"
+  // while writing nothing. These are real.
+  getFormula() { return this.sheet.formulas[`${this.row},${this.col}`] || '' }
+  getFormulas() {
+    const { rows, cols } = this._bounds()
+    const out = []
+    for (let r = 0; r < rows; r++) {
+      const line = []
+      for (let c = 0; c < cols; c++) {
+        line.push(this.sheet.formulas[`${this.row + r},${this.col + c}`] || '')
+      }
+      out.push(line)
+    }
+    return out
+  }
+  setFormula(formula) {
+    this.sheet.formulas[`${this.row},${this.col}`] = String(formula)
+    this.sheet.renderSpill()
+    return this
+  }
   getValue() { return this.getValues()[0]?.[0] ?? '' }
   getDisplayValue() { return this.getValue() }
   getNumRows() { return this._bounds().rows }
@@ -190,6 +235,21 @@ class Sheet {
   constructor(name, rows) {
     this.name = name
     this.rows = rows || []
+    this.formulas = {}
+    // A mirror is modelled the way Sheets really behaves: the formula sits in the anchor
+    // cell and IMPORTRANGE spills the SOURCE grid from the range's start row down. Keeping
+    // the whole source here is what makes moving that start row actually change the rows.
+    this.spillSource = null
+  }
+  /** Re-spill from the stored formula's range, the way IMPORTRANGE would. */
+  renderSpill() {
+    const formula = this.formulas['1,1'] || ''
+    if (!this.spillSource || !formula) return
+    const spec = /!A(\d+):([A-Z]+)/.exec(formula)
+    if (!spec) return
+    const start = parseInt(spec[1], 10)
+    const endCol = colNumber(spec[2])
+    this.rows = this.spillSource.slice(start - 1).map((r) => r.slice(0, endCol))
   }
   ensure(row, col) {
     while (this.rows.length < row) this.rows.push([])
@@ -316,6 +376,24 @@ function loadPlan(planId, props, options) {
     }
   }
 
+  // The live CSV export is a grid of values with no formula in it, so the mirror has to be
+  // seeded with the formula the spreadsheet actually holds. Without that,
+  // planSheetIsFormulaDriven_() would call the real NEW REPORT "hand-encoded" and the
+  // purge would take a path it never takes on the day.
+  const reportTab = Object.keys(plan.tabs).find((name) => /NEW REPORT$/.test(name))
+  if (reportTab && sheets[reportTab] && plan.mirrorFormula) {
+    sheets[reportTab].formulas['1,1'] = plan.mirrorFormula
+
+    if (plan.mirrorSource) {
+      const grid = csvToGrid(fetchText(plan.mirrorSource.csvUrl))
+      externalSheets[plan.mirrorSource.id] = {
+        [plan.mirrorSource.tab]: new Sheet(plan.mirrorSource.tab, grid),
+      }
+      sheets[reportTab].spillSource = grid
+      sheets[reportTab].renderSpill()
+    }
+  }
+
   const logs = []
   const mails = []
   const scriptProps = { ...props }
@@ -324,6 +402,13 @@ function loadPlan(planId, props, options) {
     console,
     SpreadsheetApp: {
       getActiveSpreadsheet: () => makeSpreadsheet(sheets),
+      // Only the window trim reaches for another spreadsheet, and only for the plan whose
+      // PLAN_SHEET_TRIM_ENABLED is true. Anything unregistered throws, which is exactly
+      // what "no access to that file" does in Apps Script.
+      openById: (id) => {
+        if (!externalSheets[id]) throw new Error(`No access to spreadsheet ${id}`)
+        return makeSpreadsheet(externalSheets[id])
+      },
       flush: () => {},
       getUi: () => ({ alert: () => {}, createMenu: () => ({ addItem: function () { return this }, addSeparator: function () { return this }, addToUi: () => {} }) }),
     },
@@ -337,6 +422,9 @@ function loadPlan(planId, props, options) {
     UrlFetchApp: { fetch: fetchSync },
     Utilities: {
       formatDate: formatInTz,
+      // The trim polls for the spill to settle; in the harness renderSpill is synchronous,
+      // so the wait is a no-op and the first poll already succeeds.
+      sleep: () => {},
       // supabaseKeyRole_ decodes the JWT payload to name the role, so the stubs have to
       // be the real base64 rather than a no-op — otherwise the check silently degrades
       // to "not a JWT" and the test would stop exercising it.
@@ -357,7 +445,7 @@ function loadPlan(planId, props, options) {
   const context = vm.createContext(sandbox)
   vm.runInContext(fs.readFileSync(scriptPath, 'utf8'), context, { filename: plan.script })
 
-  return { plan, sheets, context, logs, mails, scriptProps }
+  return { plan, sheets, context, logs, mails, scriptProps, externalSheets }
 }
 
 // ── Time travel ─────────────────────────────────────────────────────────────
@@ -449,6 +537,28 @@ function rule(title) {
   console.log(`\n${title}\n${'─'.repeat(title.length)}`)
 }
 
+// The window trim is judged by what the sheet ends up showing, so the checks below read
+// the harness's own mirror rather than trusting a return value on its own.
+let checks = 0
+let failures = 0
+
+function check(label, condition, detail) {
+  checks++
+  if (!condition) failures++
+  console.log(`  ${condition ? ok('PASS') : bad('FAIL')} ${label}` +
+    (detail === undefined ? '' : `  ${dim(detail)}`))
+}
+
+function finish() {
+  if (!checks) return
+  if (failures) {
+    console.log(bad(`\n${failures} of ${checks} check(s) FAILED.`))
+    process.exitCode = 1
+  } else {
+    console.log(ok(`\nAll ${checks} checks passed.`))
+  }
+}
+
 /**
  * Reads Supabase directly rather than through the stubs, so the closing summary is
  * evidence about the database and not about the harness.
@@ -495,7 +605,8 @@ function main() {
 
   const mode = connection ? 'CONNECTION TEST' : upload ? 'UPLOAD + GATE' : 'dry run'
   console.log(`Archive verification — plan "${planId}", mode: ${mode}`)
-  const { sheets, context, logs, mails } = loadPlan(planId, props, { skipTabs: connection })
+  const { plan, sheets, context, logs, mails, externalSheets: externals } =
+    loadPlan(planId, props, { skipTabs: connection })
   console.log(dim(`Loaded ${PLANS[planId].script}: ` +
     (Object.entries(sheets).map(([n, s]) => `${n} (${s.rows.length} rows)`).join(', ') ||
       '(script only — no sheet tabs read)')))
@@ -533,14 +644,29 @@ function main() {
 
 
   // CONFIG in memory, so the spreadsheet's own CONFIG tab is never touched.
-  const setConfig = (dryRun) => {
-    sheets['CONFIG'] = new Sheet('CONFIG', [
+  // ARCHIVE_TRIM is the switch the window trim hangs off, and ARCHIVE_PURGE the one row
+  // deletion does — two switches, so the harness has to be able to hold them apart.
+  const setConfig = (dryRun, purge, trim) => {
+    const rows = [
       ['KEY', 'VALUE'],
       ['ARCHIVE_ENABLED', 'TRUE'],
       ['ARCHIVE_AFTER_DAYS', '7'],
       ['ARCHIVE_DRY_RUN', dryRun ? 'TRUE' : 'FALSE'],
-      ['LAST_ARCHIVE', ''],
-    ])
+      ['ARCHIVE_PURGE', purge === false ? 'FALSE' : 'TRUE'],
+    ]
+    // Left out entirely when undefined, so the run falls back to the key's own default
+    // rather than to a value the harness chose.
+    if (trim !== undefined) rows.push(['ARCHIVE_TRIM', trim === false ? 'FALSE' : 'TRUE'])
+    rows.push(['LAST_ARCHIVE', ''])
+    sheets['CONFIG'] = new Sheet('CONFIG', rows)
+  }
+
+  /** The LAST_ARCHIVE line, which is where a run's own account of itself ends up. */
+  const auditLine = () => {
+    const config = sheets['CONFIG']
+    if (!config) return ''
+    const row = config.rows.find((r) => String(r[0]).toUpperCase() === 'LAST_ARCHIVE')
+    return row ? String(row[1]) : ''
   }
 
   const due = () => context.eligibleMonths_(7)
@@ -582,10 +708,12 @@ function main() {
   }
 
   if (upload) {
-    rule('3. Upload + gate — the real archive path, stopping before the purge')
+    rule('3. Upload + gate — the real archive path, as production is configured')
     purgeLog.length = 0
     logs.length = 0
-    setConfig(false)
+    // ARCHIVE_PURGE = FALSE, ARCHIVE_TRIM = TRUE: nothing on a hand-encoded tab is ever
+    // deleted, while a mirror's window still moves once the month is verified.
+    setConfig(false, false, true)
     try {
       context.archiveClosedMonths()
     } catch (error) {
@@ -598,13 +726,212 @@ function main() {
     console.log(dim('  Skipped. Re-run with --upload to do the real upload and comparison.'))
   }
 
-  rule('4. Purge that the gate would release (NOT applied to Google)')
-  if (!purgeLog.length) {
-    console.log(dim('  Nothing. Either no month is due, upload was skipped, or the gate refused.'))
-  } else {
+  const reportTabName = Object.keys(plan.tabs).find((name) => /NEW REPORT$/.test(name))
+  const mirror = () => sheets[reportTabName]
+  const anchorFormula = () => (mirror() ? mirror().getRange(1, 1).getFormula() : '')
+  const windowMonths = () => (mirror() ? context.mirrorMonthKeys_() : [])
+  const sourceRows = (() => {
+    const src = plan.mirrorSource && externals[plan.mirrorSource.id]
+    return src ? src[plan.mirrorSource.tab].rows : null
+  })()
+
+  /** The mirror as the spreadsheet really holds it: the formula in A1, spilling the source. */
+  const resetMirror = (formula) => {
+    if (!sourceRows) return
+    const sheet = sheets[reportTabName]
+    sheet.formulas = { '1,1': formula || plan.mirrorFormula }
+    sheet.spillSource = sourceRows
+    sheet.renderSpill()
+  }
+
+  rule('4. What shrank the sheet, and how (NOT applied to Google)')
+  if (purgeLog.length) {
     purgeLog.forEach((p) => console.log(`  ${p.sheet}: deleteRows(${p.start}, ${p.count})  first cell ${JSON.stringify(p.firstCell)}`))
     const rows = purgeLog.reduce((sum, p) => sum + p.count, 0)
-    console.log(`  → ${purgeLog.length} day block(s), ${rows} rows`)
+    console.log(`  → ${purgeLog.length} day block(s), ${rows} rows — a hand-encoded sheet`)
+  } else {
+    console.log(dim('  deleteRows: nothing, and that is correct here. A formula-driven sheet is'))
+    console.log(dim('  narrowed by moving its range — deleting formula output would tear the'))
+    console.log(dim('  formula out of A1 instead (2026-09-21).'))
+  }
+  if (mirror()) {
+    console.log(`  ${reportTabName} A1:`)
+    console.log(`    ${anchorFormula() || dim('(no formula — reads as hand-encoded)')}`)
+    console.log(`    shows ${windowMonths().join(', ') || dim('nothing')}  (${mirror().rows.length} rows)`)
+  }
+  // Captured before anything re-seeds CONFIG, because setConfig writes a blank
+  // LAST_ARCHIVE — the run's own account of itself would otherwise be lost here.
+  const archiveAudit = auditLine()
+  if (archiveAudit) console.log(`  LAST_ARCHIVE: ${archiveAudit}`)
+
+  if (sourceRows) {
+    rule('4b. The formula window — moved, not deleted')
+    resetMirror()
+    const beforeRows = mirror().rows.length
+    setConfig(false, false, true)
+    const trim = context.trimPlanSheetFormula_(['2026-08'], false)
+
+    // The expected row read from the SOURCE, the same way the script reads it — an
+    // assertion pinned to "row 19" would go stale the moment the source gains a row.
+    let expectedRow = -1
+    for (let i = 0; i < sourceRows.length; i++) {
+      const date = context.blockDateOf_(sourceRows[i][0])
+      if (date && context.monthKeyOf_(date) === '2026-09') { expectedRow = i + 1; break }
+    }
+    const anchor = (/!A(\d+):/.exec(anchorFormula()) || [])[1]
+
+    check('the trim reports a change', trim.changed === true,
+      trim.reason ? trim.reason : `A${trim.from} → A${trim.to}`)
+    check('it starts the window at the source row of the next month',
+      anchor === String(expectedRow), `expected A${expectedRow}, formula has A${anchor}`)
+    check('the old start row was 1', trim.from === 1)
+    check('the window now starts at 2026-09', windowMonths()[0] === '2026-09', windowMonths().join(', '))
+    check('2026-08 is gone from the window', !windowMonths().includes('2026-08'))
+    check('the window got smaller', mirror().rows.length < beforeRows,
+      `${beforeRows} → ${mirror().rows.length} rows`)
+    check('nothing was deleted to do it', purgeLog.length === 0)
+    if (upload) {
+      check('the audit line records the trim', /Formula trim/.test(archiveAudit), archiveAudit)
+      check('the archive itself deleted nothing', /walang binura/.test(archiveAudit), archiveAudit)
+    } else {
+      console.log(dim('  (the LAST_ARCHIVE line above is the dry run\'s — add --upload for the real one)'))
+    }
+
+    rule('4g. The gate — ARCHIVE_TRIM decides, not ARCHIVE_PURGE')
+    // A dry run deliberately skips the `fullSync()` a real run starts with, so it judges
+    // the RAW DATA tab as the sheet currently holds it — and that tab is whatever the last
+    // Full Sync wrote, which can be a single running month with nothing closed in it. A
+    // gate test pinned to that would pass on some days and fail on others; rebuild it here
+    // the way a real run does, in the harness's own sheets, so the section is deterministic.
+    resetMirror()
+    context.fullSync()
+    setConfig(true, false, false)
+    context.archiveClosedMonths()
+    const trimOffNote = auditLine()
+    check('with ARCHIVE_TRIM = FALSE the window is left alone',
+      /ARCHIVE_TRIM/.test(trimOffNote), trimOffNote)
+    check('and the formula is untouched', anchorFormula() === plan.mirrorFormula, anchorFormula())
+
+    resetMirror()
+    setConfig(true, false, true)
+    context.archiveClosedMonths()
+    const trimOnNote = auditLine()
+    check('with ARCHIVE_TRIM = TRUE the run previews the move',
+      /→ A\d+:M/.test(trimOnNote), trimOnNote)
+    check('the preview names the month it would start at', /magsisimula sa 2026-\d\d/.test(trimOnNote),
+      trimOnNote)
+    resetMirror()
+
+    // The strongest local proof available: a REAL (non-dry) run of archiveClosedMonths,
+    // with the three Supabase calls swapped for an in-memory table that only holds what
+    // the run itself sent. Nothing reaches the network, and the gate is judged against
+    // the upload rather than against a hand-fed answer.
+    rule('4h. End to end — one real archive run with Supabase held in memory')
+    resetMirror()
+    purgeLog.length = 0
+    setConfig(false, false, true)
+    const realUpsert = context.supabaseUpsert_
+    const realCount = context.supabaseCount_
+    const realSum = context.supabaseSum_
+    const sent = {}
+    const monthIn = (filter) => {
+      const m = /month_key=eq\.([\d-]+)/.exec(filter)
+      return m ? m[1] : ''
+    }
+    const heldRows = (table, filter) => (sent[table] || [])
+      .filter((r) => monthIn(filter) === r.month_key)
+    context.supabaseUpsert_ = (table, rows) => {
+      sent[table] = (sent[table] || []).concat(rows)
+    }
+    context.supabaseCount_ = (table, filter) => heldRows(table, filter).length
+    context.supabaseSum_ = (table, filter) => {
+      const skipOverall = /is_overall_total=eq\.false/.test(filter)
+      return heldRows(table, filter)
+        .filter((r) => !skipOverall || !r.is_overall_total)
+        .reduce((sum, r) => sum + Number(r.total_completed || 0), 0)
+    }
+    try {
+      context.archiveClosedMonths()
+    } catch (error) {
+      console.log(bad(`  THREW: ${error.message}`))
+    }
+    context.supabaseUpsert_ = realUpsert
+    context.supabaseCount_ = realCount
+    context.supabaseSum_ = realSum
+    const e2e = auditLine()
+    check('the run archived the month', /archived \d+ RAW/.test(e2e), e2e)
+    check('and trimmed the window in the same pass', /Formula trim/.test(e2e), e2e)
+    check('with ARCHIVE_PURGE = FALSE, so nothing was deleted',
+      /walang binura/.test(e2e) && purgeLog.length === 0, e2e)
+    check('the window now starts at September', windowMonths()[0] === '2026-09',
+      windowMonths().join(', '))
+    check('and the formula points past row 1', /!A\d+:M/.test(anchorFormula()) &&
+      !/!A1:M/.test(anchorFormula()), anchorFormula())
+    resetMirror()
+
+    rule('4c. Guard — a month left behind blocks the trim')
+    resetMirror()
+    const realBlocks = context.mirrorBlocks_
+    context.mirrorBlocks_ = () => [{ monthKey: '2026-07', row: 1, date: new Date(2026, 6, 1) }]
+      .concat(realBlocks.call(context))
+    const blocked = context.trimPlanSheetFormula_(['2026-08'], true)
+    context.mirrorBlocks_ = realBlocks
+    check('the trim refuses', blocked.changed === false && !blocked.dryRun)
+    check('and names the month it would have dropped', /2026-07/.test(blocked.reason), blocked.reason)
+    check('the formula was never touched', anchorFormula() === plan.mirrorFormula)
+
+    resetMirror()
+    const noSuccessor = context.trimPlanSheetFormula_(['2026-08', '2026-09'], true)
+    check('and with no later month to start at it refuses too',
+      noSuccessor.changed === false && !noSuccessor.dryRun, noSuccessor.reason)
+
+    rule('4d. Guard — the old formula goes back when the spill does not land')
+    resetMirror()
+    const realBlocks2 = context.mirrorBlocks_
+    let blockCalls = 0
+    context.mirrorBlocks_ = () => {
+      blockCalls++
+      // The pre-check sees the real window; every poll after the write reports another
+      // month, which is what a stale or mis-pointed IMPORTRANGE looks like.
+      return blockCalls === 1
+        ? realBlocks2.call(context)
+        : [{ monthKey: '1999-01', row: 1, date: new Date(1999, 0, 1) }]
+    }
+    const rolled = context.trimPlanSheetFormula_(['2026-08'], false)
+    context.mirrorBlocks_ = realBlocks2
+    check('the trim refuses', rolled.changed === false)
+    check('and says the range did not settle', /nag-settle/.test(rolled.reason), rolled.reason)
+    check('the original range is back', anchorFormula() === plan.mirrorFormula, anchorFormula())
+    check('the window is untouched', windowMonths()[0] === '2026-08', windowMonths().join(', '))
+
+    rule('4e. A hand-encoded sheet still deletes its rows')
+    sheets[reportTabName] = new Sheet(reportTabName, sourceRows.map((r) => r.slice(0, 13)))
+    check('the tab now reads as hand-encoded', context.planSheetIsFormulaDriven_() === false)
+    purgeLog.length = 0
+    const purged = context.purgeMonthFromNewReport_('2026-08', false)
+    check('the August month blocks are deleted', purged.rows > 0 && purgeLog.length > 0,
+      `${purgeLog.length} block(s), ${purged.rows} rows`)
+    check('and the next month is left where it was', windowMonths()[0] === '2026-09',
+      windowMonths().join(', '))
+
+    rule('4f. Rollback — the full-history formula')
+    resetMirror()
+    context.trimPlanSheetFormula_(['2026-08'], false)
+    const narrowed = anchorFormula()
+    context.restorePlanSheetFormula()
+    check('it was narrowed first', !/!A1:M/.test(narrowed), narrowed)
+    check('the range is back to A1:M', /!A1:M/.test(anchorFormula()), anchorFormula())
+    check('the whole history is in the window again', windowMonths().includes('2026-08'),
+      windowMonths().join(', '))
+  } else {
+    rule('4b. The formula window')
+    console.log(dim(`  ${planId} has PLAN_SHEET_TRIM_ENABLED = false, so no window moves here.`))
+    check('nothing was deleted on this plan either', !/purged \d+ NEW REPORT rows/.test(archiveAudit))
+    if (mirror()) {
+      const disabled = context.trimPlanSheetFormula_(['2026-08'], true)
+      check('the trim stands down for this plan', disabled.changed === false && !disabled.dryRun)
+      console.log(dim(`  trimPlanSheetFormula_ → ${disabled.reason}`))
+    }
   }
 
   if (gateView) {
@@ -636,6 +963,7 @@ function main() {
   rule('6. What Supabase now holds')
   if (!upload && !gateView) {
     console.log(dim('  Skipped — the dry run does not read Supabase.'))
+    finish()
     console.log('\n' + dim('Reminder: nothing was uploaded, nothing was purged, and the spreadsheet was not written to.'))
     return
   }
@@ -665,8 +993,9 @@ function main() {
     console.log(bad(`  Could not read back: ${error.message}`))
   }
 
-  console.log('\n' + dim('Reminder: the purge was recorded, not performed, and the spreadsheet was not written to.\n' +
-    'The real scheduled run does the purge itself once the same gate passes.'))
+  finish()
+  console.log('\n' + dim('Reminder: any delete was recorded, not performed, and the spreadsheet was not\n' +
+    'written to. The real scheduled run shrinks the sheet itself once the gate passes.'))
 }
 
 if (require.main === module) main()
