@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.18.0] — 2026-09-24
+
 ### ✨ Features
 
 - **The Developer console now shows whether each plan's sheet actually let a month go.** The
