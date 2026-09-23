@@ -24,7 +24,7 @@ const PLANS = [
     planLabel: 'FIBERX',
     sheetConst: 'FIBERX_SHEET_NAME',
     importFn: 'importFiberxToRawData',
-    trimEnabled: false,
+    trimEnabled: true,
   },
   {
     file: 'BIDASCRIPT.gs',
@@ -40,7 +40,7 @@ const PLANS = [
     planLabel: 'SME',
     sheetConst: 'SME_SHEET_NAME',
     importFn: 'importSMEToRawData',
-    trimEnabled: false,
+    trimEnabled: true,
   },
 ]
 

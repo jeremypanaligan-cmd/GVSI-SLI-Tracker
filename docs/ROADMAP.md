@@ -97,15 +97,7 @@ window, it is still pure running time against the six-minute limit.
 
 **Done when:** the formatting pass is a handful of range operations rather than ~160.
 
-### 6. FIBERX and SME archives are not active
-
-Only BIDA has `ARCHIVE_ENABLED = TRUE` with `ARCHIVE_DRY_RUN = FALSE`. The other two are
-still dry-run, so their closed months stay in their sheets and grow.
-
-**Done when:** both have archived at least one real month and the verification gate has
-passed for each.
-
-### 7. A release is still four manual steps
+### 6. A release is still four manual steps
 
 Today a release means bumping `package.json`, promoting the CHANGELOG's `[Unreleased]`
 section to `[x.y.z]`, committing, and pushing a tag. The release workflow then verifies the
@@ -120,7 +112,7 @@ needs, so this is mostly assembling parts that exist.
 
 ## 🟢 Analytics
 
-### 8. A per-province trailing trend
+### 7. A per-province trailing trend
 
 The 30-day sparkline is portfolio-level. The most common question this report invites —
 *is this one province slipping, or is everyone?* — cannot be answered from the dashboard
@@ -129,7 +121,7 @@ only the view is missing.
 
 **Done when:** selecting a province shows its own trailing window, not just its current row.
 
-### 9. Pace alerting per province
+### 8. Pace alerting per province
 
 The velocity report knows the required daily rate for the portfolio. A province that is
 behind that pace is visible only by reading the table and doing the arithmetic. Flagging the
@@ -138,14 +130,14 @@ ones below pace would turn a table into a worklist.
 **Done when:** provinces below the required rate are marked wherever they appear, from the
 same rule the velocity report uses.
 
-### 10. Export the current view
+### 9. Export the current view
 
 There is no way to get a table out of the app. Management reporting still means
 screenshots. Excel or PDF export of the visible view would remove that step.
 
 **Done when:** the current table can be exported with its selected month, plan and filters.
 
-### 11. SLA breach drill-down
+### 10. SLA breach drill-down
 
 The Installation SLA Breakdown buckets tickets by age; it does not say **which** tickets are
 in the oldest bucket, or which area they belong to. That is the next question after "how
@@ -153,7 +145,7 @@ many breached".
 
 **Done when:** a bucket can be opened to see the jobs inside it, grouped by area.
 
-### 12. Project the month from trailing velocity, not linear pace
+### 11. Project the month from trailing velocity, not linear pace
 
 The month-end projection is linear: completed so far, divided by elapsed days, extrapolated.
 A team that started slowly and accelerated is projected as if it never accelerated. The
@@ -166,7 +158,7 @@ basis it used.
 
 ## 🔵 Architecture
 
-### 13. One chunk holds the whole app
+### 12. One chunk holds the whole app
 
 The production build is a single `index-*.js` of about 334 kB (93 kB gzip) containing every
 screen, including the ones most sessions never open: `CompareView`, `AgingReport` and
@@ -175,7 +167,7 @@ Developer console in particular is opened by a handful of accounts.
 
 **Done when:** the initial chunk excludes the screens that are not on the default view.
 
-### 14. Supabase for the live month too
+### 13. Supabase for the live month too
 
 Closed months come from Supabase; the current month still comes from the Google Sheet's CSV
 export, which is a published link rather than an API — no shaping, no filtering, the whole
@@ -186,7 +178,7 @@ This is the natural end state of the cold-archive design, and the largest item h
 
 **Done when:** no dashboard request reads a spreadsheet CSV.
 
-### 15. Real offline support
+### 14. Real offline support
 
 The service worker is cache-first for assets, so the app opens without a network — but the
 data is fetched on load, so an offline open shows an error rather than the last known
@@ -194,7 +186,7 @@ figures. For a dashboard people check on site visits, the cached view is worth h
 
 **Done when:** opening offline renders the last cached month with a clear "as of" marker.
 
-### 16. Supabase Auth instead of custom session tokens
+### 15. Supabase Auth instead of custom session tokens
 
 Sessions are built on a hand-rolled `verify_login` RPC returning a token, with presence,
 revocation and maintenance checks layered on top. It works, and it was the right call when
@@ -203,7 +195,7 @@ a maintained implementation and give password reset and rotation for free.
 
 **Done when:** sessions are issued by Supabase Auth and the custom token path is gone.
 
-### 17. Role-based views
+### 16. Role-based views
 
 `sli_users.role` exists and `Developer` unlocks the console, but nothing else is gated: a
 `Supervisor` and a `Viewer` see the same thing. Deciding what each role should see is a
@@ -211,7 +203,7 @@ product question; the column to support the answer is already there.
 
 **Done when:** at least one role difference is enforced and documented.
 
-### 18. An audit trail of exports and views
+### 17. An audit trail of exports and views
 
 Presence records who is signed in. Nothing records who exported a month, or who looked at a
 closed one. For figures that go into customer-facing reporting, that history is worth having.
@@ -234,7 +226,9 @@ Kept here so the same ground is not re-covered.
   window's start row past the archived months instead of deleting formula output — the goal
   the sheet could not previously meet at all. Gated by `ARCHIVE_TRIM` (on by default; a move
   is reversible) and per-plan `PLAN_SHEET_TRIM_ENABLED`, guarded by the checksum, a gap check
-  and a post-write spill check (`docs/ARCHIVE.md`).
+  and a post-write spill check (`docs/ARCHIVE.md`). All three plans — BIDA, FIBERX and SME —
+  have archived a real month (August 2026) past the verification gate, with the window trim
+  enabled, so the sheet is no longer the system's growth limit.
 - **`generateMTDReport` writes its grid once**, so the report is never blank while it
   rebuilds, and a blank `RAW DATA` no longer wipes the previous one.
 - **Accounts, sessions and maintenance mode** moved off the sheet and onto Supabase

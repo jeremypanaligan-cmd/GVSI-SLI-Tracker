@@ -65,10 +65,16 @@ const PLANS = {
     script: 'FIBERXSCRIPT.gs',
     sheetId: '1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0',
     tabs: { 'FIBERX NEW REPORT': '1425609870', 'RAW DATA': '486719298', 'MTD': '1061751267' },
-    // A mirror like BIDA's, but PLAN_SHEET_TRIM_ENABLED is false for this plan, so nothing
-    // ever calls openById on its source and the id here is only needed to make
-    // planSheetIsFormulaDriven_() see a formula-driven sheet. That is the real shape.
-    mirrorFormula: `=IMPORTRANGE("https://docs.google.com/spreadsheets/d/FIBERXSOURCEUNKNOWN00000000000/edit", "'FIBERX DAILY'!A1:M")`,
+    // A mirror of the same `FIBERX DAILY` tab as BIDA's, in the same source workbook — and
+    // authored with whole columns, `!A:M`, with no start row. That spelling is the real
+    // thing, so it is the fixture too: it is what proves the parser reads an absent row as
+    // row 1 and still writes the explicit `A<n>:M` back.
+    mirrorFormula: `=IMPORTRANGE("https://docs.google.com/spreadsheets/d/1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0/edit", "'FIBERX DAILY'!A:M")`,
+    mirrorSource: {
+      id: '1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0',
+      tab: 'FIBERX DAILY',
+      csvUrl: 'https://docs.google.com/spreadsheets/d/1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0/export?format=csv&gid=1107744863',
+    },
   },
   bida: {
     script: 'BIDASCRIPT.gs',
@@ -77,17 +83,28 @@ const PLANS = {
     // The mirror's IMPORTRANGE points here, so the window trim can be exercised against
     // the rows it really spills from.
     mirrorFormula: `=IMPORTRANGE("https://docs.google.com/spreadsheets/d/1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0/edit", "'BIDA DAILY'!A1:M")`,
+    // The gid matters: this workbook's FIRST tab is a much older report also called
+    // "BIDA", so a gid-less export reads a tab that is not the one the mirror names. The
+    // fixture has to be the tab the formula names, or this exercises a sheet no plan reads.
     mirrorSource: {
       id: '1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0',
       tab: 'BIDA DAILY',
-      csvUrl: 'https://docs.google.com/spreadsheets/d/1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0/export?format=csv',
+      csvUrl: 'https://docs.google.com/spreadsheets/d/1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0/export?format=csv&gid=118683089',
     },
   },
   sme: {
     script: 'SMESCRIPT.gs',
     sheetId: '10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY',
     tabs: { 'SME NEW REPORT': '1425609870', 'RAW DATA': '486719298', 'MTD': '1061751267' },
-    mirrorFormula: `=IMPORTRANGE("https://docs.google.com/spreadsheets/d/SMESOURCEUNKNOWN00000000000000/edit", "'SME DAILY'!A1:M")`,
+    // Authored like FIBERX's with whole columns, `!A:M`, so the third mirror keeps proving
+    // the absent row is read as row 1. The gid matters here too: this workbook holds both
+    // `SME DAILY` and `Copy of SME DAILY`, so a gid-less export could read the wrong tab.
+    mirrorFormula: `=IMPORTRANGE("https://docs.google.com/spreadsheets/d/1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0/edit", "'SME DAILY'!A:M")`,
+    mirrorSource: {
+      id: '1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0',
+      tab: 'SME DAILY',
+      csvUrl: 'https://docs.google.com/spreadsheets/d/1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0/export?format=csv&gid=1619266816',
+    },
   },
 }
 
@@ -245,9 +262,12 @@ class Sheet {
   renderSpill() {
     const formula = this.formulas['1,1'] || ''
     if (!this.spillSource || !formula) return
-    const spec = /!A(\d+):([A-Z]+)/.exec(formula)
+    // An absent row means row 1, the same reading `parseImportRangeFormula_` gives it, so a
+    // mirror authored as `!A:M` renders the whole tab instead of silently keeping the rows
+    // of whatever formula was there before.
+    const spec = /!A(\d*):([A-Z]+)/.exec(formula)
     if (!spec) return
-    const start = parseInt(spec[1], 10)
+    const start = spec[1] ? parseInt(spec[1], 10) : 1
     const endCol = colNumber(spec[2])
     this.rows = this.spillSource.slice(start - 1).map((r) => r.slice(0, endCol))
   }

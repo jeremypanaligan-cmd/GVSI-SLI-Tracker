@@ -596,7 +596,7 @@ const ARCHIVE_BATCH_SIZE = 500;
 // are reaching Supabase — otherwise the app would lose a month from the sheet and the
 // database at the same time. ARCHIVE_TRIM (CONFIG) is the runtime switch for the run.
 // Neither of them is ARCHIVE_PURGE: that one governs row deletion on a hand-encoded tab.
-const PLAN_SHEET_TRIM_ENABLED = false;
+const PLAN_SHEET_TRIM_ENABLED = true;
 const PLAN_SHEET_TRIM_POLL_MS = 2000;
 const PLAN_SHEET_TRIM_VERIFY_MS = 20000;
 
@@ -1220,14 +1220,19 @@ function parseImportRangeFormula_(formula) {
   var idMatch = urlMatch[1].match(/\/d\/([A-Za-z0-9_-]+)/);
   if (!idMatch) return null;
 
-  var spec = rangeMatch[1].match(/^'?([^'!]+)'?!A(\d+):([A-Z]+)$/);
+  // The row is optional. `'FIBERX DAILY'!A:M` names the same window as `A1:M` spelled with
+  // whole columns, and that is how FIBERX's mirror is authored — refusing it would leave
+  // that plan unable to trim for no better reason than a spelling. An absent row means row
+  // 1, so the forward-only guard and the mirror-offset fallback both keep working, and the
+  // formula this module writes is always the explicit `A<n>:M`.
+  var spec = rangeMatch[1].match(/^'?([^'!]+)'?!A(\d*):([A-Z]+)$/);
   if (!spec) return null;
 
   return {
     url: urlMatch[1],
     sourceId: idMatch[1],
     tab: spec[1],
-    startRow: parseInt(spec[2], 10),
+    startRow: spec[2] ? parseInt(spec[2], 10) : 1,
     endCol: spec[3]
   };
 }
@@ -1334,7 +1339,7 @@ function trimPlanSheetFormula_(archivedMonthKeys, dryRun) {
   var parsed = parseImportRangeFormula_(formula);
   if (!parsed) {
     return { changed: false, reason: 'ang A1 ng ' + PLAN_SHEET_NAME + ' ay hindi IMPORTRANGE ' +
-      'na may A<n>:M — hindi hinahawakan' };
+      'na may A<n>:M (o A:M) — hindi hinahawakan' };
   }
 
   var archived = {};
@@ -1481,7 +1486,8 @@ function restorePlanSheetFormula() {
 
   var parsed = parseImportRangeFormula_(cell.getFormula());
   if (!parsed) {
-    planSheetAlert_('Ang A1 ng ' + PLAN_SHEET_NAME + ' ay hindi IMPORTRANGE na may A<n>:M — ' +
+    planSheetAlert_('Ang A1 ng ' + PLAN_SHEET_NAME + ' ay hindi IMPORTRANGE na may A<n>:M ' +
+      '(o A:M) — ' +
       'walang ibabalik.');
     return;
   }

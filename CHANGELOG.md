@@ -8,6 +8,24 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ### ✨ Features
 
+- **SME's window moves too, so all three plans now shed an archived month.** SME's August 2026
+  reached Supabase and passed the gate on 2026-09-24 (`archived 13 RAW + 13 MTD rows`), and the
+  run then recorded exactly why nothing left its sheet: `Formula trim: hindi isinagawa — hindi
+  naka-enable ang formula trim para sa sme (PLAN_SHEET_TRIM_ENABLED = false)`. `ARCHIVE_TRIM`
+  was already `TRUE` in its `CONFIG`, and that is the point of the split — the `CONFIG` row
+  decides *whether* a run may shrink a sheet, the per-plan constant decides whether *this*
+  plan's history is certifiably in the database yet
+- **FIBERX's window can now move too**, so its archived months leave `FIBERX NEW REPORT` the
+  same way BIDA's leave `BIDA NEW REPORT`. The per-plan switch is on for all three plans now.
+  FIBERX's archive of August 2026 reached Supabase with `PLAN_SHEET_TRIM_ENABLED = false`,
+  which is why its window had not moved yet — the CONFIG's `ARCHIVE_TRIM` could not act alone,
+  by design
+- **A window written as `!A:M` is read as row 1 instead of being refused.** FIBERX's mirror
+  names its range with whole columns and no start row, which the parser used to reject as
+  "not an `A<n>:M` IMPORTRANGE" — a spelling, not a difference in meaning. It now parses,
+  and the formula written back is always the explicit `A19:M` form, so a plan cannot be
+  locked out of the trim by how its range was typed
+
 - **The spreadsheet can finally stop growing.** A month that has been copied to Supabase and
   verified can now be taken out of `NEW REPORT` even when that tab is a live `IMPORTRANGE`
   mirror — by moving the range's start row past it, `A1:M` to `A19:M`, instead of deleting
@@ -33,8 +51,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
   did not shrink is readable from `LAST_ARCHIVE` alone
 - Two new menu items: **Preview Formula Trim** (the formula it would write and each guard's
   verdict, writing nothing) and **Restore NEW REPORT Formula (full history)** (back to `A1:M`,
-  then a Full Sync). Enabled for BIDA only (`PLAN_SHEET_TRIM_ENABLED`); FIBERX and SME keep
-  their windows until their own months are verifiably reaching Supabase
+  then a Full Sync). Enabled for all three plans (`PLAN_SHEET_TRIM_ENABLED`, a constant in
+  each generated `.gs`)
 
 ### 🐛 Fixes
 
@@ -53,6 +71,16 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
   writing the formula the run waits for the spill to actually reach the new month; if it does
   not settle within 20 seconds the old formula is written back and the audit line says so. That
   check is also what catches a source sheet whose rows shifted under the trim
+- **SME's harness fixture was a placeholder** — an unnamed source workbook and an `A1:M`
+  formula — so SME could only ever pass the stand-down path and its trim was never exercised.
+  It is now pinned to the real `SME DAILY` (gid `1619266816`, one of two similarly named tabs
+  in that workbook) with the whole-column `!A:M` spelling its mirror really uses, and SME runs
+  the same 30 checks as the other two: `A1:M → A19:M`, 497 → 479 rows, no `deleteRows`
+- **The harness now reads the tab the mirror actually names.** Its BIDA fixture fetched the
+  source workbook's first tab — an older report also called "BIDA" — so it was exercising a
+  sheet no plan reads, and it went red the moment that tab was edited. It is pinned to
+  `BIDA DAILY`'s gid now, and FIBERX's fixture is pinned to `FIBERX DAILY`, whose whole-column
+  `!A:M` spelling it renders with the same "absent row means row 1" rule the script uses
 
 ## [1.17.0] — 2026-09-23
 

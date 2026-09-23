@@ -119,9 +119,16 @@ Two settings have to agree before any window moves, and they answer different qu
 | `ARCHIVE_TRIM` | `CONFIG` tab, default **`TRUE`** | should this run shrink a sheet at all? |
 | `PLAN_SHEET_TRIM_ENABLED` | the generated tail, per plan | has *this* plan's history actually reached Supabase yet? |
 
-The per-plan flag is `true` for **BIDA** only: FIBERX and SME keep their windows until their
-own months are reaching Supabase. Neither flag is `ARCHIVE_PURGE` — that one has nothing to
-do with mirrors.
+The per-plan flag is `true` for all three plans — **BIDA, FIBERX and SME** — so each one
+lets go of a month as soon as Supabase is verified to hold it. Neither flag is
+`ARCHIVE_PURGE` — that one has nothing to do with mirrors.
+
+The window is read from the plan's own `A1`, and the start row is optional there: `'FIBERX
+DAILY'!A:M` and `'SME DAILY'!A:M` name the same window as `A1:M`, so they are read as row 1
+rather than refused. Whatever is read, the formula written back is always the explicit
+`A19:M` form. (Google's own `xlsx` export wraps this cell in
+`IFERROR(__xludf.DUMMYFUNCTION("IMPORTRANGE(…)"), <cached value>)`; that wrapper is export
+noise, not the formula in the sheet — `A1` really holds a plain `IMPORTRANGE`.)
 
 ### The gate
 
@@ -202,7 +209,8 @@ copy the app reads from — which also means each run re-uploads and re-verifies
 months, and the sheet keeps growing as before.
 
 > **A mirror is never deleted from.** `BIDA NEW REPORT` (and its siblings) is one
-> `=IMPORTRANGE("…", "'BIDA DAILY'!A1:M")` spilling the whole report, so its rows are the
+> `=IMPORTRANGE("…", "'BIDA DAILY'!A1:M")` — `'FIBERX DAILY'!A:M` on FIBERX, the same window
+> written with whole columns — spilling the whole report, so its rows are the
 > *output* of an array formula rather than cells anyone typed. `planSheetIsFormulaDriven_()`
 > classifies the tab before anything destructive runs: a formula means the window moves, and
 > `deleteRows` is not called at all; a tab with no formula takes the delete path and is
@@ -210,7 +218,8 @@ months, and the sheet keeps growing as before.
 >
 > This is also where the space problem lives. The mirror pulls the source's **entire**
 > history into the sheet, so the only thing that can shrink the plan's `RAW DATA` / `MTD` is
-> narrowing the window — which is what `PLAN_SHEET_TRIM_ENABLED` allows for BIDA.
+> narrowing the window — which is what `PLAN_SHEET_TRIM_ENABLED` allows for BIDA, FIBERX and
+> SME.
 
 ### 3. Managed triggers
 
@@ -315,9 +324,11 @@ scripts/apps-script/sync-gs-tail.cjs       ← node scripts/apps-script/sync-gs-
 ```
 
 `{{PLAN_ID}}`, `{{PLAN_LABEL}}`, `{{PLAN_SHEET_CONST}}`, `{{IMPORT_FN}}` and
-`{{PLAN_TRIM_ENABLED}}` are filled in per plan — `PLAN_TRIM_ENABLED` is `true` for BIDA
-only. Run the sync script after any edit to the template, then paste the three files into
-their Apps Script projects. `--check` fails when the three have drifted.
+`{{PLAN_TRIM_ENABLED}}` are filled in per plan — `PLAN_TRIM_ENABLED` is `true` for all
+three today. It is a per-plan constant rather than a `CONFIG` row because it answers "has
+*this* plan's history actually reached Supabase yet?", which `ARCHIVE_TRIM` cannot answer.
+Run the sync script after any edit to the template, then paste the three files into their
+Apps Script projects. `--check` fails when the three have drifted.
 
 ## Backups and rollback
 
