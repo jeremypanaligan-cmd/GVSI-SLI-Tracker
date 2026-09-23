@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { setMaintenance, forceSignOutAll, formatDuration } from '../utils/presence'
 import { fetchArchivedMonths } from '../utils/archiveFetcher'
 import { getDiagnostics } from '../utils/dataSourceDiagnostics'
+import { fetchArchiveStatus } from '../utils/archiveStatus'
 import { monthLabelParts, archiveDate } from '../utils/yearTables'
 import { ARCHIVE_AFTER_DAYS } from '../config/plans'
 import { SUPABASE_ENABLED } from '../config/supabase'
@@ -88,6 +89,145 @@ const MONTH_SOURCE = {
     label: 'the tracker\u2019s record',
     cell: 'bg-slate-100 text-slate-600 dark:bg-slate-700/40 dark:text-slate-300',
   },
+}
+
+/**
+ * How each trim verdict reads, and how it is coloured. `moved` is the only one that means
+ * the sheet actually let a month go; `refused` and `idle` both describe a month that is in
+ * Supabase while still sitting in the tab, which is the case worth explaining.
+ */
+const TRIM_VERDICT = {
+  moved: { label: 'Window moved', tone: 'emerald' },
+  'would-move': { label: 'A dry run would move it', tone: 'sky' },
+  refused: { label: 'Refused', tone: 'amber' },
+  idle: { label: 'No window change', tone: 'slate' },
+  blocked: { label: 'Gate failed', tone: 'rose' },
+  failed: { label: 'Run failed', tone: 'rose' },
+  unreported: { label: 'Not recorded', tone: 'slate' },
+}
+
+const TONE_CLASS = {
+  emerald: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+  sky: 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300',
+  amber: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+  rose: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300',
+  slate: 'bg-slate-100 text-slate-600 dark:bg-slate-700/40 dark:text-slate-300',
+}
+
+const stateLabel = (value) => (value ? 'TRUE' : 'FALSE')
+
+/**
+ * One plan's archive switches and the last run's verdict, as the script recorded it.
+ *
+ * The trim's own reasons only ever reached `LAST_ARCHIVE`, so a month that stayed in the
+ * sheet looked identical to one that was never due. This reads the CONFIG tab and says
+ * which it was — and quotes the recorded line, because the record is evidence and the
+ * console should not paraphrase it away.
+ */
+function ArchiveTrim({ status, loading }) {
+  if (loading && !status) {
+    return <p className="text-[11px] text-slate-400 dark:text-slate-500">Reading…</p>
+  }
+  if (!status) {
+    return (
+      <p className="text-[11px] text-slate-400 dark:text-slate-500">
+        Not read in this tab yet.
+      </p>
+    )
+  }
+  if (status.error) {
+    return <p className="text-[11px] text-rose-600 dark:text-rose-400">{status.error}</p>
+  }
+
+  const { settings, last } = status
+  const trim = last?.trim
+  const verdict = TRIM_VERDICT[trim?.status] || TRIM_VERDICT.unreported
+  const moved = trim?.status === 'moved' || trim?.status === 'would-move'
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+        <span className={settings.enabled
+          ? 'text-emerald-600 dark:text-emerald-400'
+          : 'text-rose-600 dark:text-rose-400'}
+        >
+          ARCHIVE_ENABLED {stateLabel(settings.enabled)}
+        </span>
+        <span className="text-slate-500 dark:text-slate-400">DRY RUN {stateLabel(settings.dryRun)}</span>
+        <span className={settings.trim
+          ? 'text-emerald-600 dark:text-emerald-400'
+          : 'text-amber-600 dark:text-amber-400'}
+        >
+          TRIM {stateLabel(settings.trim)}
+        </span>
+        <span className="text-slate-500 dark:text-slate-400">PURGE {stateLabel(settings.purge)}</span>
+        {settings.afterDays != null && (
+          <span className="text-slate-500 dark:text-slate-400">
+            {settings.afterDays} days after the month
+          </span>
+        )}
+      </div>
+
+      {!settings.enabled && (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+          Archive runs are off for this plan, so its scheduled run does nothing.
+        </p>
+      )}
+
+      {!last && (
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          No archive run has been recorded yet.
+        </p>
+      )}
+
+      {last && trim && (
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${TONE_CLASS[verdict.tone]}`}>
+              {verdict.label}
+            </span>
+            {moved && (
+              <span className="text-[11px] font-mono text-slate-700 dark:text-slate-200">
+                A{trim.from}:{trim.fromCol} → A{trim.to}:{trim.toCol}
+              </span>
+            )}
+            {moved && trim.monthKey && (
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                now starts at {trim.monthKey}
+              </span>
+            )}
+            {last.stamp && (
+              <span className="text-[10px] text-slate-400 dark:text-slate-500">{last.stamp}</span>
+            )}
+            {last.dryRun && (
+              <span className="text-[10px] text-slate-400 dark:text-slate-500">recorded by a dry run</span>
+            )}
+          </div>
+
+          {trim.english && (
+            <p className="text-[11px] text-slate-600 dark:text-slate-300">{trim.english}</p>
+          )}
+          {!trim.english && trim.reason && (
+            <p className="text-[11px] text-slate-600 dark:text-slate-300">{trim.reason}</p>
+          )}
+
+          {last.transfer && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {last.monthLabel || 'That month'}: {formatCount(last.transfer.raw)} RAW +{' '}
+              {formatCount(last.transfer.mtd)} MTD rows reached Supabase.
+              {moved && trim.provenance ? ` Start row read from ${trim.provenance}.` : ''}
+            </p>
+          )}
+        </div>
+      )}
+
+      {last?.line && (
+        <p className="text-[10px] font-mono leading-relaxed text-slate-500 dark:text-slate-400 break-words">
+          {last.line}
+        </p>
+      )}
+    </div>
+  )
 }
 
 /**
@@ -363,6 +503,35 @@ export default function DeveloperPanel({
     if (open) loadDeployStatus()
   }, [open, loadDeployStatus])
 
+  // Each plan's CONFIG tab: the archive switches and the last run's own account of whether
+  // the window moved. Read here rather than off the dashboard path, because it is the one
+  // thing an operator needs when a month is safely in Supabase but still sitting in the
+  // sheet. A plan that fails is reported on its own row, not as one panel-wide error.
+  const [archive, setArchive] = useState({ loading: false, plans: {} })
+
+  const loadArchiveStatus = useCallback(async () => {
+    setArchive((prev) => ({ ...prev, loading: true }))
+    const entries = await Promise.all(
+      Object.values(PLANS).map(async (plan) => {
+        try {
+          return [plan.id, await fetchArchiveStatus(plan)]
+        } catch (err) {
+          return [plan.id, {
+            planId: plan.id,
+            settings: null,
+            last: null,
+            error: err.message || 'The CONFIG tab could not be read.',
+          }]
+        }
+      }),
+    )
+    setArchive({ loading: false, plans: Object.fromEntries(entries) })
+  }, [])
+
+  useEffect(() => {
+    if (open) loadArchiveStatus()
+  }, [open, loadArchiveStatus])
+
   // Snapshot of the reads this tab has made. Refreshed on open, on the header button and
   // on the same 10-second tick the durations use, so it keeps up without polling on its own.
   const [diag, setDiag] = useState(() => getDiagnostics())
@@ -418,6 +587,7 @@ export default function DeveloperPanel({
   const refreshAll = () => {
     roster?.refresh?.()
     loadDeployStatus()
+    loadArchiveStatus()
     setDiag(getDiagnostics())
   }
 
@@ -439,10 +609,10 @@ export default function DeveloperPanel({
           <button
             type="button"
             onClick={refreshAll}
-            disabled={roster?.loading || deploy.loading}
+            disabled={roster?.loading || deploy.loading || archive.loading}
             className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition"
           >
-            {roster?.loading || deploy.loading ? 'Loading…' : 'Refresh'}
+            {roster?.loading || deploy.loading || archive.loading ? 'Loading…' : 'Refresh'}
           </button>
           <button
             type="button"
@@ -533,6 +703,31 @@ export default function DeveloperPanel({
                 here is older than the release you expect, the CDN has not picked up the new
                 deploy yet — hard refresh. A month in this list already comes from Supabase, even
                 if the sheet still holds a copy of it.
+              </p>
+            </div>
+          </section>
+
+          {/* Archive trim — whether a verified month left the sheet, and why not */}
+          <section>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+              Archive trim
+            </h3>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+              {Object.values(PLANS).map((plan) => (
+                <div key={plan.id} className="p-3 space-y-2">
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">{plan.name}</h4>
+                  <ArchiveTrim status={archive.plans[plan.id]} loading={archive.loading} />
+                </div>
+              ))}
+
+              <p className="p-3 text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
+                Read from each plan's <span className="font-mono">CONFIG</span> tab, not from the
+                dashboard path. <span className="font-mono">TRIM</span> decides whether a run may
+                move the window at all; each generated Apps Script also carries its own{' '}
+                <span className="font-mono">PLAN_SHEET_TRIM_ENABLED</span>, so a plan can hold its
+                window even while <span className="font-mono">TRIM</span> is TRUE. The line below
+                each verdict is that plan's own{' '}
+                <span className="font-mono">LAST_ARCHIVE</span>, quoted as the script wrote it.
               </p>
             </div>
           </section>

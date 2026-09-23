@@ -8,6 +8,15 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ### ✨ Features
 
+- **The Developer console now shows whether each plan's sheet actually let a month go.** The
+  trim's verdict — moved or refused — only ever reached one cell, `LAST_ARCHIVE` in that plan's
+  `CONFIG` tab, so a month that was safely in Supabase but still sitting in its sheet looked
+  exactly like one that was never due. The console reads each plan's `CONFIG` tab (each has its
+  own gid) and shows the switches plus the last run's verdict, with the refusal translated into
+  English — including the one that matters most, `PLAN_SHEET_TRIM_ENABLED`: a plan can hold its
+  window while its `CONFIG` says `ARCHIVE_TRIM = TRUE`. The recorded line is quoted verbatim
+  underneath, because it is evidence and should not be paraphrased away. Read outside the
+  dashboard's data path: a plan whose `CONFIG` cannot be read breaks only its own row
 - **SME's window moves too, so all three plans now shed an archived month.** SME's August 2026
   reached Supabase and passed the gate on 2026-09-24 (`archived 13 RAW + 13 MTD rows`), and the
   run then recorded exactly why nothing left its sheet: `Formula trim: hindi isinagawa — hindi

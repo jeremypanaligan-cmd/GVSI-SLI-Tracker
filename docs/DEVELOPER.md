@@ -82,11 +82,29 @@ opening the console by hand grants nothing.
 
 | Section | Shows |
 |---|---|
+| **Build status** | the bundle actually loaded (the hashed file name), the build version, whether Supabase is configured, and which months each plan has archived |
+| **Archive trim** | per plan, the archive switches from its own `CONFIG` tab and whether the last run moved its `IMPORTRANGE` window — with the reason when it refused |
+| **Data source diagnostics** | per plan: the live-month source, the sheet payload, the months Supabase holds, what was handed to the parser, and which province-months still need the `YTD 2026` worksheet |
 | **Active now** | username, full name, role, plan/view, session start, a live-ticking duration, and a count in the icon badge |
 | **Maintenance mode** | the switch, the message users will read, an auto-off timer, who turned it on and when, plus **Force sign-out all** |
 | **Recent sessions** | the last 25 sessions with their duration, and which were revoked — the "who came in, and for how long" trail |
 
 The console refreshes itself every 30 seconds while open.
+
+### Reading a trim refusal
+
+**Archive trim** exists because a month can be safely in Supabase and still sitting in its
+sheet, and nothing on the dashboard distinguishes that from a month that was never due. The
+verdict is the archiver's own — it is written into the plan's `CONFIG` tab as `LAST_ARCHIVE` —
+and the console reads that tab directly, outside the dashboard's data path. So a plan whose
+`CONFIG` cannot be read shows an error on its own row and nothing else changes.
+
+Two switches have to agree before a window moves. `TRIM` is the `CONFIG` row
+(`ARCHIVE_TRIM`, `TRUE` by default) and decides whether any run may shrink a sheet at all;
+`PLAN_SHEET_TRIM_ENABLED` is a constant inside each generated Apps Script and answers
+whether *that* plan's history is certifiably in the database yet. A plan can therefore hold
+its window while `TRIM` reads `TRUE` — which is exactly the case the reason line names, and
+the reason the console shows both.
 
 ## Maintenance mode
 

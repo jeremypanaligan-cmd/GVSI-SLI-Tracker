@@ -75,27 +75,36 @@ constant is the one place to update.
 
 <https://docs.google.com/spreadsheets/d/1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0>
 
-Tabs: `FIBERX NEW REPORT`, `RAW DATA`, `MTD`
+Tabs: `FIBERX NEW REPORT`, `RAW DATA`, `MTD`, `CONFIG`
 
 | Tab | gid | Read by |
 |-----|-----|---------|
 | `FIBERX NEW REPORT` | — | **Nothing in the app** — upstream encoding tab |
 | `RAW DATA` | `486719298` | Daily / Provincial / Compare / Export |
 | `MTD` | `1061751267` | Achievement, target, month-to-date figures |
+| `CONFIG` | `1630783385` | **Developer console → Archive trim only.** The archive switches and `LAST_ARCHIVE`, the audit line the Apps Script writes; nothing on the dashboard reads it |
 
 ### 3. BIDA SLI TRACKER DB
 
 <https://docs.google.com/spreadsheets/d/1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M>
 
-Tabs: `BIDA NEW REPORT`, `RAW DATA`, `MTD` — same gids as FIBERX (`486719298`, `1061751267`).
+Tabs: `BIDA NEW REPORT`, `RAW DATA`, `MTD`, `CONFIG`, `_ARCHIVE_BACKUP`
+
+`RAW DATA` and `MTD` share FIBERX's gids (`486719298`, `1061751267`); `CONFIG` does **not**
+(`1143583309`). `_ARCHIVE_BACKUP` holds the rows the archive copied before a hand-encoded
+tab was purged, and is read by nothing.
 
 ### 4. SME SLI TRACKER DB
 
 <https://docs.google.com/spreadsheets/d/10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY>
 
-Tabs: `SME NEW REPORT`, `RAW DATA`, `MTD` — same gids as FIBERX (`486719298`, `1061751267`).
+Tabs: `SME NEW REPORT`, `RAW DATA`, `MTD`, `CONFIG`
 
-> The three per-plan sheets are structurally identical. Only the plan name differs.
+`RAW DATA` and `MTD` share FIBERX's gids (`486719298`, `1061751267`); `CONFIG` is
+`1236818076`.
+
+> The three per-plan sheets share a structure and two gids, but every `CONFIG` tab has its
+own — they were created independently. Check the gid before assuming it matches.
 
 ### 5. Supabase — GVSI NetPulse
 
@@ -128,6 +137,7 @@ lives only in the Apps Script's Script Properties.
 |-----------------|-----------|-------|--------------|
 | Login / sign out | `LoginScreen`, `AuthContext` | Supabase RPC `verify_login` → `sli_users` | No (shared) |
 | Active-user roster, maintenance switch | `DeveloperPanel` | Supabase RPCs `active_users`, `recent_sessions`, `maintenance_set`, `force_signout_all` | No (shared) |
+| Archive trim verdict (Developer console) | `DeveloperPanel` | Plan sheet → `CONFIG` (`LAST_ARCHIVE`), one tab per plan | Yes |
 | Maintenance gate for non-Developers | `MaintenanceScreen` | Supabase RPC `presence_ping` → `maintenance` | No (shared) |
 | Achievement Rate, Total Incoming, Total Completed, Monthly Target, To Go, Projected month-end | `ExecutiveOverview` | Plan sheet → `MTD` | Yes |
 | Month-over-month delta (`+x pts vs <month>`) | `ExecutiveOverview` | Plan sheet → `MTD` (month sections), plus Supabase `sli_mtd` for archived months | Yes |
