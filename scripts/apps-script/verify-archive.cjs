@@ -96,10 +96,12 @@ const PLANS = {
     script: 'SMESCRIPT.gs',
     sheetId: '10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY',
     tabs: { 'SME NEW REPORT': '1425609870', 'RAW DATA': '486719298', 'MTD': '1061751267' },
-    // Authored like FIBERX's with whole columns, `!A:M`, so the third mirror keeps proving
-    // the absent row is read as row 1. The gid matters here too: this workbook holds both
-    // `SME DAILY` and `Copy of SME DAILY`, so a gid-less export could read the wrong tab.
-    mirrorFormula: `=IMPORTRANGE("https://docs.google.com/spreadsheets/d/1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0/edit", "'SME DAILY'!A:M")`,
+    // Authored like FIBERX's with whole columns, but SME's window is wider — `A:O` — because
+    // the report now carries the MRC (GROSS/NET) and % columns. It still drops the start
+    // row, so the third mirror keeps proving the absent row is read as row 1. The gid
+    // matters here too: this workbook holds both `SME DAILY` and `Copy of SME DAILY`, so a
+    // gid-less export could read the wrong tab.
+    mirrorFormula: `=IMPORTRANGE("https://docs.google.com/spreadsheets/d/1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0/edit", "'SME DAILY'!A:O")`,
     mirrorSource: {
       id: '1fTxL4PYEu1ThGGmOIISf9E2h1bPv41TKjiQmAiNZ3W0',
       tab: 'SME DAILY',
@@ -718,11 +720,13 @@ function main() {
         console.log(`  sli_raw_daily — ${rawRows.length} rows (${month.key})`)
         rawRows.forEach((r) => console.log(`    ${r.report_date}  ${String(r.area).padEnd(18)} ` +
           `overall=${String(r.is_overall_total).padEnd(5)} bf=${r.bf} inc=${r.inc} ` +
-          `comp=${r.total_completed} co=${r.carry_over} mtd=${r.mtd} target=${r.target} pct=${JSON.stringify(r.pct)}`))
+          `comp=${r.total_completed} co=${r.carry_over} mtd=${r.mtd} gross=${r.gross} net=${r.net} ` +
+          `target=${r.target} pct=${JSON.stringify(r.pct)}`))
         console.log(`  sli_mtd — ${mtdRows.length} rows (${month.key})`)
         mtdRows.forEach((r) => console.log(`    ${String(r.area).padEnd(18)} ` +
           `overall=${String(r.is_overall_total).padEnd(5)} completed=${r.total_completed} ` +
-          `last_mtd=${r.last_mtd} target=${r.target} last_pct=${JSON.stringify(r.last_pct)} incoming=${r.total_incoming}`))
+          `last_mtd=${r.last_mtd} gross=${r.gross} net=${r.net} target=${r.target} ` +
+          `last_pct=${JSON.stringify(r.last_pct)} incoming=${r.total_incoming}`))
       })
     }
   }
@@ -750,6 +754,9 @@ function main() {
   const mirror = () => sheets[reportTabName]
   const anchorFormula = () => (mirror() ? mirror().getRange(1, 1).getFormula() : '')
   const windowMonths = () => (mirror() ? context.mirrorMonthKeys_() : [])
+  // The column the mirror's window ends at — `M` on BIDA and FIBERX, `O` on SME. Reads it
+  // from the fixture so the trim checks below do not pin every plan to BIDA's width.
+  const mirrorEndCol = (plan.mirrorFormula.match(/!A\d*:([A-Z]+)/) || [])[1] || 'M'
   const sourceRows = (() => {
     const src = plan.mirrorSource && externals[plan.mirrorSource.id]
     return src ? src[plan.mirrorSource.tab].rows : null
@@ -837,7 +844,7 @@ function main() {
     context.archiveClosedMonths()
     const trimOnNote = auditLine()
     check('with ARCHIVE_TRIM = TRUE the run previews the move',
-      /→ A\d+:M/.test(trimOnNote), trimOnNote)
+      new RegExp(`→ A\\d+:${mirrorEndCol}`).test(trimOnNote), trimOnNote)
     check('the preview names the month it would start at', /magsisimula sa 2026-\d\d/.test(trimOnNote),
       trimOnNote)
     resetMirror()
@@ -885,9 +892,43 @@ function main() {
       /walang binura/.test(e2e) && purgeLog.length === 0, e2e)
     check('the window now starts at September', windowMonths()[0] === '2026-09',
       windowMonths().join(', '))
-    check('and the formula points past row 1', /!A\d+:M/.test(anchorFormula()) &&
-      !/!A1:M/.test(anchorFormula()), anchorFormula())
+    check('and the formula points past row 1',
+      new RegExp(`!A\\d+:${mirrorEndCol}`).test(anchorFormula()) &&
+      !new RegExp(`!A1:${mirrorEndCol}`).test(anchorFormula()), anchorFormula())
     resetMirror()
+
+    if (planId === 'sme') {
+      rule('4i. SME collections — GROSS / NET / TARGET reach the archive')
+      context.fullSync()
+      const rawSept = context.collectRawArchiveRows_('2026-09')
+      const benguetSept = rawSept.filter((r) => !r.is_overall_total && r.area === 'Benguet')
+      const benguet25 = benguetSept.find((r) => r.report_date === '2026-09-25')
+      check('September imports every Benguet day', benguetSept.length >= 25,
+        `${benguetSept.length} days`)
+      check('GROSS is read from column L', benguet25 && benguet25.gross === 47027,
+        benguet25 && benguet25.gross)
+      check('NET is read from column M', benguet25 && benguet25.net === 41988,
+        benguet25 && benguet25.net)
+      check('TARGET is read from column N, not the GROSS that used to sit there',
+        benguet25 && benguet25.target === 62098, benguet25 && benguet25.target)
+      check("the sheet's own % is kept verbatim", benguet25 && benguet25.pct === '67.62%',
+        benguet25 && JSON.stringify(benguet25.pct))
+
+      const mtdSept = context.deriveMtdArchiveRows_(rawSept, '2026-09', 'September 2026')
+      const benguetMtd = mtdSept.filter((r) => !r.is_overall_total && r.area === 'Benguet')[0]
+      const overallMtd = mtdSept.filter((r) => r.is_overall_total)[0]
+      check('MTD carries the collection, not just the target',
+        benguetMtd && benguetMtd.gross === 47027 && benguetMtd.net === 41988,
+        benguetMtd && `${benguetMtd.gross} / ${benguetMtd.net}`)
+      check('and reads the last day that carries a target, not the blank future blocks',
+        benguetMtd && benguetMtd.target === 62098, benguetMtd && benguetMtd.target)
+      check('the OVER ALL total reports that day too',
+        overallMtd && overallMtd.gross === 312114 && overallMtd.target === 307529,
+        overallMtd && `${overallMtd && overallMtd.gross} / ${overallMtd && overallMtd.target}`)
+      check("LAST % is the sheet's NET / TARGET", overallMtd && overallMtd.last_pct === '90.62%',
+        overallMtd && JSON.stringify(overallMtd.last_pct))
+      resetMirror()
+    }
 
     rule('4c. Guard — a month left behind blocks the trim')
     resetMirror()
@@ -939,8 +980,9 @@ function main() {
     context.trimPlanSheetFormula_(['2026-08'], false)
     const narrowed = anchorFormula()
     context.restorePlanSheetFormula()
-    check('it was narrowed first', !/!A1:M/.test(narrowed), narrowed)
-    check('the range is back to A1:M', /!A1:M/.test(anchorFormula()), anchorFormula())
+    check('it was narrowed first', !new RegExp(`!A1:${mirrorEndCol}`).test(narrowed), narrowed)
+    check(`the range is back to A1:${mirrorEndCol}`,
+      new RegExp(`!A1:${mirrorEndCol}`).test(anchorFormula()), anchorFormula())
     check('the whole history is in the window again', windowMonths().includes('2026-08'),
       windowMonths().join(', '))
   } else {

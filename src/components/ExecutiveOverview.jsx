@@ -1,4 +1,4 @@
-import { getBadgeStyle, getTodayStr, projectRunRate, getPaceBadgeStyle } from '../utils/dataProcessor'
+import { getBadgeStyle, getTodayStr, projectRunRate, getPaceBadgeStyle, formatPeso } from '../utils/dataProcessor'
 import DatePicker from './DatePicker'
 import Sparkline from './Sparkline'
 import VelocityReport from './VelocityReport'
@@ -22,6 +22,9 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
   }
 
   const { mtd, daily } = metrics
+  // SME measures collected money against a peso target, so its progress is NET and its
+  // money figures are written with ₱. Other plans count completed installations.
+  const collectionBased = Boolean(plan?.collectionBased)
   const mtdBadge = mtd.pct !== null && !isNaN(mtd.pct) ? getBadgeStyle(mtd.pct + '%') : null
   const progressPct = mtd.pct !== null && !isNaN(mtd.pct) ? Math.min(mtd.pct, 100) : 0
   const dailyCompleted = daily?.totalCompleted ?? 0
@@ -44,9 +47,12 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
   const isPastMonth = sel && cur && (sel.y < cur.y || (sel.y === cur.y && sel.m < cur.m))
 
   // Run-rate projection (Phase 1 — Task 6) — skip for past months
-  const projection = (!isPastMonth && mtd.totalCompleted != null && mtd.target != null && !isNaN(mtd.totalCompleted) && !isNaN(mtd.target))
-    ? projectRunRate(mtd.totalCompleted, mtd.target, latestDataDate || getTodayStr())
+  // The run-rate is computed on what the target is measured against — NET on SME, ticket
+  // completions elsewhere (completedForTarget already picks the right one).
+  const projection = (!isPastMonth && mtd.completedForTarget != null && mtd.target != null && !isNaN(mtd.completedForTarget) && !isNaN(mtd.target))
+    ? projectRunRate(mtd.completedForTarget, mtd.target, latestDataDate || getTodayStr())
     : null
+  const money = (n) => (collectionBased ? formatPeso(Math.round(n)) : fmt(Math.round(n)))
   const paceBadge = projection ? getPaceBadgeStyle(projection.pace) : null
 
   const pc = plan?.accentClasses || {}
@@ -135,7 +141,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
               </p>
               {projection && (
                 <p className={`text-[11px] font-semibold mt-1 ${paceBadge?.color || 'text-slate-500 dark:text-slate-400'}`}>
-                  Projected month-end: {fmt(Math.round(projection.projected))} ({projection.projectedPct.toFixed(0)}% of target)
+                  Projected month-end: {money(projection.projected)} ({projection.projectedPct.toFixed(0)}% of target)
                 </p>
               )}
               {tr30 && tr30.values.length >= 2 && (
@@ -185,7 +191,9 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
           </div>
         </div>
 
-        {/* Bottom row: Total Completed + Target + To Go */}
+        {/* Bottom row: Total Incoming plus either the count cards (completed / target /
+            to go) or, on a plan that tracks money, the collection cards (gross / net /
+            target, with the gap to target under it). */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="group rounded-xl border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-[#0E1622] p-4 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 dark:hover:border-slate-700/60 hover:shadow-md min-h-[100px]">
             <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Total Incoming</p>
@@ -193,6 +201,35 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
             <p className="text-[11px] text-slate-500 mt-1.5">incoming tickets</p>
           </div>
 
+          {collectionBased && (
+            <>
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between">
+                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Gross Collection</p>
+                <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">{formatPeso(mtd.gross)}</span>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">month-to-date, MRC</p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between">
+                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Net Collection</p>
+                <span className={`text-3xl sm:text-4xl font-black tracking-tight ${pc.text || 'text-teal-600 dark:text-teal-400'}`}>{formatPeso(mtd.net)}</span>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">measured against the target</p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between">
+                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Monthly Target</p>
+                <span className={`text-3xl sm:text-4xl font-black tracking-tight ${pc.text || 'text-teal-600 dark:text-teal-400'}`}>{formatPeso(mtd.target)}</span>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
+                  {mtd.variance >= 0
+                    ? <span className="font-semibold text-emerald-600 dark:text-emerald-400">Exceeded by {formatPeso(mtd.variance)}</span>
+                    : <span className="font-semibold text-amber-600 dark:text-amber-400">{formatPeso(Math.abs(mtd.variance))} to go</span>
+                  }
+                </p>
+              </div>
+            </>
+          )}
+
+          {!collectionBased && (
+          <>
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between">
             <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Total Completed</p>
             <div>
@@ -243,6 +280,8 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
               }
             </p>
           </div>
+          </>
+          )}
         </div>
       </section>
 

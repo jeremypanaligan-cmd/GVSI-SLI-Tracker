@@ -14,7 +14,7 @@ const HEADERS = [
   'Date', 'AREA', 'BF', 'INC', 'Total Jo',
   'COMPLETED FROM TOTAL', 'COMPLETED FROM RJO', 'TOTAL COMPLETED',
   'RJO INCOMING', 'RJO REDISPATCHED', 'TOTAL RJO',
-  'Carry Over', 'MTD', 'TARGET', '%'
+  'Carry Over', 'MTD', 'GROSS', 'NET', 'TARGET', '%'
 ]
 
 /**
@@ -71,6 +71,8 @@ export function exportRawDataCSV(rawDaily, planId = 'fiberx') {
           num(area.totalRjo),
           num(area.carryOver),
           num(area.mtd),
+          num(area.gross),
+          num(area.net),
           num(area.target),
           num(area.pct),
         ].join(','))
@@ -94,6 +96,8 @@ export function exportRawDataCSV(rawDaily, planId = 'fiberx') {
         num(t.totalRjo),
         num(t.carryOver),
         num(t.mtd),
+        num(t.gross),
+        num(t.net),
         num(t.target),
         num(t.pct),
       ].join(','))

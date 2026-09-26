@@ -75,6 +75,11 @@ are no longer used.
 
 ### Column mapping
 
+Up to `MTD` the two layouts are identical. They part company at `TARGET`: **SME's MRC block**
+inserted a `GROSS` and a `NET` column, pushing `TARGET` and `%` two places right (17 columns in
+all), while BIDA and FIBERX keep the 15-column shape. The import reads each header **by name**,
+so the same script serves both — a header a sheet does not have simply reads as blank.
+
 | RAW DATA | ← NEW REPORT | Notes |
 |----------|--------------|-------|
 | A `Date` | day block header | from `as of __…__` |
@@ -90,8 +95,14 @@ are no longer used.
 | K `TOTAL RJO` | — | computed: H + I |
 | L `Carry Over` | J `CARRY OVER` | |
 | M `MTD` | K | |
-| N `TARGET` | L | |
-| O `%` | M | |
+| N `GROSS` | L `GROSS` | **SME only.** Month-to-date gross collection (MRC) |
+| O `NET` | M `NET` | **SME only.** What the target is measured against |
+| N `TARGET` | L `TARGET` | BIDA / FIBERX. **SME: column P** |
+| O `%` | M `%` | BIDA / FIBERX. **SME: column Q**, the sheet's own text |
+
+> On SME the target is a **peso** figure and the achievement `%` is `NET ÷ TARGET` — not
+> `GROSS`, and not the counts on the left. A month whose target is not filled yet reads `0`,
+> and its `%` is `#DIV/0!`; the app shows those as `—` rather than `0%`.
 
 ## Step 2 — Generate: RAW DATA → MTD
 
@@ -103,7 +114,8 @@ are no longer used.
 3. **The area list for a month is taken from that month's last day block.** A province that
    appears on the last day appears in the month — the sheet is the only area list there is.
 4. Values that accumulate over the month are summed across every day of the month; snapshot
-   values (`LAST MTD`, `TARGET`, `LAST %`) are taken from the last day. `LAST MTD` and `TARGET`
+   values (`LAST MTD`, `GROSS`/`NET`, `TARGET`, `LAST %`) are taken from the last day a
+   target is filled on. `LAST MTD` and `TARGET`
    of the `OVER ALL TOTAL` row come from the **sheet's own total row**, not from a re-sum, so
    that row must list every row the total counted.
 5. An `OVER ALL TOTAL` row (black/teal styling) closes each month section.
@@ -119,10 +131,18 @@ are no longer used.
 | E `THIS MO. RJO` | Sum of `RJO INCOMING` |
 | F `PREV MOS. RJO` | Sum of `RJO REDISPATCHED` |
 | G `TOTAL RJO` | E + F |
-| H `LAST MTD` | From the last day of the month |
-| I `TARGET` | From the last day of the month |
-| J `LAST %` | Achievement % from the last day |
-| K `TOTAL INCOMING` | Sum of `INC` for the month |
+| H `LAST MTD` | From the last day that carries a target |
+| I `GROSS` | **SME only.** From the last day that carries a target |
+| J `NET` | **SME only.** From the last day that carries a target |
+| I `TARGET` | From the last day that carries a target. **SME: column K** |
+| J `LAST %` | Achievement % from that same day. **SME: column L** |
+| K `TOTAL INCOMING` | Sum of `INC` for the month. **SME: column M** |
+
+On SME the snapshot columns (`LAST MTD`, `GROSS`, `NET`, `TARGET`, `LAST %`) come from the
+**last day of the month whose `TARGET` is filled**, not the literal last row: Sept 26–30 sit
+in SME's block with `TARGET = 0` and `% = #DIV/0!` until MRC is encoded, and reading those
+would report every area at `0%` for the second half of the month. The archive applies the
+same rule when it derives these rows.
 
 ## Step 3 — Archive: a closed month moves to Supabase
 

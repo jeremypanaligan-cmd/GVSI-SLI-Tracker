@@ -1031,7 +1031,7 @@ export default function App() {
 
             {/* Daily table */}
             <div className="flex-1 overflow-auto">
-              <DailyTable dateData={dailyBlock} refDate={selectedDate || latestDataDate} areaTrends={areaTrends} accent={currentPlan.accentClasses} />
+              <DailyTable dateData={dailyBlock} refDate={selectedDate || latestDataDate} areaTrends={areaTrends} accent={currentPlan.accentClasses} collectionBased={Boolean(currentPlan.collectionBased)} />
 
               {/* Year-to-date, under the daily block — the second half of the
                   Provincial Breakdown */}

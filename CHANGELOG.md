@@ -6,6 +6,61 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 💰 SME MRC Collections — GROSS / NET / TARGET
+
+SME's `NEW REPORT` grew four columns (`GROSS`, `NET`, `TARGET`, `%`) when its MRC collection
+block landed, and the tracker was reading the old layout: it took `TARGET` from what is now
+the `GROSS` column, so every SME target was **`0`** and `%` was the collection figure divided
+by nothing. The target and its collections are now carried end to end — sheet → `RAW DATA` →
+`MTD` → dashboard → Supabase archive.
+
+- **A plan can now measure money instead of counts.** `src/config/plans.js` gains
+  `collectionBased: true` on SME. Gross Collection, Net Collection and Monthly Target replace
+  the Total Completed / Monthly Target / To Go trio on the Executive Overview, and `GROSS` /
+  `NET` join the Provincial table before its pinned `MTD · TARGET · %` group. BIDA and FIBERX
+  are untouched — they still read their unconditional rows, and their `RAW DATA` / `MTD`
+  keep the 15- and 11-column shapes they always had
+- **Achievement is measured on `NET`, not `GROSS`.** The target is a net figure, so `%`,
+  `To Go`, `Variance` and the pace badge are all `NET ÷ TARGET`. `GROSS` is carried beside it
+  but never used as the yardstick, and the two are formatted as pesos (`₱470,270`) rather than
+  bare counts
+- **The workbook, not the script, decides the columns.** Both the import and the archive read
+  `RAW DATA` / `NEW REPORT` by **header name** (`GROSS`, `NET`, `TARGET`, `%`), so the same
+  script serves SME's 17-column block and the 15-column one the other plans still use — a
+  missing header simply reads as `null`. The old code's positional reads (`row[11]` for the
+  target) are what broke SME in the first place
+- **A month whose target is not filled yet no longer reports a false achievement.** SME's
+  September 26–30 blocks have `TARGET = 0` / `% = #DIV/0!` until MRC is entered, and Aurora
+  has a blank target; a blank or zero target now renders as `—`, and the MTD report-day rule
+  takes the month's figures from the **last day that actually has a target** rather than from
+  a blank trailing row
+- **`SMESCRIPT.gs` must be re-pasted and a Full Sync run** before any of this is visible: the
+  app reads `RAW DATA` / `MTD`, and only the import rewrites them. Then **Archive Closed
+  Months to Supabase** stores each closed month's `gross` / `net` / `target`.
+
+### 🗄️ Archive — collections columns
+
+- **`sli_raw_daily` and `sli_mtd` gain `gross` and `net`** (`numeric`), so a closed month's
+  collections are archived alongside the counts. Migration `sme_collections_columns`, in
+  `supabase/schema.sql` and applied to the project; already present in production and
+  verified via `information_schema.columns`
+- The archive now derives `LAST MTD` / `GROSS` / `NET` / `TARGET` / `LAST %` by header name
+  and takes them from the report day, and the harness (`verify-archive.cjs`) proves it against
+  SME's real block: `GROSS = 47027`, `NET = 41988`, `TARGET = 62098` read from column `N`,
+  `%` `"67.62%"` verbatim, and the whole-block `90.62%`. **39 checks pass on SME**; BIDA and
+  FIBERX still pass their 30
+- The SME fixture's mirror is now `'SME DAILY'!A:O`, and the trim/preview/rollback checks
+  derive the end column from the fixture instead of assuming `M`
+
+### 📚 Documentation
+
+- `docs/DATA_PIPELINE.md` — the per-plan `RAW DATA` / `MTD` shapes: SME's 17- and 13-column
+  blocks with `GROSS` / `NET` before `TARGET`, and the header-name rule
+- `docs/ARCHIVE.md` — the collections columns and the report-day rule in the derived MTD
+  figures; the mirror's end column is now per plan (`A19:M` on BIDA/FIBERX, `A19:O` on SME)
+- `docs/DATASOURCE.md` — where the collection figures are read (Executive, Provincial,
+  Compare) and which archive columns hold them
+
 ## [1.18.0] — 2026-09-24
 
 ### ✨ Features

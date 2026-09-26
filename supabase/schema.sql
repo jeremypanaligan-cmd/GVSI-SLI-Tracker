@@ -10,6 +10,7 @@
 --   maintenance_set_json_null_guard -- JSON null is not SQL NULL; see maintenance_set
 --   hardening_advisor_fixes     -- see the end of this file
 --   archive_public_read         -- anon may READ the two archive tables; see the end
+--   sme_collections_columns     -- GROSS / NET for SME's MRC block; see the archive tables
 --
 -- Two jobs live here:
 --
@@ -39,8 +40,11 @@ create table if not exists public.sli_raw_daily (
   bf numeric, inc numeric, total_jo numeric,
   comp_from_total numeric, comp_from_rjo numeric, total_completed numeric,
   rjo_incoming numeric, rjo_redispatched numeric, total_rjo numeric,
-  carry_over numeric, mtd numeric, target numeric,
+  carry_over numeric, mtd numeric, gross numeric, net numeric, target numeric,
   pct text,                             -- text: preserves '#DIV/0!' verbatim
+  -- gross / net are SME's MRC collection (the sheet's L and M). BIDA and FIBERX have no
+  -- such columns, so their rows store NULL rather than a zero that would read as a figure
+  -- nobody collected. `target` is a peso figure on SME and a ticket count elsewhere.
   row_order integer,
   archived_at timestamptz not null default now(),
   constraint sli_raw_daily_key unique (plan, report_date, area)
@@ -57,7 +61,8 @@ create table if not exists public.sli_mtd (
   is_overall_total boolean not null default false,
   comp_from_total numeric, comp_from_rjo numeric, total_completed numeric,
   this_mo_rjo numeric, prev_mos_rjo numeric, total_rjo numeric,
-  last_mtd numeric, target numeric, total_incoming numeric,
+  last_mtd numeric, gross numeric, net numeric, target numeric, total_incoming numeric,
+  -- gross / net: SME only, same as sli_raw_daily. NULL on BIDA and FIBERX.
   last_pct text,
   row_order integer,
   archived_at timestamptz not null default now(),

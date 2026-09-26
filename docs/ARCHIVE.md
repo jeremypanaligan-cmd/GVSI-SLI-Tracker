@@ -61,7 +61,7 @@ sheet. A deletion therefore stays opt-in, and a move does not.
 | Sheet | How it shrinks | What is written |
 |---|---|---|
 | **hand-encoded** — cells someone typed | the month's day blocks are **deleted** | `deleteRows`, after copying them into `_ARCHIVE_BACKUP` |
-| **a mirror** — one spilled `=IMPORTRANGE(…)` | the range's **start row moves** past the archived month | `A1` only: `"'BIDA DAILY'!A1:M"` → `"'BIDA DAILY'!A19:M"` |
+| **a mirror** — one spilled `=IMPORTRANGE(…)` | the range's **start row moves** past the archived month | `A1` only: `"'BIDA DAILY'!A1:M"` → `"'BIDA DAILY'!A19:M"` (SME's is `A1:O` → `A19:O`, its wider MRC block) |
 
 A mirror cannot be deleted from. Its rows are the *output* of an array formula, so removing
 them does not remove data — it tears the formula out of `A1`, which is what happened to
@@ -124,8 +124,8 @@ lets go of a month as soon as Supabase is verified to hold it. Neither flag is
 `ARCHIVE_PURGE` — that one has nothing to do with mirrors.
 
 The window is read from the plan's own `A1`, and the start row is optional there: `'FIBERX
-DAILY'!A:M` and `'SME DAILY'!A:M` name the same window as `A1:M`, so they are read as row 1
-rather than refused. Whatever is read, the formula written back is always the explicit
+DAILY'!A:M` and `'SME DAILY'!A:O` name the same window as `A1:M` / `A1:O`, so they are read
+as row 1 rather than refused. Whatever is read, the formula written back is always the explicit
 `A19:M` form. (Google's own `xlsx` export wraps this cell in
 `IFERROR(__xludf.DUMMYFUNCTION("IMPORTRANGE(…)"), <cached value>)`; that wrapper is export
 noise, not the formula in the sheet — `A1` really holds a plain `IMPORTRANGE`.)
@@ -160,8 +160,10 @@ leaving the app with a month it could not see.
 On 2026-09-21 that window was hit twice on BIDA August. Nothing was lost — the second time
 the gate refused the purge — but the dependency itself is the bug. The MTD figures are
 nothing more than sums over `RAW DATA`: each area summed across the month's days, with
-`LAST MTD`, `TARGET` and `LAST %` taken from the last day. So the archive derives them from
-the rows it already holds instead of asking the sheet a second time.
+`LAST MTD`, `GROSS`/`NET`, `TARGET` and `LAST %` taken from the **last day that carries a
+target** — Sept 26–30 sit in SME's block with `TARGET = 0` and `% = #DIV/0!` until MRC is
+encoded, so the literal last row would archive every area at a false zero. So the archive
+derives them from the rows it already holds instead of asking the sheet a second time.
 
 A derived row is checked against the live `MTD` tab for all three plans and every month the
 sheets hold — identical on every field. Two details are deliberately carried over from
@@ -210,7 +212,8 @@ months, and the sheet keeps growing as before.
 
 > **A mirror is never deleted from.** `BIDA NEW REPORT` (and its siblings) is one
 > `=IMPORTRANGE("…", "'BIDA DAILY'!A1:M")` — `'FIBERX DAILY'!A:M` on FIBERX, the same window
-> written with whole columns — spilling the whole report, so its rows are the
+> written with whole columns, and `'SME DAILY'!A1:O` on SME, whose MRC block is two columns
+> wider — spilling the whole report, so its rows are the
 > *output* of an array formula rather than cells anyone typed. `planSheetIsFormulaDriven_()`
 > classifies the tab before anything destructive runs: a formula means the window moves, and
 > `deleteRows` is not called at all; a tab with no formula takes the delete path and is

@@ -3,12 +3,12 @@
  * Shows area rows + OVER ALL TOTAL with achievement badges.
  * Columns are sortable by clicking header.
  * 
- * RAW DATA v8 columns:
+ * RAW DATA columns (SME adds GROSS / NET before TARGET):
  *   Date | AREA | BF | INC | Total Jo | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
- *   | RJO INCOMING | RJO RD | TOTAL RJO | Carry Over | MTD | TARGET | %
+ *   | RJO INCOMING | RJO RD | TOTAL RJO | Carry Over | MTD | GROSS | NET | TARGET | %
  */
 import { useState, useMemo } from 'react'
-import { formatNumber, getBadgeStyle, computeAreaPace, getPaceBadgeStyle } from '../utils/dataProcessor'
+import { formatNumber, formatPeso, getBadgeStyle, computeAreaPace, getPaceBadgeStyle } from '../utils/dataProcessor'
 import Sparkline from './Sparkline'
 
 const PACE_FILTERS = [
@@ -20,7 +20,7 @@ const PACE_FILTERS = [
 
 // PACE / 7D TREND are placed before the right-sticky group so the pinned
 // MTD · TARGET · % columns never cover them when scrolling.
-const COLUMNS = [
+const BASE_COLUMNS = [
   { key: 'area', label: 'AREA', tooltip: 'Provincial / Region Area', sticky: true, sortable: true, width: 150 },
   { key: 'bf', label: 'BF', tooltip: 'Brought Forward', align: 'right', sortable: true, width: 72 },
   { key: 'inc', label: 'INC', tooltip: 'Incoming Tickets', align: 'right', sortable: true, width: 72 },
@@ -41,6 +41,24 @@ const COLUMNS = [
   { key: 'target', label: 'TARGET', tooltip: 'Monthly Target Objective', align: 'right', sortable: true, stickyRight: 84, width: 96 },
   { key: 'pct', label: '%', tooltip: 'Achievement Percentage', align: 'center', highlight: true, sortable: true, stickyRight: 0, width: 84 },
 ]
+
+// SME's MRC collection, shown only on a plan whose target is money. They sit immediately
+// before the pinned MTD · TARGET · % group, so the group's right-edge offsets do not move.
+const COLLECTION_COLUMNS = [
+  { key: 'gross', label: 'GROSS', tooltip: 'Month-to-date gross collection (MRC)', align: 'right', sortable: true, width: 112 },
+  { key: 'net', label: 'NET', tooltip: 'Month-to-date net collection — what the target is measured against', align: 'right', bold: true, sortable: true, width: 112 },
+]
+
+/** The table's columns: the base set, with GROSS / NET folded in for a collection plan. */
+function buildColumns(collectionBased) {
+  if (!collectionBased) return BASE_COLUMNS
+  const out = []
+  for (const col of BASE_COLUMNS) {
+    if (col.key === 'mtd') out.push(...COLLECTION_COLUMNS)
+    out.push(col)
+  }
+  return out
+}
 
 function Td({ children, align = 'left', bold = false, highlight = false, className = '', sticky = false, stickyRight, bgColor = '', width }) {
   const alignClass = align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''
@@ -64,8 +82,8 @@ function PctBadge({ value }) {
   )
 }
 
-function PaceBadge({ entry, refDate }) {
-  const proj = refDate ? computeAreaPace(entry, refDate) : null
+function PaceBadge({ entry, refDate, collectionBased = false }) {
+  const proj = refDate ? computeAreaPace(entry, refDate, collectionBased) : null
   if (!proj) return <span className="text-slate-300 dark:text-slate-600">—</span>
   const badge = getPaceBadgeStyle(proj.pace)
   return (
@@ -96,9 +114,11 @@ const DEFAULT_TOTAL_ACCENT = {
  * layout — province name + pace badge + MTD/TARGET ("due") on the left,
  * achievement % ("amount") on the right.
  */
-function MobileRow({ entry, refDate, overall, totalAccent = DEFAULT_TOTAL_ACCENT }) {
+function MobileRow({ entry, refDate, overall, collectionBased = false, totalAccent = DEFAULT_TOTAL_ACCENT }) {
   const badge = getBadgeStyle(entry.pct)
   const pctDisplay = Number.isFinite(entry.pct) ? formatNumber(entry.pct, '%') : '—'
+  // On a collection plan the target is money, so it is written as money here too.
+  const target = collectionBased ? formatPeso(entry.target) : formatNumber(entry.target)
   return (
     <div className={`flex items-center justify-between gap-3 px-3.5 py-3 ${overall ? totalAccent.bg : ''}`}>
       <div className="min-w-0">
@@ -106,11 +126,17 @@ function MobileRow({ entry, refDate, overall, totalAccent = DEFAULT_TOTAL_ACCENT
           {entry.area}
         </p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
-          <PaceBadge entry={entry} refDate={refDate} />
+          <PaceBadge entry={entry} refDate={refDate} collectionBased={collectionBased} />
           <span className="text-xs text-slate-500 dark:text-slate-300">
             <span className="font-bold text-slate-700 dark:text-slate-100">MTD {formatNumber(entry.mtd)}</span>
+            {collectionBased && (
+              <>
+                <span className="mx-1 opacity-60">·</span>
+                <span className="font-bold text-slate-700 dark:text-slate-100">NET {formatPeso(entry.net)}</span>
+              </>
+            )}
             <span className="mx-1 opacity-60">·</span>
-            <span className="font-bold text-slate-700 dark:text-slate-100">TGT {formatNumber(entry.target)}</span>
+            <span className="font-bold text-slate-700 dark:text-slate-100">TGT {target}</span>
           </span>
         </div>
       </div>
@@ -163,7 +189,7 @@ function SortIcon({ active, direction, colorClass = 'text-teal-500 dark:text-tea
   )
 }
 
-export default function DailyTable({ dateData, refDate, areaTrends, accent }) {
+export default function DailyTable({ dateData, refDate, areaTrends, accent, collectionBased = false }) {
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
   const [search, setSearch] = useState('')
@@ -172,6 +198,7 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent }) {
   // Table chrome follows the selected plan. The header strip needs an *opaque*
   // background because the AREA / MTD·TARGET·% cells are sticky — a translucent
   // tint would let the columns scrolling underneath show through.
+  const columns = useMemo(() => buildColumns(collectionBased), [collectionBased])
   const headAccent = accent?.head || DEFAULT_HEAD_ACCENT
   const totalAccent = accent?.total || DEFAULT_TOTAL_ACCENT
   const chipActive = accent?.bg
@@ -277,11 +304,11 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent }) {
       {/* Mobile card list (< sm) — two-line rows */}
       <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-800/40">
         {filteredAreas.map((entry) => (
-          <MobileRow key={entry.area} entry={entry} refDate={refDate} />
+          <MobileRow key={entry.area} entry={entry} refDate={refDate} collectionBased={collectionBased} />
         ))}
 
         {dateData.overallTotal && (
-          <MobileRow entry={dateData.overallTotal} refDate={refDate} overall totalAccent={totalAccent} />
+          <MobileRow entry={dateData.overallTotal} refDate={refDate} overall collectionBased={collectionBased} totalAccent={totalAccent} />
         )}
 
         {filteredAreas.length === 0 && (
@@ -296,7 +323,7 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent }) {
         <table className="w-full border-collapse" style={{ minWidth: '1100px' }}>
         <thead>
           <tr className={`${headAccent.bg} border-b ${headAccent.border}`}>
-            {COLUMNS.map((col) => (
+            {columns.map((col) => (
               <th
                 key={col.key}
                 onClick={() => col.sortable && handleSort(col.key)}
@@ -338,10 +365,16 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent }) {
               <Td align="right">{formatNumber(entry.rjoRedispatched)}</Td>
               <Td align="right" bold>{formatNumber(entry.totalRjo)}</Td>
               <Td align="right">{formatNumber(entry.carryOver)}</Td>
-              <Td align="center"><PaceBadge entry={entry} refDate={refDate} /></Td>
+              <Td align="center"><PaceBadge entry={entry} refDate={refDate} collectionBased={collectionBased} /></Td>
               <Td align="center"><TrendCell areaName={entry.area} areaTrends={areaTrends} /></Td>
+              {collectionBased && (
+                <>
+                  <Td align="right">{formatPeso(entry.gross)}</Td>
+                  <Td align="right" bold>{formatPeso(entry.net)}</Td>
+                </>
+              )}
               <Td align="right" bold stickyRight={180} width={88} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}>{formatNumber(entry.mtd)}</Td>
-              <Td align="right" stickyRight={84} width={96} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}>{formatNumber(entry.target)}</Td>
+              <Td align="right" stickyRight={84} width={96} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}>{collectionBased ? formatPeso(entry.target) : formatNumber(entry.target)}</Td>
               <Td align="center" stickyRight={0} width={84} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}><PctBadge value={entry.pct} /></Td>
             </tr>
           ))}
@@ -362,10 +395,16 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent }) {
               <Td align="right">{formatNumber(dateData.overallTotal.rjoRedispatched)}</Td>
               <Td align="right" bold>{formatNumber(dateData.overallTotal.totalRjo)}</Td>
               <Td align="right">{formatNumber(dateData.overallTotal.carryOver)}</Td>
-              <Td align="center"><PaceBadge entry={dateData.overallTotal} refDate={refDate} /></Td>
+              <Td align="center"><PaceBadge entry={dateData.overallTotal} refDate={refDate} collectionBased={collectionBased} /></Td>
               <Td align="center"><TrendCell areaName="OVER ALL TOTAL" areaTrends={areaTrends} overall accentText={totalAccent.text} /></Td>
+              {collectionBased && (
+                <>
+                  <Td align="right">{formatPeso(dateData.overallTotal.gross)}</Td>
+                  <Td align="right" bold>{formatPeso(dateData.overallTotal.net)}</Td>
+                </>
+              )}
               <Td align="right" bold stickyRight={180} width={88} bgColor={`${totalAccent.bg} ${totalAccent.text}`}>{formatNumber(dateData.overallTotal.mtd)}</Td>
-              <Td align="right" stickyRight={84} width={96} bgColor={`${totalAccent.bg} ${totalAccent.text}`}>{formatNumber(dateData.overallTotal.target)}</Td>
+              <Td align="right" stickyRight={84} width={96} bgColor={`${totalAccent.bg} ${totalAccent.text}`}>{collectionBased ? formatPeso(dateData.overallTotal.target) : formatNumber(dateData.overallTotal.target)}</Td>
               <Td align="center" stickyRight={0} width={84} bgColor={`${totalAccent.bg} ${totalAccent.text}`}><PctBadge value={dateData.overallTotal.pct} /></Td>
             </tr>
           )}
@@ -373,7 +412,7 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent }) {
           {/* No-match state (filter/search active but nothing found) */}
           {filteredAreas.length === 0 && (
             <tr>
-              <td colSpan={COLUMNS.length} className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+              <td colSpan={columns.length} className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
                 No areas match {search ? `“${search}”` : 'the current filter'}{paceFilter !== 'all' ? ` with ${paceFilter} pace` : ''}.
               </td>
             </tr>

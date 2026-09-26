@@ -114,6 +114,12 @@ export const PLANS = {
     id: 'sme',
     name: 'SME',
     fullName: 'SME Service Line',
+    // SME tracks money, not tickets: its NEW REPORT carries an MRC block (GROSS / NET) and
+    // its TARGET column is a peso figure, so progress is measured as NET against TARGET.
+    // Every other plan counts completed installations against a count target. The dashboard
+    // reads this to decide whether to show the collection cards/columns and which figure
+    // paces to the target.
+    collectionBased: true,
     color: 'teal',
     accentHex: '#00897B',
     accentClasses: {

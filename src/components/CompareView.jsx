@@ -2,15 +2,16 @@
  * CompareView — Portfolio Compare Mode (Phase 3, F4).
  *
  * Renders all service plans (FIBERX / BIDA / SME) side-by-side as compact MTD
- * cards — achievement rate with badge + pace pill, total completed, target,
+ * cards — achievement rate with badge + pace pill, collected or completed, target,
  * to go, total incoming — each in its plan accent color. A PORTFOLIO TOTALS
- * card below sums the numbers across plans.
+ * card below sums the numbers across the like-for-like plans: SME measures money
+ * against a peso target, so it is left out of a sum of ticket counts.
  *
  * Data is a map: { [planId]: { mtd, raw, source, loading } } where `mtd` is
  * the parsed MTD data (parseMTDData) and `raw` the parsed RAW daily data.
  */
 import { useState, useRef } from 'react'
-import { getBadgeStyle, getPaceBadgeStyle, projectRunRate, findLatestDataDate, getTodayStr } from '../utils/dataProcessor'
+import { getBadgeStyle, getPaceBadgeStyle, projectRunRate, findLatestDataDate, getTodayStr, formatPeso } from '../utils/dataProcessor'
 import { PLANS, PLAN_ORDER } from '../config/plans'
 
 function fmt(n) {
@@ -41,6 +42,8 @@ function PacePill({ pace }) {
 function PlanCard({ planId, entry, selectedMonthYear, onOpenPlan }) {
   const plan = PLANS[planId]
   const pc = plan.accentClasses
+  const collectionBased = Boolean(plan.collectionBased)
+  const money = (n) => (collectionBased ? formatPeso(n) : fmt(n))
   const mtd = entry?.mtd
   const ot = mtd?.overallTotal
 
@@ -48,15 +51,21 @@ function PlanCard({ planId, entry, selectedMonthYear, onOpenPlan }) {
   const totalCompleted = ot?.lastMtd
   const target = ot?.target
   const totalIncoming = ot?.totalIncoming
-  const toGo = Math.max(0, (target || 0) - (totalCompleted || 0))
+  // What the target is measured against — NET where the plan tracks money (SME), ticket
+  // completions otherwise. The projection paces the same figure.
+  const net = ot?.net
+  const measured = collectionBased && net !== null && net !== undefined && !isNaN(net)
+    ? net
+    : totalCompleted
+  const toGo = Math.max(0, (target || 0) - (measured || 0))
 
   const hasData = pct !== null && pct !== undefined && !isNaN(pct)
   const badge = hasData ? getBadgeStyle(pct + '%') : null
   const progressPct = hasData ? Math.min(pct, 100) : 0
 
   const latestDate = findLatestDataDate(entry?.raw)
-  const projection = (totalCompleted != null && target != null && !isNaN(totalCompleted) && !isNaN(target) && target > 0)
-    ? projectRunRate(totalCompleted, target, latestDate || getTodayStr())
+  const projection = (measured != null && target != null && !isNaN(measured) && !isNaN(target) && target > 0)
+    ? projectRunRate(measured, target, latestDate || getTodayStr())
     : null
 
   return (
@@ -111,14 +120,16 @@ function PlanCard({ planId, entry, selectedMonthYear, onOpenPlan }) {
             {/* KPIs */}
             <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
               <div>
-                <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Total Completed</p>
-                <p className="text-lg font-black text-slate-900 dark:text-white leading-tight">{fmt(totalCompleted)}</p>
-                <p className="text-[10px] text-slate-400 dark:text-slate-500">of {fmt(target)} target</p>
+                <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                  {collectionBased ? 'Net Collection' : 'Total Completed'}
+                </p>
+                <p className="text-lg font-black text-slate-900 dark:text-white leading-tight">{money(measured)}</p>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500">of {money(target)} target</p>
               </div>
               <div>
                 <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">To Go</p>
                 <p className={`text-lg font-black leading-tight ${toGo > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                  {fmt(toGo)}
+                  {money(toGo)}
                 </p>
                 <p className="text-[10px] text-slate-400 dark:text-slate-500">incoming: {fmt(totalIncoming)}</p>
               </div>
@@ -147,16 +158,19 @@ function PortfolioTotals({ data, selectedMonthYear }) {
   let toGo = 0
   let totalIncoming = 0
   let plansWithData = 0
+  const leftOut = []
 
   for (const planId of PLAN_ORDER) {
     const ot = data?.[planId]?.mtd?.overallTotal
-    if (ot && ot.lastPct !== null && ot.lastPct !== undefined && !isNaN(ot.lastPct)) {
-      totalCompleted += ot.lastMtd || 0
-      target += ot.target || 0
-      toGo += Math.max(0, (ot.target || 0) - (ot.lastMtd || 0))
-      totalIncoming += ot.totalIncoming || 0
-      plansWithData++
-    }
+    if (!ot || ot.lastPct === null || ot.lastPct === undefined || isNaN(ot.lastPct)) continue
+    // A collection plan's target is pesos while the others count installations, so adding
+    // them together would not mean anything. It is named below instead.
+    if (PLANS[planId].collectionBased) { leftOut.push(PLANS[planId].name); continue }
+    totalCompleted += ot.lastMtd || 0
+    target += ot.target || 0
+    toGo += Math.max(0, (ot.target || 0) - (ot.lastMtd || 0))
+    totalIncoming += ot.totalIncoming || 0
+    plansWithData++
   }
 
   if (plansWithData === 0) return null
@@ -197,6 +211,9 @@ function PortfolioTotals({ data, selectedMonthYear }) {
 
       <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-3">
         Total incoming this month: <span className="font-semibold text-slate-600 dark:text-slate-300">{fmt(totalIncoming)}</span> across {plansWithData} plan{plansWithData > 1 ? 's' : ''}
+        {leftOut.length > 0 && (
+          <> · {leftOut.join(', ')} measures money against a peso target, so its figures are not added here</>
+        )}
       </p>
     </div>
   )

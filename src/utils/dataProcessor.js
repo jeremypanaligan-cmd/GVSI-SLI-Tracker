@@ -26,6 +26,12 @@ function toNum(val) {
   return isNaN(n) ? 0 : n
 }
 
+/** Like toNum but returns null for empty/NaN — a figure that is genuinely absent. */
+function optNum(val) {
+  const n = cleanNumber(val)
+  return isNaN(n) ? null : n
+}
+
 export function formatNumber(val, colKey) {
   if (val === null || val === undefined || val === '') return '—'
   if (colKey === '%') {
@@ -36,6 +42,19 @@ export function formatNumber(val, colKey) {
   const n = cleanNumber(String(val))
   if (isNaN(n)) return String(val)
   return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+
+/**
+ * Peso amounts — SME's MRC block (GROSS, NET and the peso TARGET). Whole pesos, with the
+ * sign outside the symbol so a shortfall reads as -₱1,500 rather than ₱-1,500.
+ */
+export function formatPeso(val) {
+  if (val === null || val === undefined || val === '') return '—'
+  // A column a plan does not have reads as NaN; show that as absent, not as "NaN".
+  if (typeof val === 'number' && isNaN(val)) return '—'
+  const n = cleanNumber(String(val))
+  if (isNaN(n)) return String(val)
+  return `${n < 0 ? '-' : ''}₱${Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 }
 
 export function getBadgeStyle(pctValue) {
@@ -110,6 +129,8 @@ function buildMTDEntry(area, rawArr, colMap) {
     prevMosRjo: val('PREV MOS. RJO'),
     totalRjo: val('TOTAL RJO'),
     lastMtd: val('LAST MTD'),
+    gross: val('GROSS'),
+    net: val('NET'),
     target: val('TARGET'),
     lastPct: val('LAST %'),
     totalIncoming: val('TOTAL INCOMING'),
@@ -224,13 +245,23 @@ export function extractExecutiveMetrics(mtdData, dailyBlock) {
   if (!mtdData || !mtdData.overallTotal) return null
   const ot = mtdData.overallTotal
 
+  // SME's TARGET is a peso figure and its month is measured in collected money, so the
+  // progress against target is NET; every other plan counts ticket completions. A plan
+  // without an NET column reads NaN here and keeps the count-based figures it always had.
+  const netCollected = Number.isFinite(ot.net) ? ot.net : null
+  const basis = netCollected !== null ? netCollected : ot.lastMtd
+
   const mtd = {
     pct: ot.lastPct,              // LAST % → Achievement Rate
     totalCompleted: ot.lastMtd,   // LAST MTD → Total Completed
     target: ot.target,            // TARGET → Monthly Target
     mtd: ot.lastMtd,              // LAST MTD
-    toGo: Math.max(0, (ot.target || 0) - (ot.lastMtd || 0)),
-    variance: (ot.lastMtd || 0) - (ot.target || 0),
+    gross: Number.isFinite(ot.gross) ? ot.gross : null,
+    net: netCollected,
+    // What the target is measured against — NET on SME, ticket completions elsewhere.
+    completedForTarget: basis,
+    toGo: Math.max(0, (ot.target || 0) - (basis || 0)),
+    variance: (basis || 0) - (ot.target || 0),
     totalIncoming: ot.totalIncoming || 0,
   }
 
@@ -255,26 +286,6 @@ export function extractExecutiveMetrics(mtdData, dailyBlock) {
 // ==================== RAW DATA (DAILY) PARSING ====================
 
 // Areas are now dynamically detected from RAW DATA — no hardcoded list needed
-
-/**
- * Map a raw CSV row array to an entry object using column indices.
- * RAW DATA columns: AREA(0) BF(1) INC(2) TOTAL(3) COMP_FROM_TOTAL(4) COMP_FROM_RJO(5) TOTAL_COMP(6) RJO(7) CARRY_OVER(8) MTD(9) TARGET(10) %(11)
- */
-function mapRowByIndex(vals) {
-  return {
-    bf: cleanNumber(vals[1]),
-    inc: cleanNumber(vals[2]),
-    totalJo: cleanNumber(vals[3]),
-    completedFromTotal: cleanNumber(vals[4]),
-    completedFromRjo: cleanNumber(vals[5]),
-    totalCompleted: cleanNumber(vals[6]),
-    rjo: cleanNumber(vals[7]),
-    carryOver: cleanNumber(vals[8]),
-    mtd: cleanNumber(vals[9]),
-    target: cleanNumber(vals[10]),
-    pct: cleanNumber(vals[11]),
-  }
-}
 
 /**
  * Extract date from RAW DATA title row.
@@ -361,12 +372,21 @@ export function parseRawDailyData(rawData) {
   const hasDateCol = rawData.headers && rawData.headers[0] === 'Date'
 
   if (hasDateCol) {
-    // New continuous format — each row has a Date column
+    // New continuous format — each row has a Date column. Read by header NAME, not by
+    // position: SME's RAW DATA gained GROSS and NET columns, which pushed TARGET and %
+    // two cells right, and an archived month arrives with the archive's own column list.
+    // A fixed index would misread one plan or the other.
+    const field = (row, arr, name, fallbackIndex) => {
+      const value = row ? row[name] : undefined
+      if (value !== undefined && value !== null && String(value).trim() !== '') return value
+      return arr[fallbackIndex]
+    }
+
     for (let i = 0; i < rawObjects.length; i++) {
       const row = rawObjects[i]
       const arr = rawArrays[i] || []
 
-      const rawDate = String(arr[0] || row['Date'] || '').trim()
+      const rawDate = String(field(row, arr, 'Date', 0) || '').trim()
       if (!rawDate) continue
       // Normalize date format: 'Aug 1 2026' → 'August 1, 2026'
       const dateStr = normalizeRawDate(rawDate)
@@ -374,7 +394,7 @@ export function parseRawDailyData(rawData) {
       // Skip pre-entered future-dated rows (beyond today)
       if (isFutureDate(dateStr)) continue
 
-      const area = String(arr[1] || row['AREA'] || '').trim()
+      const area = String(field(row, arr, 'AREA', 1) || '').trim()
       if (!area || area === 'AREA') continue
 
       if (!blocks[dateStr]) {
@@ -382,27 +402,31 @@ export function parseRawDailyData(rawData) {
         dates.push(dateStr)
       }
 
-      // RAW DATA v8 columns:
-      // Date(0) AREA(1) BF(2) INC(3) TotalJo(4) CompFromTotal(5) CompFromRjo(6) TotalCompleted(7)
-      // RjoIncoming(8) RjoRedispatched(9) TotalRjo(10) CarryOver(11) MTD(12) TARGET(13) %(14)
-      const compTotal = toNum(arr[5])
-      const compRjo = toNum(arr[6])
+      // RAW DATA columns, by name:
+      // Date AREA BF INC Total Jo · COMPLETED FROM TOTAL · COMPLETED FROM RJO · TOTAL COMPLETED
+      // RJO INCOMING · RJO REDISPATCHED · TOTAL RJO · Carry Over · MTD · GROSS · NET · TARGET · %
+      const compTotal = toNum(field(row, arr, 'COMPLETED FROM TOTAL', 5))
+      const compRjo = toNum(field(row, arr, 'COMPLETED FROM RJO', 6))
       const entry = {
         area,
-        bf: toNum(arr[2]),
-        inc: toNum(arr[3]),
-        totalJo: toNum(arr[4]),
+        bf: toNum(field(row, arr, 'BF', 2)),
+        inc: toNum(field(row, arr, 'INC', 3)),
+        totalJo: toNum(field(row, arr, 'Total Jo', 4)),
         completedFromTotal: compTotal,
         completedFromRjo: compRjo,
         // Total Completed = COMPLETED FROM TOTAL + COMPLETED FROM RJO
         totalCompleted: compTotal + compRjo,
-        rjoIncoming: toNum(arr[8]),
-        rjoRedispatched: toNum(arr[9]),
-        totalRjo: toNum(arr[10]),
-        carryOver: toNum(arr[11]),
-        mtd: toNum(arr[12]),
-        target: toNum(arr[13]),
-        pct: toNum(arr[14]),
+        rjoIncoming: toNum(field(row, arr, 'RJO INCOMING', 8)),
+        rjoRedispatched: toNum(field(row, arr, 'RJO REDISPATCHED', 9)),
+        totalRjo: toNum(field(row, arr, 'TOTAL RJO', 10)),
+        carryOver: toNum(field(row, arr, 'Carry Over', 11)),
+        mtd: toNum(field(row, arr, 'MTD', 12)),
+        // null rather than 0 on a plan whose RAW DATA has no MRC columns.
+        gross: optNum(field(row, arr, 'GROSS', -1)),
+        net: optNum(field(row, arr, 'NET', -1)),
+        target: toNum(field(row, arr, 'TARGET', 13)),
+        // null keeps '—' for '#DIV/0!' (an area with no target) instead of a 0% badge.
+        pct: optNum(field(row, arr, '%', 14)),
       }
 
       if (area === 'OVER ALL TOTAL') {
@@ -701,13 +725,16 @@ export function projectRunRate(totalCompleted, target, refDateStr) {
  *
  * @param {object} areaEntry - entry with lastMtd|mtd and target fields
  * @param {string} refDateStr - latest data date
+ * @param {boolean} [useCollections] - measure NET against the peso target (SME)
  * @returns {object|null} projection, or null when unusable
  */
-export function computeAreaPace(areaEntry, refDateStr) {
+export function computeAreaPace(areaEntry, refDateStr, useCollections = false) {
   if (!areaEntry) return null
-  const total = areaEntry.lastMtd !== undefined && areaEntry.lastMtd !== null
-    ? areaEntry.lastMtd
-    : areaEntry.mtd
+  const total = useCollections && Number.isFinite(areaEntry.net)
+    ? areaEntry.net
+    : areaEntry.lastMtd !== undefined && areaEntry.lastMtd !== null
+      ? areaEntry.lastMtd
+      : areaEntry.mtd
   return projectRunRate(total, areaEntry.target, refDateStr)
 }
 

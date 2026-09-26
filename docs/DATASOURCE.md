@@ -81,7 +81,7 @@ Tabs: `FIBERX NEW REPORT`, `RAW DATA`, `MTD`, `CONFIG`
 |-----|-----|---------|
 | `FIBERX NEW REPORT` | — | **Nothing in the app** — upstream encoding tab |
 | `RAW DATA` | `486719298` | Daily / Provincial / Compare / Export |
-| `MTD` | `1061751267` | Achievement, target, month-to-date figures |
+| `MTD` | `1061751267` | Achievement, target, month-to-date figures — and, on SME, the `GROSS` / `NET` collection columns and a peso target |
 | `CONFIG` | `1630783385` | **Developer console → Archive trim only.** The archive switches and `LAST_ARCHIVE`, the audit line the Apps Script writes; nothing on the dashboard reads it |
 
 ### 3. BIDA SLI TRACKER DB
@@ -113,7 +113,7 @@ own — they were created independently. Check the gid before assuming it matche
 | Table | Read by | Notes |
 |-------|---------|-------|
 | `sli_raw_daily` | Daily / Provincial / Compare / Export, for **archived** months | one row per day × area, `is_overall_total` flagged |
-| `sli_mtd` | Achievement, target, month picker, MoM delta, for **archived** months | one row per month × area, plus the month's overall total |
+| `sli_mtd` | Achievement, target, month picker, MoM delta, for **archived** months | one row per month × area, plus the month's overall total; `gross` / `net` hold SME's collections |
 
 Both are public-readable through the anon key; **writes need the service_role key**, which
 lives only in the Apps Script's Script Properties.
@@ -140,6 +140,7 @@ lives only in the Apps Script's Script Properties.
 | Archive trim verdict (Developer console) | `DeveloperPanel` | Plan sheet → `CONFIG` (`LAST_ARCHIVE`), one tab per plan | Yes |
 | Maintenance gate for non-Developers | `MaintenanceScreen` | Supabase RPC `presence_ping` → `maintenance` | No (shared) |
 | Achievement Rate, Total Incoming, Total Completed, Monthly Target, To Go, Projected month-end | `ExecutiveOverview` | Plan sheet → `MTD` | Yes |
+| Gross Collection, Net Collection, Monthly Target, Variance (SME only) | `ExecutiveOverview` | Plan sheet → `MTD` (`gross` / `net` / `target`); the same cards replace the count trio on a `collectionBased` plan | Yes |
 | Month-over-month delta (`+x pts vs <month>`) | `ExecutiveOverview` | Plan sheet → `MTD` (month sections), plus Supabase `sli_mtd` for archived months | Yes |
 | Month picker (which months are selectable) | `ExecutiveOverview` | Plan sheet → `MTD` month headers **+** Supabase archived months | Yes |
 | **Any figure for a past month** | all of the above | Supabase `sli_mtd` (area rows + overall total) | Yes |
@@ -148,9 +149,10 @@ lives only in the Apps Script's Script Properties.
 | **30-day trend** sparkline | `ExecutiveOverview` | Shared → `<PLAN> DATA` | Yes |
 | Provincial Breakdown table (all daily columns, AREA rows) | `DailyTable` | Plan sheet → `RAW DATA` (selected date's block) | Yes |
 | Provincial Breakdown — `MTD` / `TARGET` / `%` columns | `DailyTable` | Plan sheet → `RAW DATA` (`mtd`, `target`, `pct` fields of the same block) | Yes |
+| Provincial Breakdown — `GROSS` / `NET` columns (SME only) | `DailyTable` | Plan sheet → `RAW DATA` (`gross`, `net` fields of the same block), inserted before the pinned group | Yes |
 | Provincial Breakdown — `7D TREND` per area | `DailyTable` | Plan sheet → `RAW DATA` (7-day window across blocks) | Yes |
 | Date picker's list of available dates | `App` | Plan sheet → `RAW DATA` (`Date` column) | Yes |
-| Compare view (all three plans side by side) | `CompareView` | **All three** plan sheets → `MTD` + `RAW DATA` | Yes (×3) |
+| Compare view (all three plans side by side) | `CompareView` | **All three** plan sheets → `MTD` + `RAW DATA`; a `collectionBased` plan (SME) shows Net Collection and is left out of the count-based totals, with a note saying why | Yes (×3) |
 | Installation SLA Breakdown (≤24h / ≤72h / >72h) | `AgingReport` | Shared → `COMPLETED AGING REPORT` | No (shared) |
 | Executive Report (print / PDF) | `ExecutiveReportModal` | Plan sheet → `MTD` (areas + metrics); `RAW DATA` for the reference date | Yes |
 | `Export` — "Export all RAW DATA as CSV" | `exportRawDataCSV` | Plan sheet → `RAW DATA` | Yes |

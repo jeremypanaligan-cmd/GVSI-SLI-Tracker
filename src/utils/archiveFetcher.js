@@ -34,18 +34,22 @@ const CACHE_PREFIX = 'gvsi_arch_'
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December']
 
+// GROSS / NET sit between MTD and TARGET — SME's MRC collection columns. BIDA and FIBERX
+// carry no such columns, so their archived rows have them as NULL and the rebuilt cells
+// come back empty.
 const MTD_COLUMNS = ['AREA', 'COMPLETED FROM TOTAL', 'COMPLETED FROM RJO', 'TOTAL COMPLETED',
-  'THIS MO. RJO', 'PREV MOS. RJO', 'TOTAL RJO', 'LAST MTD', 'TARGET', 'LAST %', 'TOTAL INCOMING']
+  'THIS MO. RJO', 'PREV MOS. RJO', 'TOTAL RJO', 'LAST MTD', 'GROSS', 'NET', 'TARGET',
+  'LAST %', 'TOTAL INCOMING']
 
 const RAW_COLUMNS = ['Date', 'AREA', 'BF', 'INC', 'Total Jo', 'COMPLETED FROM TOTAL',
   'COMPLETED FROM RJO', 'TOTAL COMPLETED', 'RJO INCOMING', 'RJO REDISPATCHED', 'TOTAL RJO',
-  'Carry Over', 'MTD', 'TARGET', '%']
+  'Carry Over', 'MTD', 'GROSS', 'NET', 'TARGET', '%']
 
 const MTD_FIELDS = ['comp_from_total', 'comp_from_rjo', 'total_completed', 'this_mo_rjo',
-  'prev_mos_rjo', 'total_rjo', 'last_mtd', 'target', 'last_pct', 'total_incoming']
+  'prev_mos_rjo', 'total_rjo', 'last_mtd', 'gross', 'net', 'target', 'last_pct', 'total_incoming']
 
 const RAW_FIELDS = ['bf', 'inc', 'total_jo', 'comp_from_total', 'comp_from_rjo', 'total_completed',
-  'rjo_incoming', 'rjo_redispatched', 'total_rjo', 'carry_over', 'mtd', 'target', 'pct']
+  'rjo_incoming', 'rjo_redispatched', 'total_rjo', 'carry_over', 'mtd', 'gross', 'net', 'target', 'pct']
 
 const indexKey = (planId) => `${CACHE_PREFIX}idx_${planId}_${CACHE_VERSION}`
 const mtdKey = (planId, monthKey) => `${CACHE_PREFIX}mtd_${planId}_${monthKey}_${CACHE_VERSION}`

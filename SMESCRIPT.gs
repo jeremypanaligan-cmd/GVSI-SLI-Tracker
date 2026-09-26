@@ -2,24 +2,28 @@
  * GVSI SLI Tracker - Automated Database Management v9
  * Areas are whatever the plan's NEW REPORT sheet lists — nothing is excluded in code.
  * 
- * SME NEW REPORT format (Column J removed):
+ * SME NEW REPORT format (the MRC block, 15 columns):
 
  *   AREA | BF | INC | TOTAL | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
- *   | RJO THIS MO. | RJO REDISPATCHED | CARRY OVER | MTD | TARGET | %
+ *   | RJO THIS MO. | RJO REDISPATCHED | CARRY OVER | MTD | GROSS | NET | TARGET | %
  *   Cols: A  B    C     D       E                     F                    G
- *         H              I              J           K     L      M
+ *         H              I              J           K     L       M     N       O
+ *
+ * GROSS / NET are the month's peso collection (the sheet's merged `MRC` header), N is the
+ * peso target per area and O is the achievement % the sheet computes itself — NET / TARGET,
+ * or '#DIV/0!' for an area with no target. All three are carried through verbatim.
  *
  * RAW DATA format (continuous table):
  *   Date | AREA | BF | INC | Total Jo | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
- *   | RJO INCOMING | RJO REDISPATCHED | TOTAL RJO | Carry Over | MTD | TARGET | %
+ *   | RJO INCOMING | RJO REDISPATCHED | TOTAL RJO | Carry Over | MTD | GROSS | NET | TARGET | %
  *   Cols: A     B     C    D     E         F                     G                   H
- *         I               J              K           L           M      N       O
+ *         I               J              K           L           M       N      O       P     Q
  *
  * MTD format:
  *   AREA | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
- *   | THIS MO. RJO | PREV MOS. RJO | TOTAL RJO | LAST MTD | TARGET | LAST % | TOTAL INCOMING
+ *   | THIS MO. RJO | PREV MOS. RJO | TOTAL RJO | LAST MTD | GROSS | NET | TARGET | LAST % | TOTAL INCOMING
  *   Cols: A    B                     C                   D
- *         E               F              G           H        I       J
+ *         E               F              G           H         I       J     K        L          M
  */
 
 const SME_SHEET_NAME = 'SME NEW REPORT';
@@ -99,13 +103,13 @@ const RAW_HEADER = [
   'Date', 'AREA', 'BF', 'INC', 'Total Jo',
   'COMPLETED FROM TOTAL', 'COMPLETED FROM RJO', 'TOTAL COMPLETED',
   'RJO INCOMING', 'RJO REDISPATCHED', 'TOTAL RJO',
-  'Carry Over', 'MTD', 'TARGET', '%'
+  'Carry Over', 'MTD', 'GROSS', 'NET', 'TARGET', '%'
 ];
 
 const MTD_HEADER = [
   'AREA', 'COMPLETED FROM TOTAL', 'COMPLETED FROM RJO', 'TOTAL COMPLETED',
   'THIS MO. RJO', 'PREV MOS. RJO', 'TOTAL RJO',
-  'LAST MTD', 'TARGET', 'LAST %', 'TOTAL INCOMING'
+  'LAST MTD', 'GROSS', 'NET', 'TARGET', 'LAST %', 'TOTAL INCOMING'
 ];
 
 // ==================== IMPORT ====================
@@ -127,8 +131,11 @@ function importSMEToRawData() {
   rawSheet.getRange(1, 1, 1, RAW_HEADER.length).setValues([RAW_HEADER]);
   rawSheet.getRange(1, 1, 1, RAW_HEADER.length).setFontWeight(true);
   
-  // Read SME data
-  var SMEData = SMESheet.getDataRange().getValues();
+  // Read SME data. The display values come alongside so the % column is kept as the text
+  // the sheet shows ('67.62%', '#DIV/0!') even when the cell itself holds the fraction.
+  var SMERange = SMESheet.getDataRange();
+  var SMEData = SMERange.getValues();
+  var SMEDisplay = SMERange.getDisplayValues();
   var allRows = [];
   var currentDate = '';
   
@@ -153,9 +160,9 @@ function importSMEToRawData() {
     
     if (!currentDate) continue;
     
-    // SME columns (Column J removed): AREA(0) BF(1) INC(2) TOTAL(3) COMP_FROM_TOTAL(4) COMP_FROM_RJO(5)
-    //   TOTAL_COMPLETED(6) RJO_THIS_MO(7) RJO_REDISPATCHED(8)
-    //   CARRY_OVER(9) MTD(10) TARGET(11) %(12)
+    // SME columns (MRC block): AREA(0) BF(1) INC(2) TOTAL(3) COMP_FROM_TOTAL(4) COMP_FROM_RJO(5)
+    //   TOTAL_COMPLETED(6) RJO_THIS_MO(7) RJO_REDISPATCHED(8) CARRY_OVER(9) MTD(10)
+    //   GROSS(11) NET(12) TARGET(13) %(14)
     var bf = cleanNum(row[1]);
     var inc = cleanNum(row[2]);
     var total = cleanNum(row[3]);
@@ -170,9 +177,14 @@ function importSMEToRawData() {
 
     var mtd = cleanNum(row[10]);
 
-    var target = cleanNum(row[11]);
-
-    var pct = String(row[12] || '0.00%').trim();
+    // GROSS / NET are the month's peso collection, N is the peso target and O is the %
+    // the sheet computes itself (NET / TARGET). The % is kept as text so '#DIV/0!' — an
+    // area with no target — arrives exactly as the sheet shows it, the way BIDA's and
+    // FIBERX's do. GROSS/NET are blank on the days before MRC starts, which becomes 0.
+    var gross = cleanNum(row[11]);
+    var net = cleanNum(row[12]);
+    var target = cleanNum(row[13]);
+    var pct = String(SMEDisplay[i][14] === null || SMEDisplay[i][14] === undefined ? '' : SMEDisplay[i][14]).trim();
 
     
     var areaName = '';
@@ -194,7 +206,7 @@ function importSMEToRawData() {
         currentDate, areaName, bf, inc, total,
         fromTotal, fromRjo, completedTotal,
         rjoThisMo, rjoRedispatched, totalRjo,
-        carryOver, mtd, target, pct
+        carryOver, mtd, gross, net, target, pct
       ]);
     }
   }
@@ -221,10 +233,10 @@ function applyRawDataFormat(sheet) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return;
   var dataRows = lastRow - 1;
-  // C-O (cols 3-15): numbers with comma
-  sheet.getRange(2, 3, dataRows, 13).setNumberFormat('#,##0');
-  // P (col 16 — actually col 15 = %): percentage
-  sheet.getRange(2, 15, dataRows, 1).setNumberFormat('0.00%');
+  // C-P (cols 3-16): numbers with comma (BF … GROSS, NET, TARGET)
+  sheet.getRange(2, 3, dataRows, 14).setNumberFormat('#,##0');
+  // Q (col 17): the sheet's own NET / TARGET %, carried verbatim
+  sheet.getRange(2, 17, dataRows, 1).setNumberFormat('0.00%');
 }
 
 /**
@@ -347,12 +359,24 @@ function buildMtdReport(monthlyData) {
 
     var lastDay = monthData[monthData.length - 1];
 
-    // Dynamically discover all areas from the last day's data
+    // The day whose LAST MTD / GROSS / NET / TARGET / % the month reports. The sheet
+    // pre-creates the rest of the month as blank day blocks with a 0 target and a
+    // '#DIV/0!' %, so taking its literal last block would report the whole month from a
+    // day that holds none of it. The last day carrying a target is the real standing day;
+    // the literal last block is only the fallback. A plan whose target is present every
+    // day (BIDA, FIBERX) is unaffected — its report day is its last day.
+    var reportDay = lastDay;
+    for (var rd = monthData.length - 1; rd >= 0; rd--) {
+      var ov = monthData[rd].overallTotal;
+      if (ov && ov.target > 0) { reportDay = monthData[rd]; break; }
+    }
+
+    // Dynamically discover all areas from the last day's data — the list the sheet lists.
     var dynamicAreas = Object.keys(lastDay.areas).sort();
 
     for (var a = 0; a < dynamicAreas.length; a++) {
       var area = dynamicAreas[a];
-      var areaData = lastDay.areas[area];
+      var areaData = reportDay.areas[area] || lastDay.areas[area];
       if (!areaData) continue;
 
       // Sum across all days in the month
@@ -375,7 +399,7 @@ function buildMtdReport(monthlyData) {
         area, totalCompFromTotal, totalCompFromRjo, totalComp,
         totalRjoIncoming, totalRjoRedispatched,
         totalRjoIncoming + totalRjoRedispatched,
-        areaData.mtd, areaData.target, areaData.pct, totalInc
+        areaData.mtd, areaData.gross, areaData.net, areaData.target, areaData.pct, totalInc
       ]);
     }
 
@@ -395,8 +419,10 @@ function buildMtdReport(monthlyData) {
       }
     }
 
-    var lt = lastDay.overallTotal;
+    var lt = reportDay.overallTotal;
     var lm = lt ? lt.mtd : 0;
+    var lgross = lt ? lt.gross : 0;
+    var lnet = lt ? lt.net : 0;
     var ltarget = lt ? lt.target : 0;
 
     totalRows.push(values.length + 1);
@@ -404,7 +430,7 @@ function buildMtdReport(monthlyData) {
       'OVER ALL TOTAL', tCompFromTotal, tCompFromRjo, tComp,
       tRjoIncoming, tRjoRedispatched,
       tRjoIncoming + tRjoRedispatched,
-      lm, ltarget, ltarget > 0 ? (lm / ltarget) : 0, tInc
+      lm, lgross, lnet, ltarget, lt ? lt.pct : '', tInc
     ]);
 
     // The report separates one month from the next with two blank rows.
@@ -452,16 +478,14 @@ function applyMTDFormatting(sheet) {
     // Check if this is a data row (has a number or area name)
     var cellB = sheet.getRange(r, 2).getValue();
     if (typeof cellB === 'number' || cellB === 0) {
-      // B-F (cols 2-6): COMPLETED FROM TOTAL, COMPLETED FROM RJO, TOTAL COMPLETED, THIS MO. RJO, PREV MOS. RJO → #,##0
-      sheet.getRange(r, 2, 1, 5).setNumberFormat('#,##0');
-      // G (col 7): TOTAL RJO → #,##0
-      sheet.getRange(r, 7).setNumberFormat('#,##0');
+      // B-G (cols 2-7): COMPLETED FROM TOTAL … TOTAL RJO → #,##0
+      sheet.getRange(r, 2, 1, 6).setNumberFormat('#,##0');
       // H (col 8): LAST MTD → #,##0
       sheet.getRange(r, 8).setNumberFormat('#,##0');
-      // I (col 9): TARGET → #,##0
-      sheet.getRange(r, 9).setNumberFormat('#,##0');
-      // J (col 10): LAST % → 0.00%
-      sheet.getRange(r, 10).setNumberFormat('0.00%');
+      // I-K (cols 9-11): GROSS, NET, TARGET → #,##0
+      sheet.getRange(r, 9, 1, 3).setNumberFormat('#,##0');
+      // L (col 12): LAST % → 0.00%
+      sheet.getRange(r, 12).setNumberFormat('0.00%');
     }
   }
 }
@@ -486,15 +510,17 @@ function parseRawData(rawData) {
     
     if (!currentBlock) continue;
     
-    // RAW DATA v8 columns:
+    // RAW DATA columns:
     // Date(0) AREA(1) BF(2) INC(3) TotalJo(4) CompFromTotal(5) CompFromRjo(6) TotalCompleted(7)
-    // RjoIncoming(8) RjoRedispatched(9) TotalRjo(10) CarryOver(11) MTD(12) TARGET(13) %(14)
+    // RjoIncoming(8) RjoRedispatched(9) TotalRjo(10) CarryOver(11) MTD(12)
+    // GROSS(13) NET(14) TARGET(15) %(16)
     var entry = {
       bf: cleanNum(row[2]), inc: cleanNum(row[3]), totalJo: cleanNum(row[4]),
       compFromTotal: cleanNum(row[5]), compFromRjo: cleanNum(row[6]), totalCompleted: cleanNum(row[7]),
       rjoIncoming: cleanNum(row[8]), rjoRedispatched: cleanNum(row[9]), totalRjo: cleanNum(row[10]),
       carryOver: cleanNum(row[11]), mtd: cleanNum(row[12]),
-      target: cleanNum(row[13]), pct: String(row[14]).trim()
+      gross: cleanNum(row[13]), net: cleanNum(row[14]),
+      target: cleanNum(row[15]), pct: String(row[16] || '').trim()
     };
     
     if (areaStr === 'OVER ALL TOTAL') {
@@ -859,6 +885,33 @@ function supabaseSum_(table, query, column) {
 
 // ==================== ARCHIVE: read the month ====================
 
+/**
+ * RAW DATA addressed by header name, not by position.
+ *
+ * The archive used to read RAW DATA at fixed indexes, which held only while every plan
+ * wrote the same 15 columns. SME's MRC block added GROSS and NET, pushing TARGET and % two
+ * columns right, so the mapping is now read from RAW_HEADER — the plan's own contract, and
+ * the header its import writes into row 1. A column a plan does not carry (GROSS/NET on
+ * BIDA and FIBERX) comes back absent, which `num_` turns into a null the database stores
+ * as “no figure”.
+ */
+function rawColumnIndex_(name) {
+  for (var i = 0; i < RAW_HEADER.length; i++) {
+    if (String(RAW_HEADER[i]).toUpperCase() === name) return i;
+  }
+  return -1;
+}
+
+function rawValue_(values, rowIndex, name) {
+  var index = rawColumnIndex_(name);
+  return index < 0 ? null : values[rowIndex][index];
+}
+
+function rawDisplay_(display, rowIndex, name) {
+  var index = rawColumnIndex_(name);
+  return index < 0 ? '' : display[rowIndex][index];
+}
+
 /** RAW DATA rows belonging to one month, shaped for sli_raw_daily. */
 function collectRawArchiveRows_(monthKey) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(RAW_DATA_SHEET_NAME);
@@ -886,20 +939,23 @@ function collectRawArchiveRows_(monthKey) {
       // the app's Daily To-Date card reads it, and it is not always equal to the sum
       // of the area rows (a stale total would silently change closed-month numbers).
       is_overall_total: area === 'OVER ALL TOTAL',
-      bf: num_(values[i][2]),
-      inc: num_(values[i][3]),
-      total_jo: num_(values[i][4]),
-      comp_from_total: num_(values[i][5]),
-      comp_from_rjo: num_(values[i][6]),
-      total_completed: num_(values[i][7]),
-      rjo_incoming: num_(values[i][8]),
-      rjo_redispatched: num_(values[i][9]),
-      total_rjo: num_(values[i][10]),
-      carry_over: num_(values[i][11]),
-      mtd: num_(values[i][12]),
-      target: num_(values[i][13]),
+      bf: num_(rawValue_(values, i, 'BF')),
+      inc: num_(rawValue_(values, i, 'INC')),
+      total_jo: num_(rawValue_(values, i, 'TOTAL JO')),
+      comp_from_total: num_(rawValue_(values, i, 'COMPLETED FROM TOTAL')),
+      comp_from_rjo: num_(rawValue_(values, i, 'COMPLETED FROM RJO')),
+      total_completed: num_(rawValue_(values, i, 'TOTAL COMPLETED')),
+      rjo_incoming: num_(rawValue_(values, i, 'RJO INCOMING')),
+      rjo_redispatched: num_(rawValue_(values, i, 'RJO REDISPATCHED')),
+      total_rjo: num_(rawValue_(values, i, 'TOTAL RJO')),
+      carry_over: num_(rawValue_(values, i, 'CARRY OVER')),
+      mtd: num_(rawValue_(values, i, 'MTD')),
+      // SME's MRC block only; null on a plan whose RAW DATA has no such column.
+      gross: num_(rawValue_(values, i, 'GROSS')),
+      net: num_(rawValue_(values, i, 'NET')),
+      target: num_(rawValue_(values, i, 'TARGET')),
       // Display value, so '#DIV/0!' is stored verbatim exactly as the CSV export shows it.
-      pct: String(display[i][14] === null || display[i][14] === undefined ? '' : display[i][14]).trim(),
+      pct: String(rawDisplay_(display, i, '%') === null || rawDisplay_(display, i, '%') === undefined ? '' : rawDisplay_(display, i, '%')).trim(),
       row_order: rows.length
     });
   }
@@ -940,10 +996,29 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
     if (!lastDate || date > lastDate) lastDate = date;
   }
 
+  // The day whose LAST MTD / GROSS / NET / TARGET / % the month reports — the same rule
+  // buildMtdReport() applies to the sheet. The sheet pre-creates the rest of the month as
+  // blank day blocks with a 0 target and a '#DIV/0!' %, so the literal last day can hold
+  // none of the month's figures. The last day whose OVER ALL TOTAL carries a target is the
+  // real standing day; the literal last day is only the fallback. A plan whose target is
+  // present every day (BIDA, FIBERX) is unaffected.
+  var reportDate = lastDate;
+  var reportHasTarget = false;
+  for (i = 0; i < rawRows.length; i++) {
+    var candidate = rawRows[i];
+    if (!candidate.is_overall_total) continue;
+    if (Number(candidate.target || 0) > 0 &&
+        (!reportHasTarget || candidate.report_date > reportDate)) {
+      reportDate = candidate.report_date;
+      reportHasTarget = true;
+    }
+  }
+
   var perArea = {};
   var lastRowOfArea = {};
   var listed = {};
   var overallLast = null;
+  var overallByDate = {};
   var total = {
     comp_from_total: 0, comp_from_rjo: 0, total_completed: 0,
     this_mo_rjo: 0, prev_mos_rjo: 0, total_incoming: 0
@@ -960,6 +1035,7 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
     var row = rawRows[i];
 
     if (row.is_overall_total) {
+      overallByDate[row.report_date] = row;
       if (!overallLast || row.report_date >= overallLast.report_date) overallLast = row;
       continue;
     }
@@ -973,7 +1049,12 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
       total[SUMS[f][0]] += value;
     }
 
-    if (!lastRowOfArea[area] || row.report_date >= lastRowOfArea[area].report_date) {
+    // Prefer the report day's row, so LAST MTD / GROSS / NET / TARGET / % all come from the
+    // same day; an area with no report-day row keeps its latest row instead.
+    if (!lastRowOfArea[area] ||
+        row.report_date === reportDate ||
+        (lastRowOfArea[area].report_date !== reportDate &&
+         row.report_date > lastRowOfArea[area].report_date)) {
       lastRowOfArea[area] = row;
     }
     if (row.report_date === lastDate) listed[area] = true;
@@ -1004,6 +1085,8 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
       prev_mos_rjo: sums.prev_mos_rjo,
       total_rjo: sums.this_mo_rjo + sums.prev_mos_rjo,
       last_mtd: optional(lastRow, 'mtd'),
+      gross: optional(lastRow, 'gross'),
+      net: optional(lastRow, 'net'),
       target: optional(lastRow, 'target'),
       total_incoming: sums.total_incoming,
       last_pct: percentText_(lastRow ? lastRow.pct : ''),
@@ -1013,8 +1096,7 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
 
   // The sheet ends each month with its OVER ALL TOTAL, so the archive does too.
   if (overallLast) {
-    var lm = overallLast.mtd || 0;
-    var ltarget = overallLast.target || 0;
+    var reportOverall = overallByDate[reportDate] || overallLast;
     rows.push({
       plan: PLAN_ID,
       month_key: monthKey,
@@ -1027,12 +1109,15 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
       this_mo_rjo: total.this_mo_rjo,
       prev_mos_rjo: total.prev_mos_rjo,
       total_rjo: total.this_mo_rjo + total.prev_mos_rjo,
-      last_mtd: optional(overallLast, 'mtd'),
-      target: optional(overallLast, 'target'),
+      last_mtd: optional(reportOverall, 'mtd'),
+      gross: optional(reportOverall, 'gross'),
+      net: optional(reportOverall, 'net'),
+      target: optional(reportOverall, 'target'),
       total_incoming: total.total_incoming,
-      // A percentage, not the day's own LAST % text: that is what the sheet computes for
-      // this row (lm / ltarget) and then renders with a 0.00% number format.
-      last_pct: percentText_(ltarget > 0 ? (lm / ltarget) : 0),
+      // The day's own LAST % text, not a recomputed ratio: it is what the sheet shows for
+      // this row — BIDA and FIBERX compute mtd / target, SME computes net / target — and
+      // it keeps '#DIV/0!' verbatim for an area with no target.
+      last_pct: percentText_(reportOverall ? reportOverall.pct : ''),
       row_order: rows.length
     });
   }
@@ -1137,7 +1222,8 @@ function backupPurgedRows_(values, ranges) {
  * True when the plan's report sheet is filled by a formula rather than by hand.
  *
  * `BIDA NEW REPORT` and its siblings are one `=IMPORTRANGE("…", "BIDA DAILY'!A:M")`
- * spilling the whole report. Their rows are the OUTPUT of an array formula, so purging
+ * spilling the whole report — SME's window is wider (`A:O`) because its report carries the
+ * MRC and % columns. Their rows are the OUTPUT of an array formula, so purging
  * them does not delete data — Sheets either refuses, or the formula is torn out of A1 and
  * has to be pasted back by hand. Which is what happened on 2026-09-21.
  *
@@ -1224,7 +1310,8 @@ function parseImportRangeFormula_(formula) {
   // whole columns, and that is how FIBERX's mirror is authored — refusing it would leave
   // that plan unable to trim for no better reason than a spelling. An absent row means row
   // 1, so the forward-only guard and the mirror-offset fallback both keep working, and the
-  // formula this module writes is always the explicit `A<n>:M`.
+  // formula this module writes is always the explicit `A<n>:<end column>` form. The END
+  // column is preserved from the original, so SME's wider window (`A:O`) survives a trim.
   var spec = rangeMatch[1].match(/^'?([^'!]+)'?!A(\d*):([A-Z]+)$/);
   if (!spec) return null;
 
@@ -1339,7 +1426,7 @@ function trimPlanSheetFormula_(archivedMonthKeys, dryRun) {
   var parsed = parseImportRangeFormula_(formula);
   if (!parsed) {
     return { changed: false, reason: 'ang A1 ng ' + PLAN_SHEET_NAME + ' ay hindi IMPORTRANGE ' +
-      'na may A<n>:M (o A:M) — hindi hinahawakan' };
+      'na may A<n>:<col> (o A:<col>) — hindi hinahawakan' };
   }
 
   var archived = {};
@@ -1486,8 +1573,8 @@ function restorePlanSheetFormula() {
 
   var parsed = parseImportRangeFormula_(cell.getFormula());
   if (!parsed) {
-    planSheetAlert_('Ang A1 ng ' + PLAN_SHEET_NAME + ' ay hindi IMPORTRANGE na may A<n>:M ' +
-      '(o A:M) — ' +
+    planSheetAlert_('Ang A1 ng ' + PLAN_SHEET_NAME + ' ay hindi IMPORTRANGE na may ' +
+      'A<n>:<col> (o A:<col>) — ' +
       'walang ibabalik.');
     return;
   }
