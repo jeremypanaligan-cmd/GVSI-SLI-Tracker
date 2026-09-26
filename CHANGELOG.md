@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.19.0] — 2026-09-27
+
 ### 💰 SME MRC Collections — GROSS / NET / TARGET
 
 SME's `NEW REPORT` grew four columns (`GROSS`, `NET`, `TARGET`, `%`) when its MRC collection
