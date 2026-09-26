@@ -376,9 +376,15 @@ export function parseRawDailyData(rawData) {
     // position: SME's RAW DATA gained GROSS and NET columns, which pushed TARGET and %
     // two cells right, and an archived month arrives with the archive's own column list.
     // A fixed index would misread one plan or the other.
+    // The NAME wins whenever the row carries that column at all — including when the
+    // cell is blank. parseCSV gives every declared header a key (blank cells become ''),
+    // and an archived row is built from the archive's own column list, so presence of the
+    // key is the row telling us it has that column. Falling back to a *position* on a
+    // blank cell is what made SME's blank `%` read as its NET column: the old `A:M`
+    // fallback index (14) is where NET now sits, so a day with no percentage yet showed
+    // the whole net collection as "41988.00%".
     const field = (row, arr, name, fallbackIndex) => {
-      const value = row ? row[name] : undefined
-      if (value !== undefined && value !== null && String(value).trim() !== '') return value
+      if (row && Object.prototype.hasOwnProperty.call(row, name)) return row[name]
       return arr[fallbackIndex]
     }
 

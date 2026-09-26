@@ -18,6 +18,14 @@ const PACE_FILTERS = [
   { value: 'critical', label: 'Critical' },
 ]
 
+// Pinned-group geometry. `%` is flush to the right edge, TARGET sits to its left and MTD
+// to TARGET's left, so each column's `stickyRight` offset is the summed width of the
+// columns to ITS right — widening TARGET has to push MTD out with it. TARGET holds a peso
+// figure on a collection plan (₱307,529), which the old 96px cut down to "47".
+const PCT_WIDTH = 92
+const TARGET_WIDTH = 124
+const MTD_WIDTH = 88
+
 // PACE / 7D TREND are placed before the right-sticky group so the pinned
 // MTD · TARGET · % columns never cover them when scrolling.
 const BASE_COLUMNS = [
@@ -37,9 +45,9 @@ const BASE_COLUMNS = [
   // Right-sticky group: MTD · TARGET · % stay visible while scrolling.
   // stickyRight = px offset from the container's right edge (width of the
   // columns to their right).
-  { key: 'mtd', label: 'MTD', tooltip: 'Month to Date Total', align: 'right', bold: true, sortable: true, stickyRight: 180, width: 88 },
-  { key: 'target', label: 'TARGET', tooltip: 'Monthly Target Objective', align: 'right', sortable: true, stickyRight: 84, width: 96 },
-  { key: 'pct', label: '%', tooltip: 'Achievement Percentage', align: 'center', highlight: true, sortable: true, stickyRight: 0, width: 84 },
+  { key: 'mtd', label: 'MTD', tooltip: 'Month to Date Total', align: 'right', bold: true, sortable: true, stickyRight: PCT_WIDTH + TARGET_WIDTH, width: MTD_WIDTH },
+  { key: 'target', label: 'TARGET', tooltip: 'Monthly Target Objective', align: 'right', sortable: true, stickyRight: PCT_WIDTH, width: TARGET_WIDTH },
+  { key: 'pct', label: '%', tooltip: 'Achievement Percentage', align: 'center', highlight: true, sortable: true, stickyRight: 0, width: PCT_WIDTH },
 ]
 
 // SME's MRC collection, shown only on a plan whose target is money. They sit immediately
@@ -111,8 +119,10 @@ const DEFAULT_TOTAL_ACCENT = {
 
 /**
  * Mobile card row (two-line style, < sm): mirrors the Lumen Billing list
- * layout — province name + pace badge + MTD/TARGET ("due") on the left,
- * achievement % ("amount") on the right.
+ * layout — province name + pace badge + the month's figures on the left,
+ * achievement % ("amount") on the right. On a collection plan the figures
+ * read `MTD · NET · TGT`, because the target is money and NET is what it is
+ * measured against; every other plan reads `MTD · TGT`.
  */
 function MobileRow({ entry, refDate, overall, collectionBased = false, totalAccent = DEFAULT_TOTAL_ACCENT }) {
   const badge = getBadgeStyle(entry.pct)
@@ -373,9 +383,9 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent, coll
                   <Td align="right" bold>{formatPeso(entry.net)}</Td>
                 </>
               )}
-              <Td align="right" bold stickyRight={180} width={88} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}>{formatNumber(entry.mtd)}</Td>
-              <Td align="right" stickyRight={84} width={96} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}>{collectionBased ? formatPeso(entry.target) : formatNumber(entry.target)}</Td>
-              <Td align="center" stickyRight={0} width={84} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}><PctBadge value={entry.pct} /></Td>
+              <Td align="right" bold stickyRight={PCT_WIDTH + TARGET_WIDTH} width={MTD_WIDTH} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}>{formatNumber(entry.mtd)}</Td>
+              <Td align="right" stickyRight={PCT_WIDTH} width={TARGET_WIDTH} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}>{collectionBased ? formatPeso(entry.target) : formatNumber(entry.target)}</Td>
+              <Td align="center" stickyRight={0} width={PCT_WIDTH} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}><PctBadge value={entry.pct} /></Td>
             </tr>
           ))}
 
@@ -403,9 +413,9 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent, coll
                   <Td align="right" bold>{formatPeso(dateData.overallTotal.net)}</Td>
                 </>
               )}
-              <Td align="right" bold stickyRight={180} width={88} bgColor={`${totalAccent.bg} ${totalAccent.text}`}>{formatNumber(dateData.overallTotal.mtd)}</Td>
-              <Td align="right" stickyRight={84} width={96} bgColor={`${totalAccent.bg} ${totalAccent.text}`}>{collectionBased ? formatPeso(dateData.overallTotal.target) : formatNumber(dateData.overallTotal.target)}</Td>
-              <Td align="center" stickyRight={0} width={84} bgColor={`${totalAccent.bg} ${totalAccent.text}`}><PctBadge value={dateData.overallTotal.pct} /></Td>
+              <Td align="right" bold stickyRight={PCT_WIDTH + TARGET_WIDTH} width={MTD_WIDTH} bgColor={`${totalAccent.bg} ${totalAccent.text}`}>{formatNumber(dateData.overallTotal.mtd)}</Td>
+              <Td align="right" stickyRight={PCT_WIDTH} width={TARGET_WIDTH} bgColor={`${totalAccent.bg} ${totalAccent.text}`}>{collectionBased ? formatPeso(dateData.overallTotal.target) : formatNumber(dateData.overallTotal.target)}</Td>
+              <Td align="center" stickyRight={0} width={PCT_WIDTH} bgColor={`${totalAccent.bg} ${totalAccent.text}`}><PctBadge value={dateData.overallTotal.pct} /></Td>
             </tr>
           )}
 

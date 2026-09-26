@@ -52,6 +52,20 @@ by nothing. The target and its collections are now carried end to end — sheet 
 - The SME fixture's mirror is now `'SME DAILY'!A:O`, and the trim/preview/rollback checks
   derive the end column from the fixture instead of assuming `M`
 
+### 🐛 Fixes
+
+- **A blank cell no longer falls back to the old column position.** Reading `RAW DATA` by
+  header name only went half way: the fallback to the old position still ran whenever a cell
+  was blank, and SME's `%` is blank on every day before a target is filled. The old `A:M`
+  index 14 is exactly where `NET` now sits, so those days reported the whole net collection as
+  the achievement rate. A row's own column key is now authoritative when it declares that
+  column — blank or not — and the positional fallback runs only where the row genuinely lacks
+  it, which is what keeps BIDA and FIBERX's 15-column `RAW DATA` mapping correctly
+- **The pinned `TARGET` column has room for the money it now holds.** A peso target of
+  `₱307,529` was clipped to `47` at the old 96px. Each pinned column's `stickyRight` offset is
+  the summed width of the columns to its right, so the three widths now come from one set of
+  constants and a wider `TARGET` moves `MTD`'s offset out with it
+
 ### 📚 Documentation
 
 - `docs/DATA_PIPELINE.md` — the per-plan `RAW DATA` / `MTD` shapes: SME's 17- and 13-column
