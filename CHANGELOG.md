@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.20.0] — 2026-09-28
+
 ### 📈 SME — MTD and NET COLLECTION as the headline cards
 
 An SME month is read in two numbers: how many were installed and how much of the target was
