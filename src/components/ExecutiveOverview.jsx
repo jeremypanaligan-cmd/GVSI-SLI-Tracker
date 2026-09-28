@@ -191,10 +191,34 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
           </div>
         </div>
 
-        {/* Bottom row: Total Incoming plus either the count cards (completed / target /
-            to go) or, on a plan that tracks money, the collection cards (gross / net /
-            target, with the gap to target under it). */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Headline row — on a plan that tracks money these two are what the month is
+            read by: MTD is how many were installed, NET COLLECTION is the money the
+            target is measured against. They sit directly under Achievement Rate, at a
+            size between the hero and the supporting cards. */}
+        {collectionBased && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+            <div className="relative overflow-hidden rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0E1622] p-5 flex flex-col justify-between min-h-[128px]">
+              <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-violet-400/10" />
+              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest relative">Total Installed (MTD)</p>
+              <span className="text-4xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight relative">{fmt(mtd.totalCompleted)}</span>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 relative">installations completed this month</p>
+            </div>
+
+            <div className={`relative overflow-hidden rounded-2xl border-2 p-5 flex flex-col justify-between min-h-[128px] ${pc.total?.border || 'border-teal-300 dark:border-teal-800'} ${pc.total?.bg || 'bg-teal-50 dark:bg-teal-950/40'}`}>
+              <div className={`absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-10 ${pc.bg || 'bg-teal-500'}`} />
+              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest relative">Net Collection</p>
+              <span className={`text-4xl sm:text-5xl font-black tracking-tight relative ${pc.text || 'text-teal-600 dark:text-teal-400'}`}>{formatPeso(mtd.net)}</span>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 relative">
+                against the <span className="font-semibold text-slate-600 dark:text-slate-300">{formatPeso(mtd.target)}</span> target
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Supporting row: Total Incoming plus either the collection context (gross /
+            target, with the gap to target under it) or, on a count plan, the completed /
+            target / to-go trio. */}
+        <div className={`grid gap-3 ${collectionBased ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2 sm:grid-cols-4'}`}>
           <div className="group rounded-xl border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-[#0E1622] p-4 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 dark:hover:border-slate-700/60 hover:shadow-md min-h-[100px]">
             <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Total Incoming</p>
             <span className="text-2xl sm:text-3xl font-black text-violet-600 dark:text-violet-400 tracking-tight">{fmt(mtd.totalIncoming)}</span>
@@ -203,22 +227,16 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
 
           {collectionBased && (
             <>
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-[#0E1622] p-4 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 dark:hover:border-slate-700/60 hover:shadow-md min-h-[100px]">
                 <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Gross Collection</p>
                 <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">{formatPeso(mtd.gross)}</span>
-                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">month-to-date, MRC</p>
+                <p className="text-[11px] text-slate-500 mt-1.5">month-to-date, MRC</p>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between">
-                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Net Collection</p>
-                <span className={`text-3xl sm:text-4xl font-black tracking-tight ${pc.text || 'text-teal-600 dark:text-teal-400'}`}>{formatPeso(mtd.net)}</span>
-                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">measured against the target</p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between">
+              <div className="col-span-2 sm:col-span-1 rounded-xl border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-[#0E1622] p-4 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 dark:hover:border-slate-700/60 hover:shadow-md min-h-[100px]">
                 <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Monthly Target</p>
-                <span className={`text-3xl sm:text-4xl font-black tracking-tight ${pc.text || 'text-teal-600 dark:text-teal-400'}`}>{formatPeso(mtd.target)}</span>
-                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
+                <span className={`text-2xl sm:text-3xl font-black tracking-tight ${pc.text || 'text-teal-600 dark:text-teal-400'}`}>{formatPeso(mtd.target)}</span>
+                <p className="text-[11px] text-slate-500 mt-1.5">
                   {mtd.variance >= 0
                     ? <span className="font-semibold text-emerald-600 dark:text-emerald-400">Exceeded by {formatPeso(mtd.variance)}</span>
                     : <span className="font-semibold text-amber-600 dark:text-amber-400">{formatPeso(Math.abs(mtd.variance))} to go</span>

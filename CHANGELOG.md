@@ -6,6 +6,22 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 📈 SME — MTD and NET COLLECTION as the headline cards
+
+An SME month is read in two numbers: how many were installed and how much of the target was
+collected. Both now sit directly under Achievement Rate, so they are the first thing seen
+after the achievement figure, and the peso target they are judged against is spelled out
+beside the collection.
+
+- **`TOTAL INSTALLED (MTD)` is back on the Executive Overview.** The month's ticket count
+  (`LAST MTD`) had nowhere to show on a collection plan — the collection cards stand in for
+  the Total Completed card — so it now has its own headline card
+- **MTD and Net Collection are the headline pair**, at a size between the hero and the cards
+  below. Gross Collection, Monthly Target (with its gap to target) and Total Incoming move to
+  the supporting row, restyled to match the card the other plans use
+- **Count plans are unchanged** — FIBERX and BIDA still show Total Incoming / Total Completed
+  / Monthly Target / To Go exactly as before
+
 ## [1.19.0] — 2026-09-27
 
 ### 💰 SME MRC Collections — GROSS / NET / TARGET

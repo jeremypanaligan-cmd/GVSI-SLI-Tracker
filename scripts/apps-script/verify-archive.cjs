@@ -914,18 +914,33 @@ function main() {
       check("the sheet's own % is kept verbatim", benguet25 && benguet25.pct === '67.62%',
         benguet25 && JSON.stringify(benguet25.pct))
 
+      // The MTD row is the last day the month actually carries a target, and that day moves
+      // forward every time the sheet gains a filled block — so the expectation is read off
+      // the sheet's own OVER ALL rows rather than pinned to a date. The day-level checks
+      // above stay literal: they are about which column a figure came from, and a past day
+      // no longer changes.
+      const overallDays = rawSept.filter((r) => r.is_overall_total)
+      const targetDays = overallDays.filter((r) => Number(r.target) > 0)
+      const reportDay = targetDays[targetDays.length - 1]
+      const reportDate = reportDay ? reportDay.report_date : '(none)'
+      const benguetDay = benguetSept.find((r) => r.report_date === reportDate)
+
       const mtdSept = context.deriveMtdArchiveRows_(rawSept, '2026-09', 'September 2026')
       const benguetMtd = mtdSept.filter((r) => !r.is_overall_total && r.area === 'Benguet')[0]
       const overallMtd = mtdSept.filter((r) => r.is_overall_total)[0]
-      check('MTD carries the collection, not just the target',
-        benguetMtd && benguetMtd.gross === 47027 && benguetMtd.net === 41988,
-        benguetMtd && `${benguetMtd.gross} / ${benguetMtd.net}`)
-      check('and reads the last day that carries a target, not the blank future blocks',
-        benguetMtd && benguetMtd.target === 62098, benguetMtd && benguetMtd.target)
+      check(`MTD carries the report day's collection (${reportDate})`,
+        benguetDay && benguetMtd && benguetMtd.gross === benguetDay.gross &&
+          benguetMtd.net === benguetDay.net,
+        benguetMtd && `${benguetMtd.gross} / ${benguetMtd.net} — expected ` +
+          `${benguetDay && benguetDay.gross} / ${benguetDay && benguetDay.net}`)
+      check('and its target, not the blank blocks that follow it',
+        benguetDay && benguetMtd && benguetMtd.target === benguetDay.target,
+        benguetMtd && benguetMtd.target)
       check('the OVER ALL total reports that day too',
-        overallMtd && overallMtd.gross === 312114 && overallMtd.target === 307529,
+        reportDay && overallMtd && overallMtd.gross === reportDay.gross &&
+          overallMtd.target === reportDay.target,
         overallMtd && `${overallMtd && overallMtd.gross} / ${overallMtd && overallMtd.target}`)
-      check("LAST % is the sheet's NET / TARGET", overallMtd && overallMtd.last_pct === '90.62%',
+      check("LAST % is the sheet's own", reportDay && overallMtd && overallMtd.last_pct === reportDay.pct,
         overallMtd && JSON.stringify(overallMtd.last_pct))
       resetMirror()
     }
