@@ -602,7 +602,7 @@ function getMonthName(monthNum) {
 // stamp is the app version plus a short hash of the head and this template, so an edit to
 // either one changes it. Compare it with SCRIPT_BUILD in the .gs file you pasted.
 const SCRIPT_PLAN = 'FIBERX';
-const SCRIPT_BUILD = '1.22.0+f6da4b6d';
+const SCRIPT_BUILD = '1.23.0+f6da4b6d';
 
 const ARCHIVE_ENABLED_KEY = 'ARCHIVE_ENABLED';
 const ARCHIVE_AFTER_DAYS_KEY = 'ARCHIVE_AFTER_DAYS';

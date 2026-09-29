@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.23.0] — 2026-09-30
+
 ### 🗂️ An archived month carries every area the plan works in
 
 A closed month's area list was taken from its **last day**, so a province that reported on the
