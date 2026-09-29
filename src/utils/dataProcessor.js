@@ -45,6 +45,27 @@ export function formatNumber(val, colKey) {
 }
 
 /**
+ * Short form for a cell too narrow for the whole figure — the mobile month strip, where
+ * 413,275 in a single cell runs into its neighbour. One decimal and a k / M suffix:
+ *   413275 → 413.2k · 414880 → 414.8k · 4148 → 4.1k · 899 → 899 · 1250000 → 1.2M
+ *
+ * The decimal is floored, not rounded, so a delivered figure never reads as more than it
+ * is. Figures below a thousand stay whole, where there is nothing to shorten.
+ */
+export function formatCompact(val) {
+  if (val === null || val === undefined || val === '') return '—'
+  const n = cleanNumber(String(val))
+  if (isNaN(n)) return String(val)
+  const abs = Math.abs(n)
+  const sign = n < 0 ? '-' : ''
+  const unit = abs >= 1e6 ? { div: 1e6, suffix: 'M' } : abs >= 1e3 ? { div: 1e3, suffix: 'k' } : null
+  if (!unit) return `${sign}${Math.round(abs)}`
+  // The 1e-9 keeps 1.2 from arriving as 1.1999999 and flooring to 1.1.
+  const scaled = Math.floor((abs / unit.div) * 10 + 1e-9) / 10
+  return `${sign}${scaled % 1 === 0 ? scaled : scaled.toFixed(1)}${unit.suffix}`
+}
+
+/**
  * Peso amounts — SME's MRC block (GROSS, NET and the peso TARGET). Whole pesos, with the
  * sign outside the symbol so a shortfall reads as -₱1,500 rather than ₱-1,500.
  */

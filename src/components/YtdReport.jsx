@@ -13,7 +13,7 @@
  * The verdict (on pace / behind / critical) is judged on finished months only, so nothing
  * screams on the second day of a month. See computeYtd() in utils/yearTables.js.
  */
-import { formatNumber, getBadgeStyle, getPaceBadgeStyle } from '../utils/dataProcessor'
+import { formatNumber, formatCompact, getBadgeStyle, getPaceBadgeStyle } from '../utils/dataProcessor'
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -26,7 +26,13 @@ function Badge({ label, color, bg, border, pulse }) {
   )
 }
 
-/** One month of the strip: what it delivered against what it was asked for. */
+/**
+ * One month of the strip: what it delivered against what it was asked for.
+ *
+ * The delivered figure is shortened on a narrow screen — 413.2k rather than 413,275 — because
+ * twelve cells share the strip and a seven-figure number spills into its neighbour. The full
+ * figure stays in the cell's title, and it comes back at `lg` where the cells are wide.
+ */
 function MonthCell({ index, actual, target, future, accentText }) {
   const hasActual = typeof actual === 'number' && Number.isFinite(actual)
   const fill = !future && target > 0 && hasActual ? Math.min((actual / target) * 100, 100) : 0
@@ -35,7 +41,7 @@ function MonthCell({ index, actual, target, future, accentText }) {
 
   return (
     <div
-      className={`flex-1 min-w-[44px] rounded-lg border px-1.5 py-2 text-center ${
+      className={`flex-1 min-w-[64px] rounded-lg border px-1.5 py-2 text-center ${
         future
           ? 'border-dashed border-slate-200 dark:border-slate-800 bg-transparent opacity-55'
           : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40'
@@ -48,7 +54,12 @@ function MonthCell({ index, actual, target, future, accentText }) {
       <p className={`text-[13px] font-black tabular-nums leading-tight mt-0.5 ${
         future ? 'text-slate-300 dark:text-slate-600' : hit ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-100'
       }`}>
-        {future || !hasActual ? '—' : formatNumber(actual)}
+        {future || !hasActual ? '—' : (
+          <>
+            <span className="hidden lg:inline">{formatNumber(actual)}</span>
+            <span className="lg:hidden">{formatCompact(actual)}</span>
+          </>
+        )}
       </p>
       <div className="h-1 mt-1 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
         <div
