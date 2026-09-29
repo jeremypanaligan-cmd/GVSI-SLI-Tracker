@@ -1,11 +1,11 @@
 /**
  * GVSI SLI Tracker — Copy Snapshot Link helper
  *
- * Builds the current shareable URL (?plan=&date=&month=&view=) and copies it
- * to the clipboard. The URL is always kept in sync with the app state by
- * urlState.js (history.replaceState), so copying window.location.href is
- * sufficient — the link is self-updating: anyone who opens it gets fresh data
- * for that exact screen state.
+ * Builds the current shareable URL (?plan=&date=&month=&view=, plus the Provincial
+ * table's ?pace=&area=) and copies it to the clipboard. The URL is always kept in
+ * sync with the app state by urlState.js (history.replaceState), so copying
+ * window.location.href is sufficient — the link is self-updating: anyone who opens
+ * it gets fresh data for that exact screen state, filters included.
  */
 
 /** The full shareable URL for the current view state. */

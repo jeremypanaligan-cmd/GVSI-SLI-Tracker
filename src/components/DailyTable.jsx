@@ -7,8 +7,9 @@
  *   Date | AREA | BF | INC | Total Jo | COMPLETED FROM TOTAL | COMPLETED FROM RJO | TOTAL COMPLETED
  *   | RJO INCOMING | RJO RD | TOTAL RJO | Carry Over | MTD | GROSS | NET | TARGET | %
  */
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { formatNumber, formatPeso, getBadgeStyle, computeAreaPace, getPaceBadgeStyle } from '../utils/dataProcessor'
+import { readTableState, writeTableState, MAX_AREA_PARAM } from '../utils/urlState'
 import Sparkline from './Sparkline'
 
 const PACE_FILTERS = [
@@ -90,8 +91,18 @@ function PctBadge({ value }) {
   )
 }
 
+/**
+ * The pace a row is judged by — the single call shared by the PACE badge and the pace
+ * chips, so a chip can never return a row whose badge disagrees with it. `collectionBased`
+ * matters: on a money-measured plan the badge paces NET against the peso target, and the
+ * filter reading the ticket count instead is what made SME's chips return wrong rows.
+ */
+function paceOf(entry, refDate, collectionBased = false) {
+  return refDate ? computeAreaPace(entry, refDate, collectionBased) : null
+}
+
 function PaceBadge({ entry, refDate, collectionBased = false }) {
-  const proj = refDate ? computeAreaPace(entry, refDate, collectionBased) : null
+  const proj = paceOf(entry, refDate, collectionBased)
   if (!proj) return <span className="text-slate-300 dark:text-slate-600">—</span>
   const badge = getPaceBadgeStyle(proj.pace)
   return (
@@ -202,8 +213,21 @@ function SortIcon({ active, direction, colorClass = 'text-teal-500 dark:text-tea
 export default function DailyTable({ dateData, refDate, areaTrends, accent, collectionBased = false }) {
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
-  const [search, setSearch] = useState('')
-  const [paceFilter, setPaceFilter] = useState('all')
+  // Chip + search start from the URL (?pace=&area=), so a link someone shared — or a refresh
+  // — opens the table filtered the way it was left. Resolved in the initializers, like the
+  // app's own URL state, so there is no flash of the unfiltered table.
+  const [search, setSearch] = useState(() => readTableState().area)
+  const [paceFilter, setPaceFilter] = useState(() => {
+    const { pace } = readTableState()
+    return PACE_FILTERS.some((f) => f.value === pace) ? pace : 'all'
+  })
+
+  // …and mirror them back. Debounced because typing an area must not rewrite the URL on every
+  // keystroke; replaceState (never pushState) so filtering adds no browser-history entries.
+  useEffect(() => {
+    const id = setTimeout(() => writeTableState({ pace: paceFilter, area: search }), 250)
+    return () => clearTimeout(id)
+  }, [paceFilter, search])
 
   // Table chrome follows the selected plan. The header strip needs an *opaque*
   // background because the AREA / MTD·TARGET·% cells are sticky — a translucent
@@ -241,21 +265,37 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent, coll
     })
   }, [dateData, sortKey, sortDir])
 
-  // Area search + pace filter (Phase 3 — F4)
-  const filteredAreas = useMemo(() => {
-    let list = sortedAreas
+  // Area search first, then the pace chip (Phase 3 — F4). Resolving them in that order keeps
+  // the rows and the chip counts below reading the same list: a chip can only ever return what
+  // its own number claims.
+  const searchedAreas = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (q) {
-      list = list.filter((a) => String(a.area || '').toLowerCase().includes(q))
+    if (!q) return sortedAreas
+    return sortedAreas.filter((a) => String(a.area || '').toLowerCase().includes(q))
+  }, [sortedAreas, search])
+
+  /**
+   * What each chip would return, so the count is on the chip instead of behind a click. Counted
+   * after the search, because the two intersect: with "ilo" typed, **Behind** means the areas
+   * in Ilocos, not every area in the plan — the number a click would actually hand you.
+   */
+  const paceCounts = useMemo(() => {
+    const counts = { all: searchedAreas.length }
+    for (const f of PACE_FILTERS) if (f.value !== 'all') counts[f.value] = 0
+    for (const a of searchedAreas) {
+      const proj = paceOf(a, refDate, collectionBased)
+      if (proj && proj.pace in counts) counts[proj.pace] += 1
     }
-    if (paceFilter !== 'all') {
-      list = list.filter((a) => {
-        const proj = refDate ? computeAreaPace(a, refDate) : null
-        return proj && proj.pace === paceFilter
-      })
-    }
-    return list
-  }, [sortedAreas, search, paceFilter, refDate])
+    return counts
+  }, [searchedAreas, refDate, collectionBased])
+
+  const filteredAreas = useMemo(() => {
+    if (paceFilter === 'all') return searchedAreas
+    return searchedAreas.filter((a) => {
+      const proj = paceOf(a, refDate, collectionBased)
+      return proj && proj.pace === paceFilter
+    })
+  }, [searchedAreas, paceFilter, refDate, collectionBased])
 
   if (!dateData || (!dateData.areas?.length && !dateData.overallTotal)) {
     return (
@@ -276,6 +316,7 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent, coll
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            maxLength={MAX_AREA_PARAM}
             placeholder="Search area…"
             className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50 transition placeholder:text-slate-400 dark:placeholder:text-slate-500"
           />
@@ -289,19 +330,28 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent, coll
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap">
-          {PACE_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setPaceFilter(f.value)}
-              className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all duration-200 ${
-                paceFilter === f.value
-                  ? chipActive
-                  : 'bg-white dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
+          {PACE_FILTERS.map((f) => {
+            const count = paceCounts[f.value] ?? 0
+            const active = paceFilter === f.value
+            const areas = `${count} area${count === 1 ? '' : 's'}`
+            return (
+              <button
+                key={f.value}
+                onClick={() => setPaceFilter(f.value)}
+                title={f.value === 'all'
+                  ? `${areas}${search.trim() ? ' matching the search' : ''}`
+                  : `${areas} at ${f.label.toLowerCase()} pace — click to show only those`}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all duration-200 ${
+                  active
+                    ? chipActive
+                    : `bg-white dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60 ${count === 0 ? 'opacity-50' : ''}`
+                }`}
+              >
+                {f.label}
+                <span className={`text-[9px] font-black tabular-nums ${active ? 'opacity-80' : 'text-slate-400 dark:text-slate-500'}`}>{count}</span>
+              </button>
+            )
+          })}
         </div>
 
         {(search || paceFilter !== 'all') && (

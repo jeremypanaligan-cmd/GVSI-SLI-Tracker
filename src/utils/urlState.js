@@ -11,6 +11,10 @@
  *
  * Date/month values are converted at the boundary; the app state itself keeps
  * using the display format everywhere.
+ *
+ * The Provincial table's filters ride along in the same query string
+ * (?pace=&area=) — see readTableState below — so a shared link opens the table as
+ * the sender had it.
  */
 
 export const STATE_STORAGE_KEYS = {
@@ -112,6 +116,52 @@ export function writeUrlState({ plan, date, month, view }) {
     if (date) params.set('date', formatDateParam(date)); else params.delete('date')
     if (month) params.set('month', formatMonthParam(month)); else params.delete('month')
     if (view) params.set('view', view); else params.delete('view')
+    const qs = params.toString()
+    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname
+    window.history.replaceState(null, '', url)
+  } catch { /* ignore — URL sync is best-effort */ }
+}
+
+// ── Provincial table filters (?pace=&area=) ────────────────────────────────────
+//
+// The active PACE chip and the area search, in the URL only — deliberately NOT in
+// localStorage, unlike plan/date/month/view. A filter hides rows, and a table that opens
+// empty because of a chip someone clicked days ago reads as missing data rather than as a
+// filter. The URL carries it instead: a filtered table is shareable and survives a refresh,
+// and a plain table keeps a plain URL.
+
+/** Longest area search the URL will carry — a share link is not a place to paste text. */
+export const MAX_AREA_PARAM = 60
+
+/**
+ * Read the Provincial table's filter state from the URL query string.
+ * Returns { pace, area }: `pace` raw, because the table validates it against its own chip
+ * list, and the area search trimmed and length-capped.
+ */
+export function readTableState() {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    return {
+      pace: params.get('pace') || '',
+      area: (params.get('area') || '').trim().slice(0, MAX_AREA_PARAM),
+    }
+  } catch {
+    return { pace: '', area: '' }
+  }
+}
+
+/**
+ * Write the Provincial table's filter state to the URL via history.replaceState, leaving the
+ * app's own params (plan/date/month/view) exactly as they are. The default state — no chip,
+ * no search — removes the params rather than spelling them out. Best-effort (swallowed
+ * errors), like writeUrlState above.
+ */
+export function writeTableState({ pace, area }) {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    if (pace && pace !== 'all') params.set('pace', pace); else params.delete('pace')
+    const search = String(area || '').trim().slice(0, MAX_AREA_PARAM)
+    if (search) params.set('area', search); else params.delete('area')
     const qs = params.toString()
     const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname
     window.history.replaceState(null, '', url)
