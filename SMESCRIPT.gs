@@ -647,7 +647,7 @@ function getMonthName(monthNum) {
 // stamp is the app version plus a short hash of the head and this template, so an edit to
 // either one changes it. Compare it with SCRIPT_BUILD in the .gs file you pasted.
 const SCRIPT_PLAN = 'SME';
-const SCRIPT_BUILD = '1.22.0+4aa1dc66';
+const SCRIPT_BUILD = '1.22.0+f6811942';
 
 const ARCHIVE_ENABLED_KEY = 'ARCHIVE_ENABLED';
 const ARCHIVE_AFTER_DAYS_KEY = 'ARCHIVE_AFTER_DAYS';
@@ -1027,6 +1027,49 @@ function collectRawArchiveRows_(monthKey) {
 }
 
 /**
+ * The areas the plan works in right now: every area on the mirror's most recent report date.
+ *
+ * The archive needs this because a month's own rows are not a complete list of the plan. The
+ * `MTD` sheet can afford to list only the areas a month's last day block carries — it is a
+ * summary for reading. The archive cannot: an area that the plan covers but whose block the
+ * report omitted would have no row at all, and a month with no row for an area is a month the
+ * app has to guess about. That is how `Aurora` came to be missing from every archived month
+ * while the worksheet carried it, which left the app holding one source's silence against the
+ * other source's figure.
+ *
+ * Taken from the latest date present rather than a fixed list, so a province is retired by
+ * removing it from the report and added by putting it back — the same rule the import itself
+ * follows, with no setting to keep in step.
+ */
+function currentPlanAreas_() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(RAW_DATA_SHEET_NAME);
+  if (!sheet) return [];
+
+  var values = sheet.getDataRange().getValues();
+  var latest = null;
+  var areas = {};
+
+  for (var i = 1; i < values.length; i++) {
+    var date = parseAnyDate_(values[i][0]);
+    if (!date) continue;
+
+    var area = String(values[i][1] || '').trim();
+    if (!area || area === 'AREA' || area === 'OVER ALL TOTAL') continue;
+
+    var at = date.getTime();
+    if (latest === null || at > latest) {
+      latest = at;
+      areas = {};
+    }
+    if (at === latest) areas[area] = true;
+  }
+
+  var out = [];
+  for (var name in areas) if (areas.hasOwnProperty(name)) out.push(name);
+  return out.sort();
+}
+
+/**
  * The month's MTD rows, computed from the month's RAW DATA rows.
  *
  * These are the same figures the MTD sheet holds: that sheet is built from RAW DATA by
@@ -1036,13 +1079,22 @@ function collectRawArchiveRows_(monthKey) {
  * exactly what happened on 2026-09-21, twice, the second time caught by the gate before it
  * could purge a month whose MTD figures had never been archived.
  *
- * Two details are carried over from generateMTDReport deliberately:
- *   - the area list is the LAST day's areas, not the union of every day, because that is
- *     the set of areas the sheet lists;
- *   - the OVER ALL TOTAL sums every area on every day, listed or not, because that is how
- *     the sheet's total is built.
+ * The area list is the plan's, not one day's, and it comes from two places:
+ *   - every area the month's rows name on ANY day. Taking it from the last day alone meant
+ *     an area that reported on the 12th and not on the 31st vanished from the archive, and
+ *     with it whatever it had done that month;
+ *   - plus every area the plan works in now (`currentPlanAreas_`), written as zeros when the
+ *     month's own report never mentioned it. An explicit zero is what lets the app compare
+ *     the two sides province by province — silence there reads as "the tracker never said",
+ *     which is not the same statement as "nothing was done", and it let a non-zero worksheet
+ *     cell look like data the record agreed with. A closed month is final, so for a covered
+ *     area, "no rows" and "no work" are the same finding.
+ *
+ * The OVER ALL TOTAL is unchanged: it sums every area on every day, listed or not, because
+ * that is how the sheet's total is built — and an area appended as zeros adds nothing to it.
+ * The month's region figure is therefore the figure the sheet's own total row carries.
  */
-function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
+function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel, planAreas) {
   var SUMS = [
     ['comp_from_total', 'comp_from_total'],
     ['comp_from_rjo', 'comp_from_rjo'],
@@ -1091,6 +1143,9 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
   var perArea = {};
   var lastRowOfArea = {};
   var listed = {};
+  // Whether this month's rows carry the MRC block at all (SME's GROSS / NET). A zero row
+  // mirrors the month: it does not invent a collection column the plan's report lacks.
+  var hasCollections = false;
   var overallLast = null;
   var overallByDate = {};
   var total = {
@@ -1131,11 +1186,25 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
          row.report_date > lastRowOfArea[area].report_date)) {
       lastRowOfArea[area] = row;
     }
-    if (row.report_date === lastDate) listed[area] = true;
+    if (row.gross !== null && row.gross !== undefined) hasCollections = true;
+    if (row.net !== null && row.net !== undefined) hasCollections = true;
+
+    // Every day, not just the last one — see the header comment.
+    listed[area] = true;
   }
 
+  // The month's own areas, then the plan's, then alphabetical: an area appended from the
+  // plan's current list has no rows to sort by, so it takes its place by name like the rest.
   var areas = [];
-  for (var name in listed) if (listed.hasOwnProperty(name)) areas.push(name);
+  var named = {};
+  var addArea = function (area) {
+    if (!area || named[area]) return;
+    named[area] = true;
+    areas.push(area);
+  };
+  for (var listedArea in listed) if (listed.hasOwnProperty(listedArea)) addArea(listedArea);
+  var currentAreas = planAreas || [];
+  for (i = 0; i < currentAreas.length; i++) addArea(String(currentAreas[i]).trim());
   areas.sort();
 
   var rows = [];
@@ -1144,8 +1213,11 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
   };
 
   for (i = 0; i < areas.length; i++) {
-    var sums = perArea[areas[i]];
+    var sums = perArea[areas[i]] || blankSums();
     var lastRow = lastRowOfArea[areas[i]];
+    // A covered area the month's report never mentioned: there is no day to take a snapshot
+    // from, so the month's figures for it are the zeros its absence already means.
+    var carried = !!perArea[areas[i]];
     rows.push({
       plan: PLAN_ID,
       month_key: monthKey,
@@ -1158,12 +1230,12 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
       this_mo_rjo: sums.this_mo_rjo,
       prev_mos_rjo: sums.prev_mos_rjo,
       total_rjo: sums.this_mo_rjo + sums.prev_mos_rjo,
-      last_mtd: optional(lastRow, 'mtd'),
-      gross: optional(lastRow, 'gross'),
-      net: optional(lastRow, 'net'),
-      target: optional(lastRow, 'target'),
+      last_mtd: carried ? optional(lastRow, 'mtd') : 0,
+      gross: carried ? optional(lastRow, 'gross') : (hasCollections ? 0 : null),
+      net: carried ? optional(lastRow, 'net') : (hasCollections ? 0 : null),
+      target: carried ? optional(lastRow, 'target') : 0,
       total_incoming: sums.total_incoming,
-      last_pct: percentText_(lastRow ? lastRow.pct : ''),
+      last_pct: carried ? percentText_(lastRow ? lastRow.pct : '') : '',
       row_order: rows.length
     });
   }
@@ -1671,9 +1743,12 @@ function restorePlanSheetFormula() {
 
 function archiveOneMonth_(month, dryRun, purge, trim) {
   var rawRows = collectRawArchiveRows_(month.key);
+  // The plan's area list, so the archived month carries a row for every area it covers even
+  // when the month's own report never named it. Read fresh, after the fullSync above.
+  var planAreas = currentPlanAreas_();
   // Computed from the rows just read, not read back off the MTD sheet — see
   // deriveMtdArchiveRows_ for why the sheet was the wrong source.
-  var mtdRows = deriveMtdArchiveRows_(rawRows, month.key, month.label);
+  var mtdRows = deriveMtdArchiveRows_(rawRows, month.key, month.label, planAreas);
 
   if (!rawRows.length) {
     return { note: month.label + ': walang RAW DATA rows — nilaktawan.', verified: false };
