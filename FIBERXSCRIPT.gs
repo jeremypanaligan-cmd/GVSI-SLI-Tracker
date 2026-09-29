@@ -108,6 +108,16 @@ const MTD_HEADER = [
   'LAST MTD', 'TARGET', 'LAST %', 'TOTAL INCOMING'
 ];
 
+// The number format of every figure column, B..K — one entry per MTD_HEADER column after
+// AREA, so the two lists have to stay the same width.
+//   B-I  COMPLETED FROM TOTAL … LAST MTD, TARGET : #,##0
+//   J    LAST %                                  : 0.0%
+//   K    TOTAL INCOMING                          : #,##0
+const MTD_COLUMN_FORMATS = [
+  '#,##0', '#,##0', '#,##0', '#,##0', '#,##0', '#,##0', '#,##0', '#,##0',
+  '0.0%', '#,##0'
+];
+
 // ==================== IMPORT ====================
 
 function importFiberxToRawData() {
@@ -436,34 +446,44 @@ function styleMtdRows_(sheet, rows, style, merge, cols) {
 
 /**
  * Apply number formatting to MTD data rows (skip title, month headers, and sub-headers)
+ *
+ * The whole A..K block is read once and one format row is written per data row. This used
+ * to read A and B cell by cell — two calls per row — and decide "is this a data row?" from
+ * the type of B. A cell still carrying an old date format comes back from getValue() as a
+ * Date rather than a number, so that test failed and the row was left alone for good: a
+ * first-of-month row sat at 12/30/1899 while every row under it read correctly. A data row
+ * is identified by its shape instead — a label in A and figures in B..K.
  */
 function applyMTDFormatting(sheet) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 4) return;
+  var width = MTD_HEADER.length;
+  var data = sheet.getRange(1, 1, lastRow, width).getValues();
   
-  // Scan for data rows (skip title row 1, skip month/year merged rows, skip header rows)
-  for (var r = 1; r <= lastRow; r++) {
-    var cellA = String(sheet.getRange(r, 1).getValue()).trim();
+  for (var r = 0; r < data.length; r++) {
+    var row = data[r];
+    var cellA = String(row[0]).trim();
     
     // Skip title, month headers, area headers, and empty rows
     if (cellA === 'SLI MTD TRACKING REPORT' || cellA === '' || cellA === 'AREA') continue;
-    if (cellA.includes('202') && cellA.length < 20) continue; // month year rows like "September 2026"
+    // Month/year rows like "September 2026"
+    if (cellA.includes('202') && cellA.length < 20) continue;
+    // Any other row that carries a label and no figures. The month row keeps this shape
+    // even when a date format left on its label has turned it into a long Date string.
+    if (hasNoFigures_(row, width)) continue;
     
-    // Check if this is a data row (has a number or area name)
-    var cellB = sheet.getRange(r, 2).getValue();
-    if (typeof cellB === 'number' || cellB === 0) {
-      // B-F (cols 2-6): COMPLETED FROM TOTAL, COMPLETED FROM RJO, TOTAL COMPLETED, THIS MO. RJO, PREV MOS. RJO → #,##0
-      sheet.getRange(r, 2, 1, 5).setNumberFormat('#,##0');
-      // G (col 7): TOTAL RJO → #,##0
-      sheet.getRange(r, 7).setNumberFormat('#,##0');
-      // H (col 8): LAST MTD → #,##0
-      sheet.getRange(r, 8).setNumberFormat('#,##0');
-      // I (col 9): TARGET → #,##0
-      sheet.getRange(r, 9).setNumberFormat('#,##0');
-      // J (col 10): LAST % → 0.00%
-      sheet.getRange(r, 10).setNumberFormat('0.00%');
-    }
+    // An area row, or OVER ALL TOTAL. One call writes the whole B..K run, so no column can
+    // be left behind by whatever format the cell happened to be carrying.
+    sheet.getRange(r + 1, 2, 1, MTD_COLUMN_FORMATS.length).setNumberFormats([MTD_COLUMN_FORMATS]);
   }
+}
+
+/** True when B..<width> of `row` hold nothing at all — the shape of a month label row. */
+function hasNoFigures_(row, width) {
+  for (var c = 1; c < width; c++) {
+    if (row[c] !== '' && row[c] !== null && row[c] !== undefined) return false;
+  }
+  return true;
 }
 
 // ==================== PARSING ====================
@@ -971,22 +991,32 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
   }
 
   // The day whose LAST MTD / GROSS / NET / TARGET / % the month reports — the same rule
-  // buildMtdReport() applies to the sheet. The sheet pre-creates the rest of the month as
-  // blank day blocks with a 0 target and a '#DIV/0!' %, so the literal last day can hold
-  // none of the month's figures. The last day whose OVER ALL TOTAL carries a target is the
-  // real standing day; the literal last day is only the fallback. A plan whose target is
-  // present every day (BIDA, FIBERX) is unaffected.
+  // buildMtdReport() applies to the sheet.
+  //
+  // The sheet pre-creates the rest of the month as blank day blocks. Those blocks carry the
+  // month's MTD and TARGET forward and their % is the sheet's own MTD / TARGET, but they
+  // hold no collection, so "the last day carrying a target" is one of them and the month
+  // archived a GROSS / NET of 0 and a LAST % of 0.04% while the sheet held 325,808 / 290,900
+  // and 94.59%. The standing day is the last day that carries a peso collection; the target
+  // rule stays as the fallback, so a plan with no MRC block (BIDA, FIBERX) is unaffected.
   var reportDate = lastDate;
-  var reportHasTarget = false;
+  var collectionDate = null;
+  var targetDate = null;
   for (i = 0; i < rawRows.length; i++) {
     var candidate = rawRows[i];
     if (!candidate.is_overall_total) continue;
     if (Number(candidate.target || 0) > 0 &&
-        (!reportHasTarget || candidate.report_date > reportDate)) {
-      reportDate = candidate.report_date;
-      reportHasTarget = true;
+        (!targetDate || candidate.report_date > targetDate)) {
+      targetDate = candidate.report_date;
+    }
+    if (Number(candidate.gross || 0) > 0 || Number(candidate.net || 0) > 0) {
+      if (!collectionDate || candidate.report_date > collectionDate) {
+        collectionDate = candidate.report_date;
+      }
     }
   }
+  if (collectionDate) reportDate = collectionDate;
+  else if (targetDate) reportDate = targetDate;
 
   var perArea = {};
   var lastRowOfArea = {};

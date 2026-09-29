@@ -402,6 +402,10 @@ function loadPlan(planId, props, options) {
   // seeded with the formula the spreadsheet actually holds. Without that,
   // planSheetIsFormulaDriven_() would call the real NEW REPORT "hand-encoded" and the
   // purge would take a path it never takes on the day.
+  //
+  // NOTE: the rows themselves have to come from the source workbook the formula names. The
+  // plan's own NEW REPORT export is not a substitute — it came back 18 rows (one day block)
+  // shorter, without the August block the trim checks start the window from.
   const reportTab = Object.keys(plan.tabs).find((name) => /NEW REPORT$/.test(name))
   if (reportTab && sheets[reportTab] && plan.mirrorFormula) {
     sheets[reportTab].formulas['1,1'] = plan.mirrorFormula
@@ -914,15 +918,30 @@ function main() {
       check("the sheet's own % is kept verbatim", benguet25 && benguet25.pct === '67.62%',
         benguet25 && JSON.stringify(benguet25.pct))
 
-      // The MTD row is the last day the month actually carries a target, and that day moves
-      // forward every time the sheet gains a filled block — so the expectation is read off
-      // the sheet's own OVER ALL rows rather than pinned to a date. The day-level checks
+      // The MTD row is the last day the month actually carries a collection, and that day
+      // moves forward every time the sheet gains a filled block — so the expectation is read
+      // off the sheet's own OVER ALL rows rather than pinned to a date. The day-level checks
       // above stay literal: they are about which column a figure came from, and a past day
       // no longer changes.
+      //
+      // Carrying a *target* is not the same thing, and the difference is the bug this rule
+      // was built for: the sheet pre-creates the rest of the month as blank day blocks that
+      // carry the month's MTD and TARGET but no collection at all, so the last day with a
+      // target is usually a blank one. Reporting Sept 30 put a GROSS / NET of 0 and a LAST %
+      // of 0.04% — the sheet's own MTD / TARGET — into MTD and into the archive.
       const overallDays = rawSept.filter((r) => r.is_overall_total)
-      const targetDays = overallDays.filter((r) => Number(r.target) > 0)
-      const reportDay = targetDays[targetDays.length - 1]
+      const collectionDays = overallDays.filter((r) => Number(r.gross) > 0 || Number(r.net) > 0)
+      const reportDay = collectionDays[collectionDays.length - 1]
       const reportDate = reportDay ? reportDay.report_date : '(none)'
+      const blankDays = overallDays.filter((r) =>
+        Number(r.target) > 0 && Number(r.gross) === 0 && Number(r.net) === 0)
+
+      check('a blank pre-created block is never the report day',
+        Boolean(reportDay) && (Number(reportDay.gross) > 0 || Number(reportDay.net) > 0),
+        reportDay
+          ? `${reportDate} gross=${reportDay.gross} net=${reportDay.net} · ` +
+            `${blankDays.length} blank target-carrying days`
+          : 'no day in the month carries a collection')
       const benguetDay = benguetSept.find((r) => r.report_date === reportDate)
 
       const mtdSept = context.deriveMtdArchiveRows_(rawSept, '2026-09', 'September 2026')
@@ -942,6 +961,11 @@ function main() {
         overallMtd && `${overallMtd && overallMtd.gross} / ${overallMtd && overallMtd.target}`)
       check("LAST % is the sheet's own", reportDay && overallMtd && overallMtd.last_pct === reportDay.pct,
         overallMtd && JSON.stringify(overallMtd.last_pct))
+      // The archive has to agree with the sheet about that day, so the same rule has to hold
+      // in both places — this is where a report day that is a blank block shows up as a 0.
+      check('the archived OVER ALL row carries the month, not a blank',
+        overallMtd && Number(overallMtd.gross) > 0 && Number(overallMtd.net) > 0,
+        overallMtd && `${overallMtd.gross} / ${overallMtd.net} / ${overallMtd.last_pct}`)
       resetMirror()
     }
 

@@ -423,22 +423,32 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel) {
   }
 
   // The day whose LAST MTD / GROSS / NET / TARGET / % the month reports — the same rule
-  // buildMtdReport() applies to the sheet. The sheet pre-creates the rest of the month as
-  // blank day blocks with a 0 target and a '#DIV/0!' %, so the literal last day can hold
-  // none of the month's figures. The last day whose OVER ALL TOTAL carries a target is the
-  // real standing day; the literal last day is only the fallback. A plan whose target is
-  // present every day (BIDA, FIBERX) is unaffected.
+  // buildMtdReport() applies to the sheet.
+  //
+  // The sheet pre-creates the rest of the month as blank day blocks. Those blocks carry the
+  // month's MTD and TARGET forward and their % is the sheet's own MTD / TARGET, but they
+  // hold no collection, so "the last day carrying a target" is one of them and the month
+  // archived a GROSS / NET of 0 and a LAST % of 0.04% while the sheet held 325,808 / 290,900
+  // and 94.59%. The standing day is the last day that carries a peso collection; the target
+  // rule stays as the fallback, so a plan with no MRC block (BIDA, FIBERX) is unaffected.
   var reportDate = lastDate;
-  var reportHasTarget = false;
+  var collectionDate = null;
+  var targetDate = null;
   for (i = 0; i < rawRows.length; i++) {
     var candidate = rawRows[i];
     if (!candidate.is_overall_total) continue;
     if (Number(candidate.target || 0) > 0 &&
-        (!reportHasTarget || candidate.report_date > reportDate)) {
-      reportDate = candidate.report_date;
-      reportHasTarget = true;
+        (!targetDate || candidate.report_date > targetDate)) {
+      targetDate = candidate.report_date;
+    }
+    if (Number(candidate.gross || 0) > 0 || Number(candidate.net || 0) > 0) {
+      if (!collectionDate || candidate.report_date > collectionDate) {
+        collectionDate = candidate.report_date;
+      }
     }
   }
+  if (collectionDate) reportDate = collectionDate;
+  else if (targetDate) reportDate = targetDate;
 
   var perArea = {};
   var lastRowOfArea = {};
