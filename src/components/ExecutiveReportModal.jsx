@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { formatNumber, computeAreaPace } from '../utils/dataProcessor'
+import { formatNumber, formatPeso, computeAreaPace } from '../utils/dataProcessor'
 import AppLogo from './AppLogo'
 
 /**
@@ -9,9 +9,22 @@ import AppLogo from './AppLogo'
  * pale text on a white background when printed.
  */
 const REPORT_PACE_STYLE = {
-  'on-pace': { bg: 'bg-emerald-100', color: 'text-emerald-700', border: 'border-emerald-300' },
-  behind: { bg: 'bg-amber-100', color: 'text-amber-700', border: 'border-amber-300' },
-  critical: { bg: 'bg-rose-100', color: 'text-rose-700', border: 'border-rose-300' },
+  'on-pace': { label: 'On pace', bg: 'bg-emerald-100', color: 'text-emerald-700', border: 'border-emerald-300' },
+  behind: { label: 'Behind pace', bg: 'bg-amber-100', color: 'text-amber-700', border: 'border-amber-300' },
+  critical: { label: 'Critical', bg: 'bg-rose-100', color: 'text-rose-700', border: 'border-rose-300' },
+}
+
+/**
+ * The figure this sheet prints and ranks a province by — the same basis its PACE badge
+ * reads: NET when the plan's target is money (SME), completed tickets everywhere else.
+ *
+ * Null when a money plan has no NET for the area, so a stray ticket count is never ranked
+ * or printed next to the peso target; the province drops out of the table instead.
+ */
+function reportFigure(area, collectionBased) {
+  if (!area) return null
+  if (collectionBased) return Number.isFinite(area.net) ? area.net : null
+  return Number.isFinite(area.lastMtd) ? area.lastMtd : null
 }
 
 /**
@@ -49,11 +62,17 @@ export default function ExecutiveReportModal({
 
   const { mtd, daily } = metrics
   const pc = plan.accentClasses || {}
+  // A money-measured plan is read against its peso target, so the ranking, the printed
+  // cells and the KPI row all have to use the basis the pace badge uses — otherwise a
+  // ticket count is shown and sorted beside the money target.
+  const collectionBased = Boolean(plan.collectionBased)
+  const figureOf = (a) => reportFigure(a, collectionBased)
+  const metric = (n) => (collectionBased ? formatPeso(n) : formatNumber(n))
 
-  // Provincial ranking by LAST MTD (desc); top 5 movers + bottom 5 stragglers.
+  // Provincial ranking by the plan's own basis (desc); top 5 movers + bottom 5 stragglers.
   const ranked = (areas || [])
-    .filter((a) => a && typeof a.lastMtd === 'number' && !isNaN(a.lastMtd))
-    .sort((a, b) => (b.lastMtd || 0) - (a.lastMtd || 0))
+    .filter((a) => figureOf(a) !== null)
+    .sort((a, b) => figureOf(b) - figureOf(a))
 
   const take = ranked.slice(0, 5)
   const bottom = ranked.slice(-5).reverse()
@@ -65,11 +84,15 @@ export default function ExecutiveReportModal({
 
   const ach = mtd.pct != null && !isNaN(mtd.pct) ? mtd.pct : null
 
+  // The KPI that answers "how are we doing against target" carries whatever the target is
+  // measured in: NET on a money plan (completedForTarget), ticket completions elsewhere.
+  const completed = collectionBased ? mtd.completedForTarget : mtd.totalCompleted
+
   const kpi = [
     { label: 'Achievement Rate', value: ach != null ? `${ach.toFixed(1)}%` : '—', sub: momDelta ? `${momDelta.improved ? '▲' : '▼'} ${Math.abs(momDelta.deltaPts).toFixed(1)} pts vs ${momDelta.prevMonth}` : null },
-    { label: 'Total Completed', value: mtd.totalCompleted != null ? formatNumber(mtd.totalCompleted) : '—', sub: `of ${formatNumber(mtd.target)} target` },
+    { label: collectionBased ? 'Net Collected' : 'Total Completed', value: completed != null ? metric(completed) : '—', sub: `of ${metric(mtd.target)} target` },
     { label: 'Total Incoming', value: mtd.totalIncoming != null ? formatNumber(mtd.totalIncoming) : '—', sub: 'month-to-date tickets' },
-    { label: 'To Go', value: mtd.toGo > 0 ? formatNumber(mtd.toGo) : '0', sub: mtd.toGo > 0 ? 'remaining to target' : 'target reached ✓' },
+    { label: 'To Go', value: mtd.toGo > 0 ? metric(mtd.toGo) : '0', sub: mtd.toGo > 0 ? 'remaining to target' : 'target reached ✓' },
   ]
 
   const dailyRow = [
@@ -173,7 +196,7 @@ export default function ExecutiveReportModal({
             <thead>
               <tr className="text-left border-b-2 border-slate-200">
                 <th className="pb-2 text-[9px] font-bold uppercase tracking-wider text-slate-400">Area</th>
-                <th className="pb-2 text-right text-[9px] font-bold uppercase tracking-wider text-slate-400">MTD Comp.</th>
+                <th className="pb-2 text-right text-[9px] font-bold uppercase tracking-wider text-slate-400">{collectionBased ? 'Net Collected' : 'MTD Comp.'}</th>
                 <th className="pb-2 text-right text-[9px] font-bold uppercase tracking-wider text-slate-400">Target</th>
                 <th className="pb-2 text-right text-[9px] font-bold uppercase tracking-wider text-slate-400">Ach. %</th>
                 <th className="pb-2 text-center text-[9px] font-bold uppercase tracking-wider text-slate-400">Pace</th>
@@ -185,7 +208,7 @@ export default function ExecutiveReportModal({
               )}
               {rankedProvinces.map((a, i) => {
                 const isBottom = bottom.includes(a) && !take.includes(a)
-                const proj = latestDataDate ? computeAreaPace(a, latestDataDate) : null
+                const proj = latestDataDate ? computeAreaPace(a, latestDataDate, collectionBased) : null
                 const badge = proj ? REPORT_PACE_STYLE[proj.pace] || null : null
                 const pct = a.lastPct != null && !isNaN(a.lastPct) ? a.lastPct : null
                 return (
@@ -196,8 +219,8 @@ export default function ExecutiveReportModal({
                         {a.area}
                       </span>
                     </td>
-                    <td className="py-2 text-right font-bold text-slate-900">{formatNumber(a.lastMtd)}</td>
-                    <td className="py-2 text-right text-slate-500">{formatNumber(a.target)}</td>
+                    <td className="py-2 text-right font-bold text-slate-900">{metric(figureOf(a))}</td>
+                    <td className="py-2 text-right text-slate-500">{metric(a.target)}</td>
                     <td className={`py-2 text-right font-bold ${pct != null ? (pct >= 100 ? 'text-emerald-700' : pct >= 80 ? 'text-amber-600' : 'text-slate-700') : 'text-slate-400'}`}>
                       {pct != null ? `${pct.toFixed(2)}%` : '—'}
                     </td>

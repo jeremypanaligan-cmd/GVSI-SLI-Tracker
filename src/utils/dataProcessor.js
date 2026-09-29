@@ -748,20 +748,28 @@ export function projectRunRate(totalCompleted, target, refDateStr) {
 
 /**
  * Convenience wrapper for a single MTD/daily area entry.
- * Reads lastMtd (MTD section) or mtd (daily block) as the current total.
+ * Reads lastMtd (MTD section) or mtd (daily block) as the current total — or NET when the
+ * plan's target is money.
  *
  * @param {object} areaEntry - entry with lastMtd|mtd and target fields
  * @param {string} refDateStr - latest data date
- * @param {boolean} [useCollections] - measure NET against the peso target (SME)
+ * @param {boolean} [useCollections] - measure NET against the peso target (SME); an entry
+ *                                     with no NET has no pace at all, and returns null
  * @returns {object|null} projection, or null when unusable
  */
 export function computeAreaPace(areaEntry, refDateStr, useCollections = false) {
   if (!areaEntry) return null
-  const total = useCollections && Number.isFinite(areaEntry.net)
-    ? areaEntry.net
-    : areaEntry.lastMtd !== undefined && areaEntry.lastMtd !== null
-      ? areaEntry.lastMtd
-      : areaEntry.mtd
+  // A money-measured plan has no pace without the money figure. Falling back to the ticket
+  // count would pace a handful of installations against a peso target, which reads as a
+  // permanent Critical for every area.
+  if (useCollections) {
+    return Number.isFinite(areaEntry.net)
+      ? projectRunRate(areaEntry.net, areaEntry.target, refDateStr)
+      : null
+  }
+  const total = areaEntry.lastMtd !== undefined && areaEntry.lastMtd !== null
+    ? areaEntry.lastMtd
+    : areaEntry.mtd
   return projectRunRate(total, areaEntry.target, refDateStr)
 }
 
