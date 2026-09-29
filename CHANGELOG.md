@@ -6,6 +6,143 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 🩺 The Developer console says when the record and the worksheet disagree
+
+A month both sides hold is read from the record, so the worksheet's version of it is not shown,
+not corrected and not mentioned. The August mismatch that started this was found by eye, holding
+`MONTHLY PROGRESS` up against the spreadsheet. The **Data source diagnostics** section of the
+Developer console now reports it instead.
+
+- **`summarizeSourceClashes()`** in `utils/yearTables.js` walks every province-month both sides
+  carry and compares them, beside the rule that decides which side is displayed. A gap has to
+  clear both a relative and an absolute threshold (0.5%, and 2 of the plan's own units), so
+  single-digit rounding on a small count stays quiet while 12% on any figure does not
+- **The 12% is not an arbitrary pick.** SME's `MTD` carries `GROSS` and `NET` and
+  `GROSS = NET × 1.12` exactly, so a worksheet column read in the other basis shows up here as
+  a uniform 12% across every area — which is the one guess a reader should be able to make
+- **A record month that cannot be expressed in the plan's units is reported too**, and separately.
+  These are not disagreements: SME's archived `2026-08` is twelve ticket counts with no `NET`, so
+  the record says nothing at all about August and the worksheet is the only voice. The console
+  names those months and why, because silence there is indistinguishable from agreement
+- **Checked against the live exports, the live `MTD` tabs and the archive rows**, rendered through
+  the panel itself, it reports two things on today's data. **BIDA's August**: `Kalinga` reads 5 in
+  the worksheet against the record's 17, and `Apayao` 0 against 5 — the two areas where the
+  archive's August rows and the tab part company, and the sheet's own `TOTAL` row agrees with
+  either pairing, so nothing else would have caught it. **SME's August**: twelve province-months
+  the record holds but cannot express. FIBERX agrees on all twelve province-months it holds, a
+  one-unit rounding gap on a small count stays quiet, and a plan with no record at all says
+  nothing
+- **A month the record covers only in part is reported too.** The provinces the record holds
+  decide the month's source, and the ones it does not keep their worksheet cell — which is the one
+  way a month's own total can come out larger than either source's. Every archived month in
+  `sli_mtd` was written from a twelve-province area list with no `Aurora`, so **BIDA's August now
+  reads 540 where either source alone says 523**: the archive's twelve rows add to 523, the tab's
+  `Aurora` cell holds `17`, and the archive's `Kalinga` holds that same `17` — `Aurora` is 0 in
+  every other month of the year. The console names the month, the count and the added figure
+  instead of leaving a number nobody can account for
+- **Observation only.** Nothing reads the result back; this changes no figure on the dashboard
+
+### 🧮 SME's month is money, and the record may only contribute money
+
+`MONTHLY PROGRESS` and the two year tabs disagreed. `YTD 2026` says SME delivered **465,023** in
+August; the strip showed **174**. The fault was not which side wins — it was what the record is
+allowed to *say*.
+
+- **SME's record contribution was a ticket count.** The plan is measured in money, NET against a
+  peso target, but the override read `LAST MTD`: the archived `2026-08` row (`last_mtd` 174, with
+  `gross` and `net` null, written before the MRC columns existed) put a count beside eleven months
+  of pesos. `buildOverrides` now takes the plan's basis, so a collection-based plan contributes
+  NET only, and a record row with no NET at all contributes nothing rather than standing in for
+  money. That archived row therefore has nothing to say about August, and the month falls to the
+  worksheet — which is the honest outcome, not a workaround
+- **Precedence is unchanged: the app's own record still wins for any month it holds** — the
+  archived month in Supabase first, then the live `MTD` tab — and the worksheet fills only what
+  the record does not carry. The record is the app's own measurement, taken at trim time and
+  immutable afterwards; the worksheet is a cell somebody maintains. August now reads from
+  Supabase on FIBERX and BIDA, as it should, and the earlier "record first" rule is restored
+  along with the fix that actually mattered
+- **Checked against the live exports:** SME and BIDA reproduce `YTD 2026` exactly for `JAN`–`AUG`
+  and `TARGET 2026` for all twelve months — SME reads 413,275 · 404,880 · 556,719 · 382,557 ·
+  227,753 · 555,365 · 452,037 · 465,023 — with `SEP` taken from the live `MTD` tab (SME 290,900,
+  BIDA 341)
+- **The dependency report follows the same rule**, so it names the side that really supplied each
+  province-month: `S` archived in Supabase, `L` the live sheet tab, `W` the worksheet. August now
+  reads `S` on FIBERX and BIDA (12 provinces each) and `W` on SME, and September reads `L` on all
+  three
+
+### 📱 `MONTHLY PROGRESS` — the delivered figure reads short on a narrow screen
+
+Twelve month cells share the strip, and a seven-figure delivery — `413,275` — needs about 54px
+of text inside a cell that is only 30px wide on a phone, so one month's digits ran into the
+next one's. Every delivered figure now falls back to a shortened form below `lg` and returns to
+its exact value where the cells are wide enough to hold it.
+
+- **`formatCompact()`** in `utils/dataProcessor.js` floors to one decimal and adds `k` or `M`:
+  `413275 → 413.2k`, `414880 → 414.8k`, `899 → 899`, `1250000 → 1.2M`. Floored rather than
+  rounded, so a delivered figure never reads as more than it is
+- **The exact figure is not lost** — it is still in the cell's `title`, beside the target and
+  the hit ratio, and it comes back in the cell itself from `lg` up
+- **The cell floor grows from `44px` to `64px`**, sized against the shortened text, so the strip
+  gives up a month of width and scrolls a little sooner instead of letting digits cross borders
+- **`lg` is the break where the exact figure returns** because that is where the strip is
+  genuinely wide enough for it (measured: 73px per cell at a 1024px viewport, and `413,275`
+  needs 68px; the earlier break would have left it 2px short)
+
+### 🔢 `MTD` columns read at a glance — one number format per column, per plan
+
+The `MTD` sheet mixed formats across the row: `K` (`TOTAL INCOMING`) carried no format at all,
+so a large figure arrived unthousands-separated, and `LAST %` showed two decimals on the plans
+where one is enough. Each column now has one format, applied to every synced row.
+
+- **FIBERX and BIDA:** `B`–`I` and `K` are `#,##0`; `J` (`LAST %`) is `0.0%`. `K` is newly
+  formatted and `J` loses a decimal
+- **SME:** `B`–`H` and `K` are `#,##0`; `I`–`J` (`GROSS`, `NET`) are `#,##0.00` — thousands
+  separator and two decimals, because those two are read as centavo-precise collections; `L`
+  (`LAST %`) stays `0.00%`
+- **A row left holding a stale date format is repaired on the next sync.** The formatter used
+  to decide "is this a data row?" from the *type of `B`*, and a cell that still carries an old
+  date format comes back from `getValue()` as a `Date` rather than a number — so the test failed
+  and that row was skipped, every time. BIDA's first October row read `12/30/1899` across `B`–`K`
+  (its `17` target showing as `January 1900`) while every row under it read correctly, because
+  only that one row had ever been date-formatted. A data row is now recognised by its *shape* —
+  a label in `A` and figures in `B`–`K` — so the format is rewritten no matter what the cell is
+  holding
+- **The formatter reads once per block and writes once per row.** The whole `A`–`K` block is a
+  single `getValues()`, and each data row is a single `setNumberFormats()`, in place of two reads
+  and up to five writes per row
+- Title, month labels, `AREA` headers and blank rows are still skipped
+- All three `.gs` must be re-pasted into Apps Script for this to reach the live sheets
+
+### 🧾 SME — the `MTD` report day is a day that carries a collection
+
+`RAW DATA` column `Q` (the sheet's own `%`) never reached `MTD` column `L` (`LAST %`), and
+`GROSS` / `NET` came out as `0` for every area. The figures were being read correctly — the
+report was being built from the wrong day.
+
+The sheet pre-creates the rest of the month as blank day blocks. Those blocks carry the
+month's `MTD` and `TARGET` forward but hold no collection at all, and their `%` is the sheet's
+own `MTD ÷ TARGET` (`0.04%` for `137` against `307,529`). v1.19.0's report-day rule was "the
+last day that carries a target", and that day is one of those blanks: September 2026 reported
+from **Sept 30** — `GROSS 0`, `NET 0`, `LAST % 0.04%` — where **Sept 28** held `325,808` /
+`290,900` and `94.59%`. Running `SMESCRIPT.gs` itself against today's `RAW DATA` reproduced the
+live `MTD` sheet row for row, blanks included, before the fix.
+
+- **The report day is now the last day that carries a peso collection.** The target rule stays
+  as the fallback, so a plan with no MRC block (BIDA, FIBERX) keeps the report day it had —
+  `verify-archive.cjs` passes 30/30 on both
+- **A numeric `0` in `RAW DATA` `Q` no longer turns into a blank `LAST %`.**
+  `String(row[16] || '')` swallowed it; `#DIV/0!` and `0.00%` still come out verbatim
+- **The archive derives its `MTD` rows by the same rule** (`deriveMtdArchiveRows_`, in the
+  shared tail template, so all three scripts move together). `verify-archive.cjs` now also
+  proves a blank pre-created block is never the report day and that the archived `OVER ALL`
+  row carries the month: **41 checks on SME**, 30 on BIDA and 30 on FIBERX
+- **One harness check still fails on all three plans** — "and with no later month to start at
+  it refuses too" — because the live window has rolled to include `2026-10`. That failure is
+  pre-existing and data-driven: the unmodified script fails it the same way
+- **`SMESCRIPT.gs` must be re-pasted and a Full Sync run** before `MTD` fills in: the app reads
+  `MTD`, and only the script writes it. The tail changed, so `BIDASCRIPT.gs` and
+  `FIBERXSCRIPT.gs` are re-paste candidates too
+
 ## [1.20.0] — 2026-09-28
 
 ### 📈 SME — MTD and NET COLLECTION as the headline cards
@@ -1203,7 +1340,7 @@ the scrolling cells highlight together. Verified: AREA stays pinned at
 **New file: `src/components/ExecutiveReportModal.jsx`** — print/PDF-ready C-suite one-pager (portaled to `document.body`):
 - Brand header (SLI badge, plan name, month/year, data-as-of, generated timestamp)
 - MTD KPI grid (Achievement Rate + MoM delta, Total Completed / target, Total Incoming, To Go)
-- Daily snapshot grid for the selected date; Provincial standing table (top movers + stragglers w/ pace); GVSI Dev footer
+- Daily snapshot grid for the selected date; Provincial standing table (top movers + stragglers w/ pace); GVSI Jeremy footer
 
 **`src/App.jsx`** — new **Report** header button (document icon) next to Export
 

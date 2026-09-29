@@ -11,8 +11,52 @@ while building it, including the two items that still need a decision from the s
 > and Aurora 17 are now real values rather than a copy of the target column, so the 1,044 and 354
 > figures below are historical. The exclusion that kept those three provinces out of `RAW DATA`
 > and `MTD` (and the reason the archive listed nine rows against a total of 523) has been removed
-> from all three Apps Scripts — see [DATA_PIPELINE.md](./DATA_PIPELINE.md#the-area-list). BIDA's
-> August block now imports all twelve provinces, and its rows sum to the sheet's own 523.
+> from all three Apps Scripts — see [DATA_PIPELINE.md](./DATA_PIPELINE.md#the-area-list). BIDA's> August block now imports all twelve provinces, and its rows sum to the sheet's own 523.
+>
+> **Update, 2026-09-29 — the mismatch was units, not precedence; the record still wins.**
+> SME's `MONTHLY PROGRESS` read 174 where `YTD 2026` says 465,023 for August, which put the
+> blame on the record-first rule. The rule was innocent. SME's archived `2026-08` row is a
+> **ticket count** (`last_mtd` 174, with `gross` and `net` null, written before the MRC columns
+> existed), and it was landing in a series measured in **pesos**. Two rules now hold, and the
+> first is unchanged from what is described above:
+>
+> - **The tracker's own record wins for any month it holds** — the archived month in Supabase
+>   first, then the live `MTD` tab of a running month — and the worksheet fills only what the
+>   record does not carry. The record is the app's own measurement, taken at trim time and
+>   immutable afterwards; the worksheet is a cell somebody maintains. A blank cell means "not
+>   reported yet", which is exactly why the province rows of both completed blocks leave
+>   `SEP`–`DEC` empty, and it is what makes that signal usable.
+> - **A collection-based plan contributes NET, never a count.** `buildOverrides` now takes the
+>   plan's basis, so SME can only ever add money to the series; a record row with no NET at all
+>   contributes nothing rather than standing in for pesos. That is what fixes August: the
+>   archived row has no NET, so it carries no weight and the month falls to the worksheet on its
+>   own merits — and once a month is archived with its MRC columns present, the record takes over
+>   again without any further change.
+>
+> Checked against the live exports: SME and BIDA both reproduce `YTD 2026` exactly for `JAN`–`JUL`
+> and `TARGET 2026` for all twelve months, with `AUG` supplied by the archive and `SEP` by the
+> live `MTD` tab (SME 290,900; BIDA 341).
+>
+> **One consequence to know about, and it is now reported rather than silent.** The archived
+> `2026-08` rows for all three plans were written from a twelve-province area list with no
+> `Aurora`, so August's record covers 12 of the 13 provinces the worksheet carries. On BIDA that
+> costs a figure: the archive's twelve rows sum to 523, the tab's `Aurora` cell holds `17` (it is
+> `0` in every other month, and the archive's `Kalinga` holds the same `17`), so August's region
+> total reads **540** where either source alone says 523. The console's `partialMonths` report
+> says so per month. Re-archiving `2026-08`, or removing the stray `Aurora` cell, settles it.
+>
+> **Update, 2026-09-29 — the console reports the months the two sides disagree about.**
+> Precedence makes a disagreement invisible, because a month the record holds is never read from
+> the worksheet: the dashboard shows one figure and the other is silently unused.
+> `summarizeSourceClashes()` compares every province-month both sides hold and the **Data source
+> diagnostics** section of the Developer console reports the gaps — with the 12% VAT marker
+> spelled out, since `GROSS = NET × 1.12` exactly. It also reports a second, quieter case: a
+> record month that cannot be expressed in the plan's units at all (SME's `2026-08`, twelve
+> ticket counts with no `NET`), which is not a disagreement but is the reason that month's
+> archive row can say nothing. On today's data it finds BIDA's August — `Kalinga` 5 in the
+> worksheet against 17 in the record, `Apayao` 0 against 5 — and the sheet's own `TOTAL` row
+> agrees with either pairing, so nothing else would have caught it. Observation only; no figure
+> on the dashboard changes.
 
 Sheet under discussion: **SLI TRACKER Database** (the shared workbook, the same one that
 already holds the aging report and the trend tabs).
@@ -156,8 +200,8 @@ than inventing a third one:
 
 | Months | Source |
 |---|---|
-| Jan – Jul 2026 | `YTD 2026` tab — the only place they exist |
-| A month the app has archived | the app's own record (`sli_mtd`) — which also fixes finding #1 by construction |
+| Any month `YTD 2026` carries | the `YTD 2026` tab, full stop (superseded 2026-09-29 — see the update note) |
+| A month it leaves blank, and the app has archived | the app's own record (`sli_mtd`), in the plan's own units |
 | The selected month | the live `MTD` tab, so the YTD total never lags a month behind |
 
 The middle row is much narrower than it looks. The archive currently holds **one** month — BIDA
@@ -273,10 +317,10 @@ Three operational notes:
 | Decision | What was done |
 |---|---|
 | SME | The section renders an explanation — *"the `YTD 2026` and `TARGET 2026` tabs cover BIDA and FIBERX only"* — rather than an empty table. Adding SME blocks to the two tabs would light it up with no code change |
-| BIDA's August column | Not edited. The app prefers its own record for any month it holds, so August now comes from `sli_mtd` (31, 36, 53…), and the table says so. **The sheet cell is still wrong** and still needs correcting for anyone reading the tab directly |
+| BIDA's August column | Corrected in the sheet on 2026-09-22, which retired the need for a workaround — but the record-first rule stays, because it was never what caused the August mismatch. See the update note at the top |
 | The yardstick | Two, both labelled: the headline against the **plan to date**, the bar against the **annual target**. The on pace / behind / critical verdict is judged on **finished months only** |
 | SME's money target | SME now carries a monthly **peso** target and its MRC collections (`GROSS` / `NET`) in its own `MTD` / `RAW DATA` — see [DATA_PIPELINE.md](./DATA_PIPELINE.md#mtd-columns) — but there is still no `SME YTD COMPLETED 2026` block, so its YTD section stays hidden. The two are independent: the monthly collections answer the Executive and Provincial views, not the annual plan |
-| Provinces dropped from the pipeline | **Kept**, so the table reproduces the sheet's own province set and the annual plan. Note the consequence: Cagayan, Kalinga and Apayao have no record in the app, so their August still comes from the worksheet and is still the target's copy — 354 of BIDA's 724 August figure. Filtering them out is a one-line change if that is preferred |
+| Provinces dropped from the pipeline | **Kept**, so the table reproduces the sheet's own province set and the annual plan. Cagayan, Kalinga and Apayao have no row in the *live* `MTD` tab, so their running month comes from the worksheet; August does have them, archived. `Aurora` is the reverse — in the worksheet, absent from the archived months — see the update note at the top. Filtering any of them out is a one-line change if that is preferred |
 | Section or a fourth view | Sections. The navbar is untouched |
 | Year rollover | `YTD_YEAR` is a constant in `src/config/plans.js`; outside that year the section disappears rather than mislabelling itself. A `2027` needs new tabs and one constant |
 | Supabase | Left in Sheets. Annual tables are small, and unlike RAW DATA they are not a size problem |

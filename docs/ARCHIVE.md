@@ -171,6 +171,33 @@ sheets hold — identical on every field. Two details are deliberately carried o
 all days, and the `OVER ALL TOTAL` sums **every** area on every day, listed or not, because
 that is how the sheet builds its total.
 
+### SME's archived August has no `GROSS`/`NET`, and it is deliberately not repaired
+
+The archive holds one month per plan — `2026-08`, thirteen rows each — and every row of it
+carries `gross = null` and `net = null`. For **BIDA and FIBERX that is correct**: their `MTD`
+tab has no `GROSS`/`NET` columns at all (eleven columns, ending `… LAST MTD, TARGET, LAST %,
+TOTAL INCOMING`), and their `last_mtd` is already the figure the plan is measured in — 523 and
+2,543, both equal to the same months in `YTD 2026`.
+
+**SME's is a defect, and it stays.** Its August rows were written before the MRC block
+existed: `last_mtd` is a ticket count (174 overall) sitting beside `target = 0` and
+`last_pct = "0.00%"`. The peso figures have not survived anywhere else — `NEW REPORT` was
+purged, `_ARCHIVE_BACKUP` has since been overwritten with the Sept 1 block, the SME trends
+tab starts at `Sept 1 2026`, and `sli_raw_daily` for the month holds only the August 31 block
+with the same nulls.
+
+That leaves `YTD 2026`, whose SME block does hold August per province (465,023 overall) — but
+**its basis is unverified**. Nothing states whether that column is the VAT-inclusive `GROSS`
+or the VAT-exclusive `NET`, and the two differ by exactly 12%: on the live MTD,
+`GROSS = NET × 1.12` holds to the centavo for every area and for the overall total
+(290,900 × 1.12 = 325,808). Reconstructing from the wrong one would write a figure 12% off
+into the record, so the rows were left as they are.
+
+Nothing is missing from the dashboard because of it: the `MONTHLY PROGRESS` strip and the
+`YEAR-TO-DATE` section read `YTD 2026` for every closed month, and the archive only supplies
+the month the worksheet has not been given yet. A future SME month archived without MRC is a
+different case — by then `MTD` carries `GROSS`/`NET`, so the derivation picks them up itself.
+
 ## Setup (once per plan spreadsheet)
 
 ### 1. Script Properties
