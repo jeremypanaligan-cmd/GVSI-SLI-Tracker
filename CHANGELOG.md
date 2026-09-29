@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.21.0] — 2026-09-29
+
 ### 🩺 The Developer console says when the record and the worksheet disagree
 
 A month both sides hold is read from the record, so the worksheet's version of it is not shown,
