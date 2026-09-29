@@ -1149,7 +1149,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-600">
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
-            <span>Developed by <span className="font-bold text-teal-600 dark:text-teal-400">GVSI Dev</span></span>
+            <span>Developed by <span className="font-bold text-teal-600 dark:text-teal-400">GVSI Jeremy</span></span>
             <span className="mx-1 text-slate-300 dark:text-slate-700">•</span>
             <span>© {new Date().getFullYear()} Gallopvision Services, Inc.</span>
           </div>

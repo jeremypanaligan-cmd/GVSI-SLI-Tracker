@@ -1,7 +1,7 @@
 {
   "name": "SLI Tracker — Gallopvision Services, Inc.",
   "short_name": "SLI Tracker",
-  "description": "Service Line Installation Daily Tracking Dashboard by GVSI Dev",
+  "description": "Service Line Installation Daily Tracking Dashboard by GVSI Jeremy",
   "id": ".",
   "start_url": ".",
   "scope": ".",
@@ -12,7 +12,7 @@
   "orientation": "any",
   "categories": ["business", "utilities"],
   "developer": {
-    "name": "GVSI Dev",
+    "name": "GVSI Jeremy",
     "url": "https://gallopvision.com"
   },
   "icons": [

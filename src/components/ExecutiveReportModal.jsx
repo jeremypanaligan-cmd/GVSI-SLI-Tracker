@@ -217,7 +217,7 @@ export default function ExecutiveReportModal({
 
         {/* Footer */}
         <div className="report-block px-8 py-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[9px] text-slate-400">Developed by <span className="font-bold">GVSI Dev</span> • GallopVision Services, Inc.</p>
+          <p className="text-[9px] text-slate-400">Developed by <span className="font-bold">GVSI Jeremy</span> • GallopVision Services, Inc.</p>
           <p className="text-[9px] text-slate-400">Figures pulled live from the {plan.name} SLI tracker database.</p>
         </div>
       </div>
