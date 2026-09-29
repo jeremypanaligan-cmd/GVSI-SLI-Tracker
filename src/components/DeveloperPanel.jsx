@@ -44,6 +44,9 @@ const formatBytes = (value) => {
 
 const formatCount = (value) => (Number(value) || 0).toLocaleString('en-US')
 
+/** Counts and peso figures side by side — SME's year actuals carry centavos. */
+const formatValue = (value) => (Number(value) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })
+
 const formatAge = (timestamp) =>
   timestamp ? `${formatDuration((Date.now() - timestamp) / 1000)} ago` : '—'
 
@@ -238,7 +241,7 @@ function ArchiveTrim({ status, loading }) {
  * names the record side more precisely, using what the archive merge already reported:
  * a month the archive listed is Supabase, a month the sheet still exports is the live tab.
  */
-function WorksheetDependency({ dependency, merge, now }) {
+function WorksheetDependency({ dependency, merge, clashes, now }) {
   const { totals } = dependency
   const archiveMonths = new Set(
     (merge?.supabaseMonths || []).map((label) => monthLabelParts(label)?.monthIndex).filter((v) => v != null),
@@ -297,6 +300,71 @@ function WorksheetDependency({ dependency, merge, now }) {
           {formatCount(totals.fromRecord)}
           {' come from the tracker\u2019s own record.'}
         </p>
+
+        {/* Both sides carry the same month and say different things about it. The record wins
+            wherever it holds a month, so the worksheet's figure never reaches the screen —
+            which is exactly why it is said here. A uniform 12% gap usually means the two are
+            on different VAT bases, because SME's GROSS is NET × 1.12 exactly. */}
+        {clashes && clashes.clashes.length > 0 && (
+          <div role="alert" className="rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-2.5 py-2">
+            <p className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+              {`Record and worksheet disagree on ${clashes.clashCells} of ${formatCount(clashes.comparedCells)} province-months they both carry.`}
+            </p>
+            <p className="text-[11px] text-amber-700 dark:text-amber-300/90 mt-0.5">
+              {`On those cells the worksheet totals ${formatValue(clashes.clashWorksheetTotal)} against the record\u2019s ${formatValue(clashes.clashRecordTotal)} (${(clashes.clashRelative * 100).toFixed(1)}% apart). The record is what is shown.`}
+            </p>
+            <ul className="mt-1.5 space-y-0.5 text-[11px] text-amber-800 dark:text-amber-200">
+              {clashes.clashes.slice(0, 6).map((clash) => (
+                <li key={`${clash.key}-${clash.monthIndex}`}>
+                  <span className="font-semibold">{clash.name}</span>
+                  {` ${clash.monthName}: worksheet `}
+                  <span className="font-semibold">{formatValue(clash.worksheet)}</span>
+                  {' vs record '}
+                  <span className="font-semibold">{formatValue(clash.record)}</span>
+                  {` — ${(clash.relative * 100).toFixed(1)}% apart`}
+                </li>
+              ))}
+            </ul>
+            {clashes.clashes.length > 6 && (
+              <p className="text-[10px] text-amber-700 dark:text-amber-300/80 mt-1">
+                {`…and ${clashes.clashes.length - 6} more.`}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Neither a disagreement nor agreement: the record covers the month in part, and the
+            provinces it does not hold keep their worksheet cell. Worth saying because it is the
+            only way the month's own number can come out larger than either source's. */}
+        {clashes && clashes.partialMonths.length > 0 && (
+          <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/5 px-2.5 py-2">
+            {clashes.partialMonths.map((month) => (
+              <p key={month.monthIndex} className="text-[11px] text-amber-800 dark:text-amber-200">
+                {`The record holds ${month.monthName} for ${month.covered} of ${month.total} provinces, so `}
+                {`${month.missing.map((entry) => `${entry.name} ${formatValue(entry.worksheet)}`).join(' \u00b7 ')} `}
+                {`${month.missing.length > 1 ? 'are' : 'is'} the worksheet\u2019s \u2014 ${formatValue(month.added)} added to the record\u2019s month.`}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {clashes && clashes.clashes.length === 0 && clashes.comparedCells > 0 && (
+          <p className="text-emerald-600 dark:text-emerald-400">
+            {`Record and worksheet agree on all ${formatCount(clashes.comparedCells)} province-months they both carry.`}
+          </p>
+        )}
+
+        {/* Not a disagreement: the record holds the month in units this plan cannot use, so it
+            says nothing and the worksheet is the only voice. SME's 2026-08 is exactly this —
+            archived as ticket counts, with no NET to put beside a peso worksheet. Named as the
+            units it lacks, because "no NET" is meaningless on a plan measured in counts. */}
+        {clashes && clashes.unusableCells > 0 && (
+          <p className="text-slate-500 dark:text-slate-400">
+            {`The record holds ${clashes.unusableMonths.map((index) => monthNameOf(index)).join(', ')} but not in this plan\u2019s units (${formatCount(clashes.unusableCells)} province-months, `}
+            {`no ${clashes.collectionBased ? 'NET' : 'LAST MTD'}), so that record is skipped and `}
+            {`${clashes.unusableMonths.length > 1 ? 'those months fall' : 'that month falls'} to the worksheet, with nothing to compare against.`}
+          </p>
+        )}
 
         {recordMonths.length > 0 && (
           <p>
@@ -773,8 +841,9 @@ export default function DeveloperPanel({
               )}
               <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-2">
                 Shared by all three plans, so it is read once per 24 hours rather than per plan.
-                Months the tracker already holds a record for come from that record, not from
-                the worksheet.
+                The tracker\u2019s own record wins for every month it holds — archived first, then
+                the live tab; the worksheet fills only what the record does not. Where the two
+                disagree, the record is what is shown, and each plan\u2019s entry says so.
               </p>
             </div>
 
@@ -868,6 +937,7 @@ export default function DeveloperPanel({
                       <WorksheetDependency
                         dependency={entry.dependency}
                         merge={entry.merge}
+                        clashes={entry.clashes}
                         now={now}
                       />
                     )}

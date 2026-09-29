@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { fetchAllData, getCachedData, prefetchAllPlans, fetchYearTables } from './utils/dataFetcher'
 import { fetchArchivedMonths } from './utils/archiveFetcher'
-import { recordYearDependency } from './utils/dataSourceDiagnostics'
+import { recordYearDependency, recordSourceClashes } from './utils/dataSourceDiagnostics'
 import {
   parseMTDData, extractExecutiveMetrics,
   parseRawDailyData, parseAgingReport, getTodayStr, findClosestDate,
@@ -18,7 +18,7 @@ import SyncIcon from './components/SyncIcon'
 import ThemeToggle from './components/ThemeToggle'
 import PlanSelector from './components/PlanSelector'
 import { PLANS, PLAN_ORDER, DEFAULT_PLAN, YTD_YEAR } from './config/plans'
-import { parseYearTable, computeYtd, buildOverrides, monthLabelParts, monthProgress, summarizeWorksheetDependency } from './utils/yearTables'
+import { parseYearTable, computeYtd, buildOverrides, monthLabelParts, monthProgress, summarizeWorksheetDependency, summarizeSourceClashes } from './utils/yearTables'
 import YtdTable from './components/YtdTable'
 import PWAInstallBanner from './components/PWAInstallBanner'
 
@@ -396,12 +396,13 @@ export default function App() {
     return actual && target ? { actual, target } : null
   }, [yearTables])
 
-  // The app's own record supersedes the worksheet for any month it holds — the same rule
-  // the RAW/MTD merge already follows. This is also what makes BIDA's August right: the
-  // worksheet's August column holds August's *target*, while the record holds 31, 36, 53…
+  // The app's own record supersedes the worksheet for any month it holds — the archive first,
+  // then the live tab, the same rule the RAW/MTD merge already follows. A collection-based plan
+  // has to contribute its NET, because a ticket count dropped into a series measured in pesos
+  // is worse than no figure at all — and that guard is what lets the record keep precedence.
   const ytdOverrides = useMemo(
-    () => buildOverrides(mtdData?.sections, YTD_YEAR),
-    [mtdData],
+    () => buildOverrides(mtdData?.sections, YTD_YEAR, { collectionBased: Boolean(currentPlan.collectionBased) }),
+    [mtdData, currentPlan],
   )
 
   // How far into the selected month the data reaches. Only sizes the projection: without
@@ -448,6 +449,27 @@ export default function App() {
   useEffect(() => {
     recordYearDependency(activePlan, ytdDependency)
   }, [activePlan, ytdDependency])
+
+  // Where the record and the worksheet disagree about the same province-month. The record wins
+  // wherever it holds a month, so the worksheet's figure never reaches the screen — which is
+  // why it is reported here instead of being left to be noticed by eye. Observation only.
+  const ytdClashes = useMemo(() => {
+    if (!yearData) return null
+    const parts = monthLabelParts(selectedMonthYear)
+    if (!parts || parts.year !== YTD_YEAR) return null
+    return summarizeSourceClashes({
+      actual: yearData.actual,
+      planId: activePlan,
+      monthIndex: parts.monthIndex,
+      overrides: ytdOverrides,
+      sections: mtdData?.sections,
+      collectionBased: Boolean(currentPlan.collectionBased),
+    })
+  }, [yearData, activePlan, selectedMonthYear, ytdOverrides, mtdData, currentPlan])
+
+  useEffect(() => {
+    recordSourceClashes(activePlan, ytdClashes)
+  }, [activePlan, ytdClashes])
 
   // Phase 2 — F1 trend analytics
   // MoM: current MTD achievement % vs the previous available month (if any)

@@ -21,7 +21,7 @@
  * maths is kept somewhere it can be called with fixed inputs and checked.
  *
  * See docs/YTD_SCOPING.md for what these sheets contain, including the BIDA August column
- * that holds the August target rather than August's completions.
+ * that used to hold the August target rather than August's completions.
  */
 
 import { parseCSV } from './csvParser'
@@ -166,9 +166,29 @@ export function monthProgress(dateLabel, monthYearLabel) {
 }
 
 /**
- * Which side of the split one province-month comes from: the app's own record (the live
- * MTD section of a running month, or an archived one) wins, and the `YTD 2026` worksheet
- * fills anything the record does not hold.
+ * Which side of the split one province-month comes from: **the app's own record wins for any
+ * month it holds** — the archived month in Supabase first, then the live `MTD` tab of a
+ * running month — and the `YTD 2026` worksheet fills only the months the record does not.
+ *
+ * The record side is the app's own measurement of that month, written at trim time and
+ * immutable afterwards; the worksheet is a hand-typed cell somebody maintains. Preferring the
+ * app's figure is the point of keeping an archive at all.
+ *
+ * Making the worksheet the basis was tried and reverted. The mismatch that blamed the record
+ * (SME's `MONTHLY PROGRESS` reading 174 where `YTD 2026` says 465,023 for August) was never a
+ * precedence problem: `buildOverrides` was feeding a **ticket count** into a series measured in
+ * pesos. `recordValueFor` now fixes that at the source — a collection-based plan contributes
+ * its NET, and nothing at all when its row has no NET — so the record keeps its precedence and
+ * SME's `2026-08` still cannot land in the wrong units: that archived row predates the MRC
+ * columns, holds no NET, contributes nothing, and leaves the month to the worksheet.
+ *
+ * A blank worksheet cell is the other half of the rule. The province rows of both completed
+ * blocks leave `SEP`–`DEC` empty until somebody fills them in, so `null` means "not reported
+ * yet" rather than "zero", and that is the month the record is there to supply.
+ *
+ * Where the two hold the same month and disagree, the record wins and the worksheet's figure
+ * goes unused — which is why `summarizeSourceClashes` reports those cells rather than leaving
+ * the difference to be noticed by eye.
  *
  * One definition on purpose. `computeYtd` uses it to decide what to display and
  * `summarizeWorksheetDependency` uses it to report on what was displayed, so the two can
@@ -177,8 +197,8 @@ export function monthProgress(dateLabel, monthYearLabel) {
 function actualCellRule(actualBlock, overrides, key, index) {
   const override = overrides?.[index]?.[key]
   if (typeof override === 'number' && Number.isFinite(override)) return { value: override, fromRecord: true }
-  const value = actualBlock.areas[key]?.monthly?.[index]
-  return { value: typeof value === 'number' ? value : 0, fromRecord: false }
+  const worksheet = actualBlock.areas[key]?.monthly?.[index]
+  return { value: typeof worksheet === 'number' ? worksheet : 0, fromRecord: false }
 }
 
 /**
@@ -308,6 +328,206 @@ export function summarizeWorksheetDependency({
 }
 
 /**
+ * Where the two sides of the split disagree about the *same* province-month.
+ *
+ * The record wins wherever both sides hold a month, so the worksheet's version of that month is
+ * never read: the dashboard shows the record's figure and the tab's figure is simply not used.
+ * That is the right display rule and the wrong thing to keep quiet about. Both sides are
+ * supposed to describe the same month, so a gap between them is a worksheet cell that was never
+ * corrected after the archive was taken, a basis mismatch, or a genuine error — and the one
+ * behind the 2026-08 mismatch was found by eye rather than by the app.
+ *
+ * A gap has to clear both a relative and an absolute threshold to be reported, so single-digit
+ * rounding on a small count stays quiet while 12% on any figure does not. The 12% is not an
+ * arbitrary pick: SME's `MTD` carries `GROSS` and `NET` and `GROSS = NET × 1.12` exactly, so a
+ * worksheet column read in the other basis shows up here as a uniform 12% across every area.
+ *
+ * A third thing is reported beside those two, and it is neither: a month the record covers in
+ * part, where a province it does not hold keeps a non-zero worksheet cell. Nothing disagrees —
+ * there is simply one side's figure added to the other side's — and the result is a month whose
+ * number is larger than either source's own. See `partialMonths`.
+ *
+ * There is a second failure that is not a disagreement at all, and it is the one that arrives
+ * looking like agreement: a record month that cannot be expressed in the plan's own units.
+ * SME's archived `2026-08` rows are ticket counts with no `NET`, so `buildOverrides` drops them
+ * — and the month then reads from the worksheet with nothing on the record side to compare. The
+ * worksheet may be right or wrong; either way nobody is told the archive has that month and
+ * cannot say anything about it. Those are reported separately as `unusable`, carrying the
+ * plan's own units so the reason can be stated in the right words.
+ *
+ * Observation only — nothing reads the result back.
+ *
+ * @param {object}  args
+ * @param {object}  args.actual       parsed `YTD 2026` table
+ * @param {string}  args.planId
+ * @param {number}  args.monthIndex   selected month, 0-based
+ * @param {object}  [args.overrides]  `{ [monthIndex]: { [areaKey]: actual } }` from the record
+ * @param {object}  [args.sections]   `mtdData.sections`, to see what the record holds raw
+ * @param {boolean} [args.collectionBased] the plan is measured in money (SME)
+ * @param {number}  [args.tolerance]  relative gap above which a difference is a clash
+ * @param {number}  [args.floor]      absolute gap, in the plan's own units, below which it is not
+ * @returns {null|object} null when the plan has no block in the tab
+ */
+export function summarizeSourceClashes({
+  actual, planId, monthIndex, overrides = {}, sections = null,
+  collectionBased = false, tolerance = 0.005, floor = 2,
+}) {
+  const actualBlock = actual?.plans?.[planId]
+  if (!actualBlock) return null
+  if (!Number.isInteger(monthIndex) || monthIndex < 0 || monthIndex > 11) return null
+
+  const clashes = []
+  const unusable = []
+  let comparedCells = 0
+
+  for (const key of actualBlock.order) {
+    const name = actualBlock.areas[key]?.name || key
+    for (let index = 0; index <= monthIndex; index++) {
+      const worksheet = actualBlock.areas[key]?.monthly?.[index]
+      // A blank worksheet cell is the record doing its job, so there is nothing to compare.
+      if (typeof worksheet !== 'number') continue
+
+      const record = overrides?.[index]?.[key]
+      if (typeof record !== 'number' || !Number.isFinite(record)) {
+        // The record may still hold the month in units this plan cannot use.
+        const held = recordEntryFor(sections, index, key)
+        if (held && recordValueFor(held, collectionBased) === null) {
+          unusable.push({
+            key,
+            name,
+            monthIndex: index,
+            month: MONTHS[index],
+            monthName: MONTH_NAMES[index],
+            worksheet,
+            held: Number.isFinite(held.lastMtd) ? held.lastMtd : null,
+            heldGross: Number.isFinite(held.gross) ? held.gross : null,
+            heldNet: Number.isFinite(held.net) ? held.net : null,
+          })
+        }
+        continue
+      }
+
+      comparedCells += 1
+      const difference = worksheet - record
+      const scale = Math.max(Math.abs(worksheet), Math.abs(record))
+      const relative = scale > 0 ? Math.abs(difference) / scale : 0
+      if (Math.abs(difference) < floor || relative <= tolerance) continue
+
+      clashes.push({
+        key,
+        name,
+        monthIndex: index,
+        month: MONTHS[index],
+        monthName: MONTH_NAMES[index],
+        worksheet,
+        record,
+        difference,
+        relative,
+      })
+    }
+  }
+
+  clashes.sort((a, b) => b.relative - a.relative)
+
+  const clashWorksheetTotal = clashes.reduce((total, clash) => total + clash.worksheet, 0)
+  const clashRecordTotal = clashes.reduce((total, clash) => total + clash.record, 0)
+  const clashScale = Math.max(Math.abs(clashWorksheetTotal), Math.abs(clashRecordTotal))
+
+  // Which months the record holds but cannot speak about, in reading order.
+  const unusableMonths = [...new Set(unusable.map((entry) => entry.monthIndex))].sort((a, b) => a - b)
+
+  // Months the record covers only in part. The provinces it does hold decide the month's
+  // source, and the ones it does not keep their worksheet cell — so a region total can come out
+  // larger than either side's own, which no single cell would explain. BIDA's `2026-08` is the
+  // live example: the archive carries twelve rows and no `Aurora`, while the tab's `Aurora` cell
+  // holds `17`, so the archive's 523 is shown as 540. Only a province whose worksheet cell is
+  // non-zero can move a total, so a zero stays out of the report.
+  const partialMonths = []
+  for (let index = 0; index <= monthIndex; index++) {
+    const covered = new Set()
+    for (const key of actualBlock.order) {
+      const record = overrides?.[index]?.[key]
+      if (typeof record === 'number' && Number.isFinite(record)) covered.add(key)
+    }
+    // All of it or none of it: nothing to explain either way.
+    if (covered.size === 0 || covered.size === actualBlock.order.length) continue
+
+    const missing = []
+    for (const key of actualBlock.order) {
+      if (covered.has(key)) continue
+      const worksheet = actualBlock.areas[key]?.monthly?.[index]
+      if (typeof worksheet !== 'number' || worksheet === 0) continue
+      missing.push({ key, name: actualBlock.areas[key]?.name || key, worksheet })
+    }
+    if (!missing.length) continue
+
+    partialMonths.push({
+      monthIndex: index,
+      month: MONTHS[index],
+      monthName: MONTH_NAMES[index],
+      covered: covered.size,
+      total: actualBlock.order.length,
+      missing,
+      added: missing.reduce((total, entry) => total + entry.worksheet, 0),
+    })
+  }
+
+  return {
+    planId,
+    monthIndex,
+    collectionBased,
+    tolerance,
+    floor,
+    comparedCells,
+    clashCells: clashes.length,
+    clashWorksheetTotal,
+    clashRecordTotal,
+    clashDifference: clashWorksheetTotal - clashRecordTotal,
+    clashRelative: clashScale > 0 ? Math.abs(clashWorksheetTotal - clashRecordTotal) / clashScale : 0,
+    // Biggest relative gap first — the one worth looking at.
+    clashes,
+    worst: clashes[0] || null,
+    unusable,
+    unusableCells: unusable.length,
+    unusableMonths,
+    partialMonths,
+  }
+}
+
+/**
+ * The record's own entry for one province-month, found the way `buildOverrides` finds it, so
+ * the two cannot disagree about whether the record holds a month at all.
+ */
+function recordEntryFor(sections, monthIndex, areaKey) {
+  if (!sections) return null
+  for (const [label, section] of Object.entries(sections)) {
+    const parts = monthLabelParts(label)
+    if (!parts || parts.monthIndex !== monthIndex) continue
+    for (const area of section?.areas || []) {
+      if (normalizeAreaKey(area.area) === areaKey) return area
+    }
+  }
+  return null
+}
+
+/**
+ * The figure a plan's year-to-date actual is measured in.
+ *
+ * A collection-based plan (SME) is measured in money — `extractExecutiveMetrics` and
+ * `computeAreaPace` both pace NET against the peso target — so its contribution has to be
+ * NET as well. Reading `lastMtd` there drops a ticket count next to eleven months of pesos:
+ * SME's archived `2026-08` row holds `last_mtd` 174 where the worksheet's August is
+ * 465,023, which is the mismatch the `MONTHLY PROGRESS` strip was showing.
+ *
+ * A record row with no NET at all contributes nothing rather than its count. A month left
+ * to the worksheet is honest; a count standing in for pesos is not.
+ */
+function recordValueFor(area, collectionBased) {
+  if (!collectionBased) return area?.lastMtd
+  return Number.isFinite(area?.net) ? area.net : null
+}
+
+/**
  * Turn parsed MTD sections — the app's own record, live and archived — into the per-month
  * override map `computeYtd` expects:
  *
@@ -315,15 +535,22 @@ export function summarizeWorksheetDependency({
  *
  * Only months in `year` are kept. This is the one place that decides what counts as "the
  * app's own record", so it lives here rather than inline in the component tree.
+ *
+ * @param {object}  sections  `mtdData.sections`, keyed by month label
+ * @param {number}  [year]
+ * @param {object}  [options]
+ * @param {boolean} [options.collectionBased] the plan is measured in money (SME), so the
+ *                                            override has to be its NET, not its count
  */
-export function buildOverrides(sections, year) {
+export function buildOverrides(sections, year, { collectionBased = false } = {}) {
   const out = {}
   for (const [label, section] of Object.entries(sections || {})) {
     const parts = monthLabelParts(label)
     if (!parts || (year != null && parts.year !== year)) continue
     const byArea = {}
     for (const area of section?.areas || []) {
-      if (Number.isFinite(area.lastMtd)) byArea[normalizeAreaKey(area.area)] = area.lastMtd
+      const value = recordValueFor(area, collectionBased)
+      if (Number.isFinite(value)) byArea[normalizeAreaKey(area.area)] = value
     }
     if (Object.keys(byArea).length > 0) out[parts.monthIndex] = byArea
   }
@@ -333,10 +560,11 @@ export function buildOverrides(sections, year) {
 /**
  * The year-to-date position for one plan.
  *
- * Source rule, matching the rest of the app (docs/DATASOURCE.md): **the app's own record
- * wins for any month it holds**, and the worksheet fills the months it does not. That is
- * what makes the closed months self-correcting — BIDA's August cell in `YTD 2026` holds
- * August's target, while the archive holds the real 31, 36, 53 …
+ * Source rule, matching the rest of the app (docs/DATASOURCE.md): **the app's own record wins
+ * for any month it holds** — the archived month in Supabase first, then the live `MTD` tab of
+ * a running month — and the worksheet fills the months it does not. `buildOverrides` decides
+ * what the record may contribute, so a collection-based plan can only ever add pesos; see
+ * `actualCellRule` for why that guard is what keeps the precedence safe.
  *
  * @param {object}   args
  * @param {object}   args.actual        parsed `YTD 2026` table

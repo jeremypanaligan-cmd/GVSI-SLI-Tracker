@@ -14,7 +14,7 @@
  * which is exactly the question being asked.
  */
 
-/** planId → { sheet, archive, merge, dependency, at } */
+/** planId → { sheet, archive, merge, dependency, clashes, at } */
 const planState = new Map()
 
 /**
@@ -26,7 +26,7 @@ let yearState = null
 function entry(planId) {
   let value = planState.get(planId)
   if (!value) {
-    value = { sheet: null, archive: null, merge: null, dependency: null, at: null }
+    value = { sheet: null, archive: null, merge: null, dependency: null, clashes: null, at: null }
     planState.set(planId, value)
   }
   return value
@@ -91,6 +91,19 @@ export function recordYearDependency(planId, report) {
   current.at = Date.now()
 }
 
+/**
+ * Where the record and the `YTD 2026` worksheet disagree about the same province-month.
+ * Computed by `summarizeSourceClashes`, which is pure; this only stores the snapshot.
+ *
+ * Worth surfacing because the worksheet wins wherever it has a figure, so a disagreement is
+ * otherwise invisible — the dashboard shows one figure and the other is silently not used.
+ */
+export function recordSourceClashes(planId, report) {
+  const current = entry(planId)
+  current.clashes = report || null
+  current.at = Date.now()
+}
+
 /** The shared year tabs: whether the YTD/target tables came from the sheet or the cache. */
 export function recordYearTables(patch) {
   yearState = { ...(yearState || {}), ...patch, at: Date.now() }
@@ -142,6 +155,12 @@ export function getDiagnostics() {
                   permanentWorksheetMonths: [...value.dependency.totals.permanentWorksheetMonths],
                 }
               : null,
+          }
+        : null,
+      clashes: value.clashes
+        ? {
+            ...value.clashes,
+            clashes: (value.clashes.clashes || []).map((clash) => ({ ...clash })),
           }
         : null,
       at: value.at,
