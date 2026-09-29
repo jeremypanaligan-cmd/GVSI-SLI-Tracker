@@ -39,11 +39,36 @@ while building it, including the two items that still need a decision from the s
 >
 > **One consequence to know about, and it is now reported rather than silent.** The archived
 > `2026-08` rows for all three plans were written from a twelve-province area list with no
-> `Aurora`, so August's record covers 12 of the 13 provinces the worksheet carries. On BIDA that
-> costs a figure: the archive's twelve rows sum to 523, the tab's `Aurora` cell holds `17` (it is
-> `0` in every other month, and the archive's `Kalinga` holds the same `17`), so August's region
-> total reads **540** where either source alone says 523. The console's `partialMonths` report
-> says so per month. Re-archiving `2026-08`, or removing the stray `Aurora` cell, settles it.
+> `Aurora`, so August's record covers 12 of the 13 provinces the worksheet carries.
+>
+> **Update, 2026-09-30 — the record decides the whole month, so BIDA's August reads 523.**
+> Precedence is per **month**, not per province: once the record speaks for a month, every
+> province in that month comes from it, and a province the record does not list counts as zero
+> in it. Reading the worksheet for exactly the provinces the record leaves out is what produced
+> **540** — the wrong answer — because it added half of one source's month to all of the other's.
+> On BIDA the two halves were the same tickets anyway: `sli_mtd` holds twelve rows for `bida` /
+> `2026-08` (Abra 16, Apayao 5, Benguet 31, Cagayan 131, Ifugao 10, Ilocos Norte 53, Ilocos Sur
+> 36, Isabela 149, Kalinga 17, Mountain Province 0, Nueva Vizcaya 61, Quirino 14), they sum to
+> **523**, and the archive's own `OVER ALL TOTAL` row for that month already said `523`. The tab's
+> August column totals 523 as well: its `Aurora` cell holds the same `17` the archive files under
+> `Kalinga`, with `Kalinga` carrying the `5` that sits on `Apayao` in the archive. Both sources
+> agree on the month; only their province labels disagree on three rows, and the region figure
+> must not be their sum. So the console's `partialMonths` report now says the `Aurora 17` is
+> **withheld** rather than added, and the province-level disagreement is still reported by
+> `summarizeSourceClashes` (`Kalinga` 5 against 17, `Apayao` 0 against 5).
+>
+> **Settled, 2026-09-30 — the sheet was corrected, and the two sides now agree.** `YTD 2026`'s
+> `AUG` column was adjusted by hand to the record's own reading — `Aurora` 0, `Kalinga` 17,
+> `Apayao` 5, `Cagayan` 131 — so all thirteen provinces read the same on both sides, the region
+> is still 523, and the console has **nothing left to report** for August: no province-month
+> disagreement, and no covered area holding a non-zero cell the record leaves out. The record was
+> right and the three cells had each taken a neighbour's figure; the giveaway was `Aurora`, who
+> is 0 in every other month of the year and whose target plan only starts in `SEP`.
+>
+> `2026-08` was deliberately **not** re-archived: the two sides now agree with or without the
+> missing row, so the archive's twelve rows stay as they are and September's archive — due seven
+> days into October, and written with the plan's full area list (see [ARCHIVE.md](./ARCHIVE.md))
+> — is the first month that carries `Aurora` in the record.
 >
 > **Update, 2026-09-29 — the console reports the months the two sides disagree about.**
 > Precedence makes a disagreement invisible, because a month the record holds is never read from
@@ -55,8 +80,9 @@ while building it, including the two items that still need a decision from the s
 > ticket counts with no `NET`), which is not a disagreement but is the reason that month's
 > archive row can say nothing. On today's data it finds BIDA's August — `Kalinga` 5 in the
 > worksheet against 17 in the record, `Apayao` 0 against 5 — and the sheet's own `TOTAL` row
-> agrees with either pairing, so nothing else would have caught it. Observation only; no figure
-> on the dashboard changes.
+> agrees with either pairing, so nothing else would have caught it. Reported for that province
+> pair; it no longer changes a region figure, because the month's source decides the whole month
+> (see the 2026-09-30 update above).
 
 Sheet under discussion: **SLI TRACKER Database** (the shared workbook, the same one that
 already holds the aging report and the trend tabs).

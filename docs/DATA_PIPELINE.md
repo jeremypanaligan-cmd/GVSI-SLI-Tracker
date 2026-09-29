@@ -214,6 +214,13 @@ brings the rows and the total back into agreement (all twelve August rows sum to
 > The next Full Sync drops it from `RAW DATA` and `MTD` — and, because `OVER ALL TOTAL` comes
 > from the sheet, its numbers leave the total with it.
 
+The **archive** reads that same list, but for a closed month it needs the whole of it rather than
+one day's worth. Its area list is (the areas the month's own rows name on any day) ∪ (the areas
+the plan names on the mirror's most recent date, `currentPlanAreas_`), with an area in the second
+set and not the first archived as **zeros**. A month therefore always carries a row per area the
+plan works in, so `Aurora` cannot be missing from `sli_mtd` for months the worksheet has her in —
+see [ARCHIVE.md](./ARCHIVE.md#the-three-script-files). The zero rows add nothing to the total.
+
 ### The `CONFIG` tab (archive settings)
 
 The tab still exists, but only for the archive: `ARCHIVE_ENABLED`, `ARCHIVE_AFTER_DAYS`,

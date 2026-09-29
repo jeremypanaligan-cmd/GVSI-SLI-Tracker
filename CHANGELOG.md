@@ -6,6 +6,74 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 🗂️ An archived month carries every area the plan works in
+
+A closed month's area list was taken from its **last day**, so a province that reported on the
+12th and not on the 31st was archived as if it had never existed — and a province whose block the
+month's report never carried got no row at all. `Aurora` is the second case: `sli_mtd` holds
+twelve rows for `bida` / `2026-08` while the plan works in thirteen areas and `YTD 2026` carries
+her. The app was left holding one source's silence against the other source's figure, which is
+how a non-zero worksheet cell could look like data the record agreed with.
+
+- **The list is the plan's, not one day's.** Every area the month's own rows name on any day,
+plus every area the plan names on the mirror's most recent date — so a mid-month-only province
+keeps what it did, and an area the report never mentioned still gets its row
+- **A covered area with no rows is archived as zeros**, never left out: for a closed month, "no
+rows" and "no work" are the same finding, and an explicit zero is what lets the two sides be
+compared province by province. A nonzero worksheet cell beside a covered area is now a reported
+disagreement rather than an unaccounted figure inside a region total
+- **No figure moves.** An appended zero adds nothing, the `OVER ALL TOTAL` row is still the
+sheet's own, and the rows that carry figures are unchanged — BIDA's August region total is still
+523, with its own `Kalinga` 17 and `Apayao` 5 exactly as the record has them
+- **The MRC columns are mirrored, not invented.** A zero row carries `GROSS`/`NET` as 0 only
+when the month's own rows carry them at all, so a count plan's zero row is not given a collection
+column its report has no room for, and SME's is not left blank
+- **Takes effect on the next archive run.** A month already in `sli_mtd` keeps the rows it has
+until it is archived again, which for a closed month means a fresh run while it is still in the
+mirror window — the area list is read at archive time, never back-filled by the app
+
+With the area list no longer deciding which areas a month can speak for, BIDA's August was settled
+at the source instead: `YTD 2026`'s `AUG` column now reads `Aurora` 0, `Kalinga` 17, `Apayao` 5 and
+`Cagayan` 131 — the record's own figures — so all thirteen provinces agree on both sides, the
+region is still 523, and the console reports nothing for the month. `2026-08` was not re-archived:
+it no longer needs to be, and September's archive is the first that carries `Aurora`.
+
+### ⚖️ BIDA's August is 523, not 540
+
+Which source a month comes from was decided province by province, so a month the archive held
+only in part still read the worksheet for the provinces the archive did not list — and the region
+total came out as one source's cells added to the other source's month. BIDA's `2026-08` was the
+live case, and 540 was the wrong number.
+
+The two sides actually agree about that month. The archive holds twelve rows for `bida` /
+`2026-08` — Abra 16, Apayao 5, Benguet 31, Cagayan 131, Ifugao 10, Ilocos Norte 53, Ilocos Sur
+36, Isabela 149, Kalinga 17, Mountain Province 0, Nueva Vizcaya 61, Quirino 14 — and they sum to
+**523**, which is what the archive's own `OVER ALL TOTAL` row for the month says. The worksheet's
+August column totals 523 as well; only its province labels disagree on three rows, with its
+`Aurora` cell holding the same `17` the archive files under `Kalinga`, and its `Kalinga` holding
+the `5` that sits on `Apayao` in the archive.
+
+- **The month's source decides the whole month.** Once the record speaks for a month, every
+province in it comes from the record, and a province the record does not list counts as zero in
+it. Reading the worksheet for exactly the provinces the record leaves out is what produced 540:
+half of one source's month added to all of the other's
+- **BIDA's August now reads 523** in the YTD view, the region row and every export, and the series
+still adds up as the sum of its province rows
+- **The archive decides it from its own contents.** Which months it speaks for is derived from
+the overrides themselves — a month with no figure this plan can use contributes no entry — so
+the rule that decides a month's source and the rule that reports on it cannot disagree
+- **A worksheet-only month is untouched.** SME's `2026-08` archive row is twelve ticket counts
+with no `NET`, so it speaks for no month at all and August stays the worksheet's, whole
+- **The console says the cell is *withheld*, not *added***. `partialMonths` reports the `Aurora`
+cell as a figure that was left out of the total — it looks like data, and it is not counted —
+while the province-level disagreement between the two sides stays reported as it was
+
+Verified with a self-contained probe built on the archive's real twelve rows and the worksheet
+shape around them: the region reads 523 and never 540, the record's own `Kalinga 17` / `Apayao 5`
+stand, `Aurora` reads 0 for the month the record defines, a month the record does not hold is
+still the worksheet's whole, and the two console reports name the withheld cell and the
+disagreeing province pair. Build clean.
+
 ## [1.22.0] — 2026-09-30
 
 ### 🏷️ A pasted script can say which build it is

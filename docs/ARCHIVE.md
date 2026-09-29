@@ -166,14 +166,34 @@ encoded, so the literal last row would archive every area at a false zero. So th
 derives them from the rows it already holds instead of asking the sheet a second time.
 
 A derived row is checked against the live `MTD` tab for all three plans and every month the
-sheets hold — identical on every field. Two details are deliberately carried over from
-`generateMTDReport()`: the area list is the **last day's** areas rather than the union of
-all days, and the `OVER ALL TOTAL` sums **every** area on every day, listed or not, because
-that is how the sheet builds its total.
+sheets hold — identical on every field for every area a month holds. One detail is deliberately
+carried over from `generateMTDReport()`: the `OVER ALL TOTAL` sums **every** area on every day,
+listed or not, because that is how the sheet builds its total.
+
+**The area list is the plan's, not one day's** (`currentPlanAreas_`, 2026-09-30). The `MTD`
+sheet can afford to list only the areas a month's last day block carries — it is a summary for
+reading. The archive cannot, for two reasons:
+
+- an area that reported on the 12th and not on the 31st is still part of the month, and the
+  last-day rule dropped it from the archive entirely, taking whatever it had done with it;
+- an area the plan covers but whose block a given month's report never carried had **no row at
+  all**. That is how `Aurora` came to be missing from every archived month while `YTD 2026`
+  carries her, which left the app holding one source's silence against the other source's
+  figure. `sli_mtd` for `bida` / `2026-08` carried twelve rows; the plan works in thirteen areas.
+
+The month is therefore archived with a row for every area in (the areas its own rows name on any
+day) ∪ (the areas the plan names today), the second set written as zeros. No figure moves: an
+appended zero adds nothing to the total, the `OVER ALL TOTAL` row is still the sheet's own, and
+the twelve rows that carry figures are byte-identical. The zeros are what let the app compare the
+two sides province by province — silence reads as "the tracker never said" rather than "nothing
+was done" — so a non-zero worksheet cell next to a covered area now shows up as a reported
+disagreement instead of an unaccounted figure in a region total.
 
 ### SME's archived August has no `GROSS`/`NET`, and it is deliberately not repaired
 
-The archive holds one month per plan — `2026-08`, thirteen rows each — and every row of it
+The archive holds one month per plan — `2026-08`, thirteen rows each at the time (twelve areas
+plus `OVER ALL TOTAL`; a re-archive since the area-list fix adds `Aurora` as a zero row) — and
+every row of it
 carries `gross = null` and `net = null`. For **BIDA and FIBERX that is correct**: their `MTD`
 tab has no `GROSS`/`NET` columns at all (eleven columns, ending `… LAST MTD, TARGET, LAST %,
 TOTAL INCOMING`), and their `last_mtd` is already the figure the plan is measured in — 523 and
