@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.22.0] — 2026-09-30
+
 ### 🏷️ A pasted script can say which build it is
 
 Pasting a plan script into its Apps Script project leaves no trace: the sheet behaves and
