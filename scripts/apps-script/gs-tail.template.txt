@@ -11,6 +11,16 @@
 // the Triggers page, and the old setupAutoTrigger() deleted EVERY project trigger
 // before installing its timer — so re-running setup silently removed it.
 
+// ==================== BUILD STAMP ====================
+//
+// Written by scripts/apps-script/sync-gs-tail.cjs — not edited by hand here. 'Show Version'
+// in the plan menu reports it, which is the one thing a paste cannot tell you on its own:
+// whether the editor holds the file the repo has, or one from before the last change. The
+// stamp is the app version plus a short hash of the head and this template, so an edit to
+// either one changes it. Compare it with SCRIPT_BUILD in the .gs file you pasted.
+const SCRIPT_PLAN = '{{PLAN_LABEL}}';
+const SCRIPT_BUILD = '{{SCRIPT_BUILD}}';
+
 const ARCHIVE_ENABLED_KEY = 'ARCHIVE_ENABLED';
 const ARCHIVE_AFTER_DAYS_KEY = 'ARCHIVE_AFTER_DAYS';
 const ARCHIVE_DRY_RUN_KEY = 'ARCHIVE_DRY_RUN';
@@ -1410,7 +1420,8 @@ function setupManagedTriggers() {
     // Triggers accidentally pointed at a menu/setup function can never do useful work.
     if (handler === 'onOpen' || handler === 'setupAutoTrigger' || handler === 'setupManagedTriggers' ||
         handler === 'stopAutoTrigger' || handler === 'stopManagedTriggers' ||
-        handler === 'archiveDryRun' || handler === 'testSupabaseConnection') {
+        handler === 'archiveDryRun' || handler === 'testSupabaseConnection' ||
+        handler === 'showScriptVersion') {
       ScriptApp.deleteTrigger(trigger);
       removed.setup++;
       continue;
@@ -1474,6 +1485,26 @@ function stopAutoTrigger() { stopManagedTriggers(); }
 
 // ==================== MENU ====================
 
+/**
+ * Reports the build this project is running, so a sheet can be asked which copy of the code
+ * it holds. A paste leaves no other trace: the sheet looks identical whether the editor has
+ * today's file or the one before the last change. Logged as well as alerted, so the answer
+ * also lands in the Executions log of whoever ran it.
+ */
+function showScriptVersion() {
+  var lines = [
+    'GVSI SLI Tracker — ' + SCRIPT_PLAN,
+    '',
+    'Build:  ' + SCRIPT_BUILD,
+    '',
+    'Compare this with SCRIPT_BUILD in the .gs file you pasted. If the two differ, this',
+    'project is running a different build than the one in the repo.',
+  ];
+  var text = lines.join('\n');
+  Logger.log(text);
+  try { SpreadsheetApp.getUi().alert(text); } catch (e) {}
+}
+
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('GVSI Auto-DB')
     .addItem('Import {{PLAN_LABEL}} to RAW DATA', '{{IMPORT_FN}}')
@@ -1492,6 +1523,7 @@ function onOpen() {
     .addItem('Restore NEW REPORT Formula (full history)', 'restorePlanSheetFormula')
     .addSeparator()
     .addItem('Test Supabase Connection', 'testSupabaseConnection')
+    .addItem('Show Version', 'showScriptVersion')
     .addToUi();
 }
 

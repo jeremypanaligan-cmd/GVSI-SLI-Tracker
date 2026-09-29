@@ -448,7 +448,9 @@ function styleMtdRows_(sheet, rows, style, merge, cols) {
 /**
  * Apply number formatting to MTD data rows (skip title, month headers, and sub-headers)
  *
- * The whole A..K block is read once and one format row is written per data row. This used
+ * The whole A..K block is read once — values and number formats — and written back in one
+ * call, with only the data rows changed. Writing a format row per data row was ~160 calls on
+ * a year of sections, the dominant cost of a sync against the six-minute limit. This used
  * to read A and B cell by cell — two calls per row — and decide "is this a data row?" from
  * the type of B. A cell still carrying an old date format comes back from getValue() as a
  * Date rather than a number, so that test failed and the row was left alone for good: a
@@ -459,7 +461,13 @@ function applyMTDFormatting(sheet) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 4) return;
   var width = MTD_HEADER.length;
-  var data = sheet.getRange(1, 1, lastRow, width).getValues();
+  var block = sheet.getRange(1, 1, lastRow, width);
+  var data = block.getValues();
+  // The formats already on the block, so the rows this pass never touches — the title, the
+  // month labels, the AREA headers, the blanks — go back exactly as they were. Reading them
+  // first is what keeps a month label carrying a stray date format from becoming a long Date
+  // string, the case the whole shape test below exists for.
+  var formats = block.getNumberFormats();
   
   for (var r = 0; r < data.length; r++) {
     var row = data[r];
@@ -473,10 +481,17 @@ function applyMTDFormatting(sheet) {
     // even when a date format left on its label has turned it into a long Date string.
     if (hasNoFigures_(row, width)) continue;
     
-    // An area row, or OVER ALL TOTAL. One call writes the whole B..K run, so no column can
-    // be left behind by whatever format the cell happened to be carrying.
-    sheet.getRange(r + 1, 2, 1, MTD_COLUMN_FORMATS.length).setNumberFormats([MTD_COLUMN_FORMATS]);
+    // An area row, or OVER ALL TOTAL. The whole B..K run of this row is replaced in the
+    // matrix, so no column can be left behind by whatever format the cell happened to carry.
+    var formatRow = formats[r];
+    if (!formatRow) continue;
+    for (var c = 0; c < MTD_COLUMN_FORMATS.length; c++) {
+      formatRow[c + 1] = MTD_COLUMN_FORMATS[c];
+    }
   }
+
+  // One write for the block, data rows and untouched rows together.
+  block.setNumberFormats(formats);
 }
 
 /** True when B..<width> of `row` hold nothing at all — the shape of a month label row. */
@@ -579,6 +594,16 @@ function getMonthName(monthNum) {
 // The on-change trigger is created by code ON PURPOSE. It used to be added by hand in
 // the Triggers page, and the old setupAutoTrigger() deleted EVERY project trigger
 // before installing its timer — so re-running setup silently removed it.
+
+// ==================== BUILD STAMP ====================
+//
+// Written by scripts/apps-script/sync-gs-tail.cjs — not edited by hand here. 'Show Version'
+// in the plan menu reports it, which is the one thing a paste cannot tell you on its own:
+// whether the editor holds the file the repo has, or one from before the last change. The
+// stamp is the app version plus a short hash of the head and this template, so an edit to
+// either one changes it. Compare it with SCRIPT_BUILD in the .gs file you pasted.
+const SCRIPT_PLAN = 'BIDA';
+const SCRIPT_BUILD = '1.21.0+38f651ba';
 
 const ARCHIVE_ENABLED_KEY = 'ARCHIVE_ENABLED';
 const ARCHIVE_AFTER_DAYS_KEY = 'ARCHIVE_AFTER_DAYS';
@@ -1979,7 +2004,8 @@ function setupManagedTriggers() {
     // Triggers accidentally pointed at a menu/setup function can never do useful work.
     if (handler === 'onOpen' || handler === 'setupAutoTrigger' || handler === 'setupManagedTriggers' ||
         handler === 'stopAutoTrigger' || handler === 'stopManagedTriggers' ||
-        handler === 'archiveDryRun' || handler === 'testSupabaseConnection') {
+        handler === 'archiveDryRun' || handler === 'testSupabaseConnection' ||
+        handler === 'showScriptVersion') {
       ScriptApp.deleteTrigger(trigger);
       removed.setup++;
       continue;
@@ -2043,6 +2069,26 @@ function stopAutoTrigger() { stopManagedTriggers(); }
 
 // ==================== MENU ====================
 
+/**
+ * Reports the build this project is running, so a sheet can be asked which copy of the code
+ * it holds. A paste leaves no other trace: the sheet looks identical whether the editor has
+ * today's file or the one before the last change. Logged as well as alerted, so the answer
+ * also lands in the Executions log of whoever ran it.
+ */
+function showScriptVersion() {
+  var lines = [
+    'GVSI SLI Tracker — ' + SCRIPT_PLAN,
+    '',
+    'Build:  ' + SCRIPT_BUILD,
+    '',
+    'Compare this with SCRIPT_BUILD in the .gs file you pasted. If the two differ, this',
+    'project is running a different build than the one in the repo.',
+  ];
+  var text = lines.join('\n');
+  Logger.log(text);
+  try { SpreadsheetApp.getUi().alert(text); } catch (e) {}
+}
+
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('GVSI Auto-DB')
     .addItem('Import BIDA to RAW DATA', 'importBIDAToRawData')
@@ -2061,6 +2107,7 @@ function onOpen() {
     .addItem('Restore NEW REPORT Formula (full history)', 'restorePlanSheetFormula')
     .addSeparator()
     .addItem('Test Supabase Connection', 'testSupabaseConnection')
+    .addItem('Show Version', 'showScriptVersion')
     .addToUi();
 }
 
