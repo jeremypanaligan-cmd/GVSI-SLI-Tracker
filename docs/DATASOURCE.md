@@ -159,7 +159,7 @@ lives only in the Apps Script's Script Properties.
 | Date picker's list of available dates | `App` | Plan sheet → `RAW DATA` (`Date` column) | Yes |
 | Compare view (all three plans side by side) | `CompareView` | **All three** plan sheets → `MTD` + `RAW DATA`; a `collectionBased` plan (SME) shows Net Collection and is left out of the count-based totals, with a note saying why | Yes (×3) |
 | Installation SLA Breakdown (≤24h / ≤72h / >72h) | `AgingReport` | Shared → `COMPLETED AGING REPORT` | No (shared) |
-| Executive Report (print / PDF) | `ExecutiveReportModal` | Plan sheet → `MTD` (areas + metrics); `RAW DATA` for the reference date | Yes |
+| Executive Report (print / PDF) | `ExecutiveReportModal` | Plan sheet → `MTD` (areas + metrics); `RAW DATA` for the reference date. Provincial Standing is ranked, printed and paced on NET on a `collectionBased` plan (SME), on ticket completions otherwise | Yes |
 | `Export` — "Export all RAW DATA as CSV" | `exportRawDataCSV` | Plan sheet → `RAW DATA` | Yes |
 | Prefetch (background warm-up for all plans) | `prefetchAllPlans` | All three plan sheets → `MTD` + `RAW DATA` + shared aging/trend | Yes (×3) |
 

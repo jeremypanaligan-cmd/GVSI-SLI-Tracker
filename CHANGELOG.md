@@ -6,6 +6,152 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 🏷️ A pasted script can say which build it is
+
+Pasting a plan script into its Apps Script project leaves no trace: the sheet behaves and
+looks the same whether the editor holds today's file or the one from before the last change,
+and the only way to find out was to notice a fix not happening. Each script now carries a
+build id, and **Show Version** in the plan menu reports it — so the question "did my paste
+land?" has an answer you can read off the sheet instead of inferring from behaviour.
+
+- **The build id is `version+hash`** — the app version plus a short hash of the hand-maintained
+head and the generated template. Any edit to either one, and every version bump, changes it,
+so two copies can be compared by eye
+- **It is generated, never hand-written.** `scripts/apps-script/sync-gs-tail.cjs` computes it
+per plan as it renders the shared tail, so there is nothing to remember to update — and
+`--check` treats a file whose stamp no longer matches its own head as stale, which is what
+stops the stamp from quietly lying
+- **The menu item is logged as well as alerted**, so whoever ran it has the answer in the
+Executions log too
+- **Stamped into all three plans**, each with its own hash — the heads differ, so the three
+build ids differ, and a wrong-file paste is visible rather than plausible
+
+### ⚡ The MTD formatting pass writes once, not once per row
+
+`applyMTDFormatting` set the number format of every data row with its own sheet call. Once
+`generateMTDReport` had been taught to build its grid in memory and write it in one call, that
+pass became the dominant cost of a sync — roughly 160 round trips on a year of sections, pure
+running time against Apps Script's six-minute limit. It now reads the block's values and its
+number formats, replaces the format run of each data row inside that matrix, and writes the
+whole block back in a single call.
+
+- **~160 round trips become 3** — one `getValues`, one `getNumberFormats`, one
+`setNumberFormats` — so the formatting pass stops being the thing a sync waits on
+- **Every format outside this pass's business goes back exactly as it was read.** The title, the
+month labels, the AREA headers and the blanks keep what they carried, which is what stops a
+month label holding a stray date format from turning into a long Date string — the case the
+row-shape test exists for
+- **Which rows are formatted did not change**: the same skip rules (title, AREA header, blank
+label, month label, any label with no figures) and the same columns — B..L on SME, B..K on BIDA
+and FIBERX, with the column after the run left alone
+- **All three plans, proved rather than assumed.** Each script is loaded into a VM with a
+stubbed sheet that records every call, and the formats it writes are compared cell for cell
+against the implementation it replaces: identical across a 140-row fixture, with the round
+trips down from 141 to 3
+
+### 🔗 The PACE chips count, and the URL carries the filter
+
+Two things the Provincial table's chips could not do: say how many areas they held without
+being clicked, and survive being sent to someone. Each chip now carries its own number —
+**All 10 · On pace 3 · Behind 1 · Critical 5** — and the active chip and the area search ride
+in the query string, so `?plan=sme&date=2026-09-28&pace=behind&area=ilo` opens that exact
+table for whoever the link reaches. The existing **Copy link** button picks both up for
+nothing, because it copies the URL the app keeps in step.
+
+- **A chip's number is what the chip would return**, not the plan's total. It is counted after
+the search, because the search and the chip intersect: with "ilo" typed, **Behind** means the
+areas in Ilocos, which is what a click hands you and what the number says
+- **A chip with nothing behind it dims** — and its tooltip says how many areas it holds — but
+stays clickable, because the empty table it opens is the answer to "really, none?"
+- **The counts cannot drift from the rows.** Both come from the same searched list, so the
+table shows exactly the number of rows the active chip claims
+- **The filters live in the URL and not in localStorage**, unlike plan/date/month/view. A filter
+hides rows, and a table that opens empty because of a chip someone clicked days ago reads as
+missing data rather than as a filter. A shared link carries it; a plain table keeps a plain
+URL, and clearing the chip or the search removes the param instead of spelling out a default
+- **The app's own URL write never drops them.** The plan/date/month/view effect rebuilds the
+query string around whatever is already there, so stepping through dates with a filter on
+keeps the filter — and the search box is capped at the 60 characters a share link will carry
+
+### 💰 The Executive Report reads SME in pesos
+
+The one-pager's **Provincial Standing** table judged a province's pace by how many
+installations it had completed while printing a peso target in the column beside it. On SME a
+month of 27 installations against a ₱62,098 target is under one percent of it, so every area in
+the table read **Critical**, and the ranking put the province with the most tickets at the top of
+a list whose other column was money. The sheet is now read the way the plan is measured — NET
+against the peso target, the same figure the dashboard's PACE column and the achievement rate
+already use.
+
+- **The ranking, the printed cells and the pace badge all use one basis**, so the table can no
+longer sort provinces by one figure and badge them by another. On SME the column is headed
+*Net Collected* and every amount is a whole peso; on a count-measured plan nothing moves
+- **An area with no NET is left out of the table** rather than paced and ranked on its ticket
+count — the same rule the year-to-date totals already apply to a money plan
+- **The KPI row speaks the same unit**: *Net Collected* against the peso target, with a peso
+*To Go*; *Total Completed* and its counts are unchanged on FIBERX and BIDA
+- **The pace pills finally carry their words.** They were rendering as an empty coloured pill,
+so colour was the only signal a reader had — which is why "always Critical" was so easy to
+believe once every area was compared against the peso target
+- **`computeAreaPace` no longer falls back to the ticket count** on a plan whose target is
+money: with no NET there is no pace to compute, and the area answers `—` instead of a false
+Critical, in the report and in the daily table's PACE chips alike
+
+### 🎯 The PACE chips return what the PACE badges show
+
+The filter buttons after the search bar judged a row by one figure while the PACE column
+beside it judged it by another. A collection plan paces **NET** against its peso target; the
+filter was still reading the ticket count, so on SME every area that had collected 27 MRCs
+against a ₱62,098 target looked like it belonged under `Critical`. On Sep 28 that made
+**On pace** and **Behind** return no rows at all, while **Critical** listed all nine areas —
+including the three that were on pace.
+
+- **`paceOf` is now the one call the badge and the chips both make**, with the plan's
+measurement basis passed through it, so the two cannot drift apart again
+- **A count-measured plan is untouched.** FIBERX and BIDA return the same rows they always
+did; only a plan whose target is money answers differently, and it matches its own badges
+- **Search and a chip still intersect**, and an area with no target at all still answers to
+neither filter — it keeps its `—`
+
+### 🚀 A release is one command
+
+A release used to be four edits that had to agree: bump `package.json`, promote the CHANGELOG's
+`[Unreleased]` section to `[x.y.z]`, commit, and push a tag. The release workflow then checks
+that tag against the version and publishes that section as the notes — so the two halves could
+only be put together in the right order by hand, and a working copy is not a safe place to
+remember an order.
+
+- **`npm run release <version>`** does the whole thing — `major`, `minor`, `patch`, or an
+explicit version. **`--dry-run`** prints the edits, a real diff of each file and the commit
+message without writing anything, and **`--no-push`** stops after the tag
+- **It refuses rather than half-does it.** An empty `[Unreleased]` section (the notes would be
+empty and the release job would fail), a version that does not move forward, a tag that
+already exists, or a branch other than `main`. Nothing is written when it refuses, and the
+run stops with a reason instead of a commit
+- **Only the version files and the scripts it re-stamps go into the commit**, whatever else
+happens to be staged in the same working copy. The promoted section is read back by
+`scripts/extract-changelog-section.cjs` — the very command the release workflow runs — before
+the commit is made, so a section that cannot become notes is caught while the files can still
+be put back
+- **The plan scripts are re-stamped in the same commit.** Each one carries the version in its
+build stamp, so a bump re-renders all three and commits them with the version files —
+otherwise every script would keep claiming the version before last and `--check` would refuse
+all three. The preview in `--dry-run` renders them for real, in a throwaway copy, and shows
+the one-line diff
+- **It refuses when those scripts have uncommitted changes**, because a re-render reads the
+working copy: an unrelated edit sitting in a plan script would otherwise ride into the release
+commit as though the release had written it
+- **`package-lock.json`'s own version fields are kept in step as well.** They had drifted to
+`1.8.0` against `package.json`'s `1.21.0`: nothing installs from them, but a lock that names
+a version thirteen releases old is a claim someone will eventually believe. The next release
+brings it back into line
+- **Afterwards it says what to check** — the deployed `version.json`, which is the thing that
+makes every open app update itself; the release page the tag publishes; and a reminder to
+re-paste the plan scripts when the released work changed them, since that one part of a
+release is still done by hand in the Apps Script editor. A release that only moved the build
+stamps is not one of those: the reminder compares the scripts with that single line taken out,
+so it fires when the code changed and stays quiet when only the version moved
+
 ## [1.21.0] — 2026-09-29
 
 ### 🩺 The Developer console says when the record and the worksheet disagree

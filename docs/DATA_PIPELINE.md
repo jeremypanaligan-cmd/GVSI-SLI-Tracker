@@ -59,6 +59,17 @@ node scripts/apps-script/sync-gs-tail.cjs          # render the template into al
 node scripts/apps-script/sync-gs-tail.cjs --check   # fail if they have drifted
 ```
 
+Each file also carries a build id in its own `SCRIPT_BUILD` — the app version plus a short
+hash of the hand-maintained head and the template, so it moves whenever either one changes.
+**Show Version** in a plan's menu reports the build that project is running, which is the one
+way to tell a stale paste from a current one: the sheet behaves and looks identically either
+way. Compare what it reports with `SCRIPT_BUILD` in the `.gs` file you pasted from.
+
+`npm run release` runs the sync itself, right after the version bump, and commits the three
+re-stamped files with the version files — so the stamps follow `package.json` instead of
+sitting a release behind it. Because only that one line moves, the release does not ask for a
+re-paste unless a script actually changed.
+
 `scripts/MTD.gs` + `scripts/SETUP_GUIDE.md` are the **legacy single-plan (FIBERX v1)** path and
 are no longer used.
 

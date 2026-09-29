@@ -85,34 +85,19 @@ editor. There is no check that what runs is what the repo says, and this has alr
 us: a completed guard sat undeployed while a scheduled run used the previous code, and the
 only way to tell was to read the audit trail afterwards.
 
+**Partly addressed:** every script now carries a build id that `Show Version` reports, so a
+stale paste is visible on the sheet instead of being inferred from behaviour. What is still
+missing is a check of the *functions* themselves — a build stamp says "not the file the repo
+has", not which parts differ — and the paste is still by hand.
+
 **Done when:** `clasp push` (or an equivalent) deploys all three, or a small script reports
 which functions differ between the repo and the deployed project.
-
-### 5. `applyMTDFormatting` still makes ~160 sheet calls
-
-`generateMTDReport` was rewritten to build its grid in memory and write once, which cut the
-round trips between `clear()` and the last value from **29 to 1**. The total only fell from
-185 to 164, because the formatting pass is now the dominant cost — and unlike the old blank
-window, it is still pure running time against the six-minute limit.
-
-**Done when:** the formatting pass is a handful of range operations rather than ~160.
-
-### 6. A release is still four manual steps
-
-Today a release means bumping `package.json`, promoting the CHANGELOG's `[Unreleased]`
-section to `[x.y.z]`, committing, and pushing a tag. The release workflow then verifies the
-tag agrees with `package.json` and publishes the notes from the promoted section — so the
-automation exists, but the steps that feed it are done by hand in a fixed order.
-
-**Done when:** `npm run release <version>` bumps, promotes, commits, tags and pushes. The
-existing `scripts/extract-changelog-section.cjs` already reads the section the workflow
-needs, so this is mostly assembling parts that exist.
 
 ---
 
 ## 🟢 Analytics
 
-### 7. A per-province trailing trend
+### 5. A per-province trailing trend
 
 The 30-day sparkline is portfolio-level. The most common question this report invites —
 *is this one province slipping, or is everyone?* — cannot be answered from the dashboard
@@ -121,7 +106,7 @@ only the view is missing.
 
 **Done when:** selecting a province shows its own trailing window, not just its current row.
 
-### 8. Pace alerting per province
+### 6. Pace alerting per province
 
 The velocity report knows the required daily rate for the portfolio. A province that is
 behind that pace is visible only by reading the table and doing the arithmetic. Flagging the
@@ -130,14 +115,14 @@ ones below pace would turn a table into a worklist.
 **Done when:** provinces below the required rate are marked wherever they appear, from the
 same rule the velocity report uses.
 
-### 9. Export the current view
+### 7. Export the current view
 
 There is no way to get a table out of the app. Management reporting still means
 screenshots. Excel or PDF export of the visible view would remove that step.
 
 **Done when:** the current table can be exported with its selected month, plan and filters.
 
-### 10. SLA breach drill-down
+### 8. SLA breach drill-down
 
 The Installation SLA Breakdown buckets tickets by age; it does not say **which** tickets are
 in the oldest bucket, or which area they belong to. That is the next question after "how
@@ -145,7 +130,7 @@ many breached".
 
 **Done when:** a bucket can be opened to see the jobs inside it, grouped by area.
 
-### 11. Project the month from trailing velocity, not linear pace
+### 9. Project the month from trailing velocity, not linear pace
 
 The month-end projection is linear: completed so far, divided by elapsed days, extrapolated.
 A team that started slowly and accelerated is projected as if it never accelerated. The
@@ -158,7 +143,7 @@ basis it used.
 
 ## 🔵 Architecture
 
-### 12. One chunk holds the whole app
+### 10. One chunk holds the whole app
 
 The production build is a single `index-*.js` of about 334 kB (93 kB gzip) containing every
 screen, including the ones most sessions never open: `CompareView`, `AgingReport` and
@@ -167,7 +152,7 @@ Developer console in particular is opened by a handful of accounts.
 
 **Done when:** the initial chunk excludes the screens that are not on the default view.
 
-### 13. Supabase for the live month too
+### 11. Supabase for the live month too
 
 Closed months come from Supabase; the current month still comes from the Google Sheet's CSV
 export, which is a published link rather than an API — no shaping, no filtering, the whole
@@ -178,7 +163,7 @@ This is the natural end state of the cold-archive design, and the largest item h
 
 **Done when:** no dashboard request reads a spreadsheet CSV.
 
-### 14. Real offline support
+### 12. Real offline support
 
 The service worker is cache-first for assets, so the app opens without a network — but the
 data is fetched on load, so an offline open shows an error rather than the last known
@@ -186,7 +171,7 @@ figures. For a dashboard people check on site visits, the cached view is worth h
 
 **Done when:** opening offline renders the last cached month with a clear "as of" marker.
 
-### 15. Supabase Auth instead of custom session tokens
+### 13. Supabase Auth instead of custom session tokens
 
 Sessions are built on a hand-rolled `verify_login` RPC returning a token, with presence,
 revocation and maintenance checks layered on top. It works, and it was the right call when
@@ -195,7 +180,7 @@ a maintained implementation and give password reset and rotation for free.
 
 **Done when:** sessions are issued by Supabase Auth and the custom token path is gone.
 
-### 16. Role-based views
+### 14. Role-based views
 
 `sli_users.role` exists and `Developer` unlocks the console, but nothing else is gated: a
 `Supervisor` and a `Viewer` see the same thing. Deciding what each role should see is a
@@ -203,7 +188,7 @@ product question; the column to support the answer is already there.
 
 **Done when:** at least one role difference is enforced and documented.
 
-### 17. An audit trail of exports and views
+### 15. An audit trail of exports and views
 
 Presence records who is signed in. Nothing records who exported a month, or who looked at a
 closed one. For figures that go into customer-facing reporting, that history is worth having.
@@ -238,3 +223,18 @@ Kept here so the same ground is not re-covered.
 - **Every user-facing string is professional English.**
 - **Release automation**: a `v*` tag publishes a GitHub Release whose notes are the matching
   CHANGELOG section, and `package.json` is the single source of the version.
+- **A release is one command** (`npm run release <version>`, `scripts/release.cjs`): it bumps
+  `package.json` and the lock's two version fields, promotes `[Unreleased]` in the changelog to
+  a dated version heading, commits as `chore(release)`, tags with the subject the release
+  workflow uses as its title, and pushes both. `--dry-run` prints the edits, the diff and the
+  commit message without writing; `--no-push` stops after the tag; it refuses an empty
+  `[Unreleased]` section, a version that does not move forward, an existing tag, or a branch
+  other than `main`, or uncommitted changes in the plan scripts and the template they are
+  rendered from. It re-stamps the three plan scripts after the bump and commits them with the
+  version files, so their build stamps never sit a release behind `package.json`. Afterwards it
+  prints what to check — the deployed `version.json`, the release page, and a re-paste reminder
+  when the released work changed a plan script, which is the one step that is still by hand.
+- **The MTD formatting pass writes once** instead of once per data row: `applyMTDFormatting`
+  reads the block's values and number formats, changes only the data rows in that matrix, and
+  writes the block back in one call — the ~160 round trips become 3, on all three plans, proved
+  cell for cell against the pass it replaces.

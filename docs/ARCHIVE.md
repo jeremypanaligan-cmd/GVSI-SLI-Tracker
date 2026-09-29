@@ -357,6 +357,14 @@ scripts/apps-script/sync-gs-tail.cjs       ← node scripts/apps-script/sync-gs-
 `{{PLAN_TRIM_ENABLED}}` are filled in per plan — `PLAN_TRIM_ENABLED` is `true` for all
 three today. It is a per-plan constant rather than a `CONFIG` row because it answers "has
 *this* plan's history actually reached Supabase yet?", which `ARCHIVE_TRIM` cannot answer.
+
+`{{SCRIPT_BUILD}}` is the build id stamped into each file: the app version plus a short hash
+of the head and this template, so it moves whenever either one does. **Show Version** in a
+plan's menu reports it, which is the only way a sheet can say which copy of the code it holds
+— a paste leaves no other trace, and the sheet looks the same either way. Because the version
+is part of the stamp, `npm run release` re-runs this sync as one of its steps and commits the
+re-stamped scripts with the version files, so a bump never leaves the stamps behind.
+
 Run the sync script after any edit to the template, then paste the three files into their
 Apps Script projects. `--check` fails when the three have drifted.
 
