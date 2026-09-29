@@ -186,6 +186,15 @@ export function monthProgress(dateLabel, monthYearLabel) {
  * blocks leave `SEP`–`DEC` empty until somebody fills them in, so `null` means "not reported
  * yet" rather than "zero", and that is the month the record is there to supply.
  *
+ * The month's source decides every province in it, not just the ones the record lists. A
+ * province the record leaves out collected nothing that month, and reading its worksheet cell
+ * anyway adds the other side's figure to a month the record has already defined — which is how
+ * BIDA's `2026-08` came to read 540. The archive was written from a twelve-province list with
+ * no `Aurora`, so the tab's `Aurora` cell — the same 17 tickets the archive files under
+ * `Kalinga` — was counted on top of the archive's own month. `covered` is that decision: the
+ * months the record speaks for, so a month it cannot speak about (SME's `2026-08`, twelve
+ * ticket counts and no `NET`) still falls to the worksheet whole.
+ *
  * Where the two hold the same month and disagree, the record wins and the worksheet's figure
  * goes unused — which is why `summarizeSourceClashes` reports those cells rather than leaving
  * the difference to be noticed by eye.
@@ -194,11 +203,29 @@ export function monthProgress(dateLabel, monthYearLabel) {
  * `summarizeWorksheetDependency` uses it to report on what was displayed, so the two can
  * never disagree about what "the worksheet supplied this" means.
  */
-function actualCellRule(actualBlock, overrides, key, index) {
+function actualCellRule(actualBlock, overrides, covered, key, index) {
   const override = overrides?.[index]?.[key]
   if (typeof override === 'number' && Number.isFinite(override)) return { value: override, fromRecord: true }
+  if (covered.has(index)) return { value: 0, fromRecord: true }
   const worksheet = actualBlock.areas[key]?.monthly?.[index]
   return { value: typeof worksheet === 'number' ? worksheet : 0, fromRecord: false }
+}
+
+/**
+ * The months the record speaks for, read off the overrides themselves.
+ *
+ * `buildOverrides` writes an entry for a month only when it found at least one figure this plan
+ * can use, and leaves the month out entirely when it found none — SME's archived `2026-08` holds
+ * twelve ticket counts and no `NET`, so it contributes nothing and the month stays the
+ * worksheet's. Deriving the set here rather than taking it from a second caller is what keeps
+ * the two from disagreeing about which months have a record behind them.
+ */
+function coveredMonthsOf(overrides) {
+  const covered = new Set()
+  for (const [month, byArea] of Object.entries(overrides || {})) {
+    if (Object.keys(byArea || {}).length > 0) covered.add(Number(month))
+  }
+  return covered
 }
 
 /**
@@ -244,12 +271,14 @@ export function summarizeWorksheetDependency({
   const worksheetAreasByMonth = MONTHS.map(() => [])
   const recordAreasByMonth = MONTHS.map(() => [])
 
+  const covered = coveredMonthsOf(overrides)
+
   const areas = order.map((key) => {
     const name = targetBlock.areas[key]?.name || actualBlock.areas[key]?.name || key
     const worksheetMonths = []
     const recordMonths = []
     for (let index = 0; index < monthsElapsed; index++) {
-      if (actualCellRule(actualBlock, overrides, key, index).fromRecord) {
+      if (actualCellRule(actualBlock, overrides, covered, key, index).fromRecord) {
         recordMonths.push(index)
         recordByMonth[index] += 1
         recordAreasByMonth[index].push(name)
@@ -343,9 +372,11 @@ export function summarizeWorksheetDependency({
  * worksheet column read in the other basis shows up here as a uniform 12% across every area.
  *
  * A third thing is reported beside those two, and it is neither: a month the record covers in
- * part, where a province it does not hold keeps a non-zero worksheet cell. Nothing disagrees —
- * there is simply one side's figure added to the other side's — and the result is a month whose
- * number is larger than either source's own. See `partialMonths`.
+ * part, where a province it does not hold has a non-zero worksheet cell. Nothing disagrees
+ * about a figure — the record's month simply stands for every province in it, and that cell is
+ * left out of the total (`actualCellRule`). Worth saying because the cell looks like data: on
+ * BIDA's `2026-08` the archive carries twelve rows and no `Aurora`, while the tab's `Aurora`
+ * cell holds the same 17 tickets the archive files under `Kalinga`. See `partialMonths`.
  *
  * There is a second failure that is not a disagreement at all, and it is the one that arrives
  * looking like agreement: a record month that cannot be expressed in the plan's own units.
@@ -436,12 +467,13 @@ export function summarizeSourceClashes({
   // Which months the record holds but cannot speak about, in reading order.
   const unusableMonths = [...new Set(unusable.map((entry) => entry.monthIndex))].sort((a, b) => a - b)
 
-  // Months the record covers only in part. The provinces it does hold decide the month's
-  // source, and the ones it does not keep their worksheet cell — so a region total can come out
-  // larger than either side's own, which no single cell would explain. BIDA's `2026-08` is the
-  // live example: the archive carries twelve rows and no `Aurora`, while the tab's `Aurora` cell
-  // holds `17`, so the archive's 523 is shown as 540. Only a province whose worksheet cell is
-  // non-zero can move a total, so a zero stays out of the report.
+  // Months the record covers only in part. The month's source decides every province in it, so
+  // the ones the record does not list count as zero for that month and their worksheet cells are
+  // left out of the total — reported because they are the figures a reader would otherwise assume
+  // were counted. BIDA's `2026-08` is the live example: the archive carries twelve rows and no
+  // `Aurora`, while the tab's `Aurora` cell holds `17` — the same tickets the archive files under
+  // `Kalinga` — so that cell is withheld rather than added to the archive's 523. Only a non-zero
+  // cell can be withheld, so a blank stays out of the report.
   const partialMonths = []
   for (let index = 0; index <= monthIndex; index++) {
     const covered = new Set()
@@ -468,7 +500,7 @@ export function summarizeSourceClashes({
       covered: covered.size,
       total: actualBlock.order.length,
       missing,
-      added: missing.reduce((total, entry) => total + entry.worksheet, 0),
+      withheld: missing.reduce((total, entry) => total + entry.worksheet, 0),
     })
   }
 
@@ -586,8 +618,9 @@ export function computeYtd({ actual, target, planId, monthIndex, overrides = {},
   // written in. Anything the completed tab adds on its own is appended.
   const order = [...new Set([...targetBlock.order, ...actualBlock.order])]
   const closedRecordMonths = new Set()
+  const covered = coveredMonthsOf(overrides)
 
-  const actualFor = (key, index) => actualCellRule(actualBlock, overrides, key, index)
+  const actualFor = (key, index) => actualCellRule(actualBlock, overrides, covered, key, index)
 
   /**
    * Build one row (a province, or the overall roll-up) from full 12-month series. Only the

@@ -333,16 +333,17 @@ function WorksheetDependency({ dependency, merge, clashes, now }) {
           </div>
         )}
 
-        {/* Neither a disagreement nor agreement: the record covers the month in part, and the
-            provinces it does not hold keep their worksheet cell. Worth saying because it is the
-            only way the month's own number can come out larger than either source's. */}
+        {/* Neither a disagreement nor agreement: the record covers the month in part, so the
+            month stands as the record has it and the provinces it does not list are zero in it.
+            Worth saying because those cells look like data and are not counted. */}
         {clashes && clashes.partialMonths.length > 0 && (
           <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/5 px-2.5 py-2">
             {clashes.partialMonths.map((month) => (
               <p key={month.monthIndex} className="text-[11px] text-amber-800 dark:text-amber-200">
-                {`The record holds ${month.monthName} for ${month.covered} of ${month.total} provinces, so `}
+                {`The record defines ${month.monthName} for ${month.covered} of ${month.total} provinces, and `}
                 {`${month.missing.map((entry) => `${entry.name} ${formatValue(entry.worksheet)}`).join(' \u00b7 ')} `}
-                {`${month.missing.length > 1 ? 'are' : 'is'} the worksheet\u2019s \u2014 ${formatValue(month.added)} added to the record\u2019s month.`}
+                {`${month.missing.length > 1 ? 'are' : 'is'} not counted: `}
+                {`${formatValue(month.withheld)} withheld, since the record\u2019s own figure for the month stands.`}
               </p>
             ))}
           </div>
