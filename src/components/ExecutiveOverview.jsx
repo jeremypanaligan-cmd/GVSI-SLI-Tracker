@@ -1,4 +1,4 @@
-import { getBadgeStyle, getTodayStr, projectRunRate, getPaceBadgeStyle, formatPeso } from '../utils/dataProcessor'
+import { getBadgeStyle, getTodayStr, projectRunRate, getPaceBadgeStyle, formatPeso, formatPesoExact } from '../utils/dataProcessor'
 import DatePicker from './DatePicker'
 import Sparkline from './Sparkline'
 import VelocityReport from './VelocityReport'
@@ -207,7 +207,9 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
             <div className={`relative overflow-hidden rounded-2xl border-2 p-5 flex flex-col justify-between min-h-[128px] ${pc.total?.border || 'border-teal-300 dark:border-teal-800'} ${pc.total?.bg || 'bg-teal-50 dark:bg-teal-950/40'}`}>
               <div className={`absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-10 ${pc.bg || 'bg-teal-500'}`} />
               <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest relative">Net Collection</p>
-              <span className={`text-4xl sm:text-5xl font-black tracking-tight relative ${pc.text || 'text-teal-600 dark:text-teal-400'}`}>{formatPeso(mtd.net)}</span>
+              {/* Net Collection keeps its centavos — the figure is money collected, not a
+                  rounded tally. Gross and the pesos target stay whole. */}
+              <span className={`text-4xl sm:text-5xl font-black tracking-tight relative ${pc.text || 'text-teal-600 dark:text-teal-400'}`}>{formatPesoExact(mtd.net)}</span>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 relative">
                 against the <span className="font-semibold text-slate-600 dark:text-slate-300">{formatPeso(mtd.target)}</span> target
               </p>

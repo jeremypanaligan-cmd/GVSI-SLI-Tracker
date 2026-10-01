@@ -6,6 +6,62 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 📱 Tapping a month in Monthly Progress opens its details
+
+The strip has always explained a month through its `title` — `Aug · 465,023.00 of 419,464 target
+(111%)` — which a pointer can hover and a finger cannot. On a phone the cell was a guess. Every cell
+is a button now, and tapping it opens that month's figures.
+
+- **The same facts the tooltip carries**, laid out: what the month delivered, the month's target,
+  and the percentage between them. Nothing new is invented for the dialog
+- **A month that has not been reached says so** — the target alone, and "not yet reached", rather
+  than a delivered figure that reads as a zero
+- **A sheet on a phone, a centered card from `sm` up**, portaled to `document.body` so the strip's
+  own horizontal scroll cannot clip it. Backdrop click and Escape close it, as the Executive Report does
+- **A phone is not the only beneficiary.** The title tooltip stays for a pointer, and the cell is a
+  real button: focusable, keyboard-activated, and announced as opening a dialog
+
+### 📅 SME's Monthly Progress keeps its decimals
+
+SME's Year-to-Date strip is the one place in the app where a whole year is read in pesos — 413,275
+for January, 465,023 for August — and it wrote those amounts as whole numbers. The delivered figure
+now keeps its two decimals on a large screen, the way the Net Collection figure does.
+
+- **`465,023.00` at `lg`, in the cell and in its tooltip.** The shortened form below `lg` is
+  untouched: `465k` is a glance at the shape of the year, not a figure to audit
+- **The monthly target underneath stays whole**, and so do the hero and the four stat cards above
+  the strip — the same rule the `TARGET` column and the Monthly Target card follow. Only the amount
+  the month *delivered* is money collected
+- **`formatNumberExact`** joins `formatNumber` and `formatPesoExact` in `dataProcessor.js`:
+  thousands separators, two decimals always, `—` where the figure is absent
+- **A count plan is unaffected.** BIDA and FIBERX keep whole numbers in the same strip
+
+### 💰 SME's Net Collection keeps its centavos
+
+Net Collection is money, and the sheet carries it to two decimals — but two roundings stood between
+the sheet and the screen, so `₱41,988.13` was read as `₱41,988`. In the app the figure went through
+a formatter written for a ticket count (`maximumFractionDigits: 0`); in `RAW DATA` the column
+itself was formatted `#,##0`, and the CSV export writes what a cell shows. Both are fixed: the app
+formats the figure as it stands, and the source column shows the centavos it has always held.
+
+- **Executive Overview → Net Collection** — the headline card now reads the amount as it stands,
+  to the centavo
+- **Provincial Breakdown → NET** — every area row, the `OVER ALL TOTAL` row and the mobile card
+  list, so a province's own collection and the region it sums into are written in the same unit
+- **`formatPesoExact`** joins `formatPeso` in `dataProcessor.js`: two decimals always, with the
+  sign outside the symbol (`-₱1,234.50`) and `—` where the column is absent. `formatPeso` is
+  untouched, so `GROSS` and the money `TARGET` still read as whole pesos
+- **`SMESCRIPT.gs`: `RAW DATA` column `O` (NET) is `#,##0.00`.** It sat inside a `C:P` run of
+  `#,##0`, so the column displayed — and exported — whole pesos while the cell held the centavos.
+  `C:N` (the counts, `LAST MTD`, `GROSS`), `P` (TARGET) and `Q` (%) are unchanged, and the `MTD`
+  tab already carried `GROSS`/`NET` at `#,##0.00`, so the two tabs now agree
+- **SME's script has to be re-pasted**: its build id moved to `1.23.0+22051347` (`Show Version`).
+  The formats are applied by the import (`applyRawDataFormat`), so run **Full Sync** once after
+  pasting — a reload alone would not touch them. FIBERX and BIDA are untouched: their `RAW DATA`
+  has no collection columns
+- **A count plan is unaffected.** FIBERX and BIDA render no peso figure from this path, and the
+  `NET` column only exists on a plan that measures collections
+
 ## [1.23.0] — 2026-09-30
 
 ### 🗂️ An archived month carries every area the plan works in

@@ -114,6 +114,11 @@ so the same script serves both — a header a sheet does not have simply reads a
 > On SME the target is a **peso** figure and the achievement `%` is `NET ÷ TARGET` — not
 > `GROSS`, and not the counts on the left. A month whose target is not filled yet reads `0`,
 > and its `%` is `#DIV/0!`; the app shows those as `—` rather than `0%`.
+>
+> Column `O` (`NET`) carries the format `#,##0.00` where the rest of the figure row is `#,##0`.
+> A number format decides what a cell *shows*, and the CSV export writes what a cell shows — the
+> app reads that export, so a whole-peso format here would round the collection before the app
+> ever saw it. The `MTD` sheet's `GROSS`/`NET` are `#,##0.00` for the same reason.
 
 ## Step 2 — Generate: RAW DATA → MTD
 

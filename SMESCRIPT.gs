@@ -245,8 +245,16 @@ function applyRawDataFormat(sheet) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return;
   var dataRows = lastRow - 1;
-  // C-P (cols 3-16): numbers with comma (BF … GROSS, NET, TARGET)
-  sheet.getRange(2, 3, dataRows, 14).setNumberFormat('#,##0');
+  // C-N (cols 3-14): the counts, LAST MTD and the month's GROSS — whole numbers with comma
+  sheet.getRange(2, 3, dataRows, 12).setNumberFormat('#,##0');
+  // O (col 15, NET) keeps the two decimals the source sheet carries. The cell has always
+  // held the centavos — a number format only decides what the cell shows — but the CSV
+  // export writes what the cell shows, so '#,##0' here handed the app 41,988 where the
+  // month had collected 41,988.13. NET is the figure SME's target is measured against, so
+  // this is the one column whose amount must not be rounded.
+  sheet.getRange(2, 15, dataRows, 1).setNumberFormat('#,##0.00');
+  // P (col 16, TARGET): a plan figure, whole pesos
+  sheet.getRange(2, 16, dataRows, 1).setNumberFormat('#,##0');
   // Q (col 17): the sheet's own NET / TARGET %, carried verbatim
   sheet.getRange(2, 17, dataRows, 1).setNumberFormat('0.00%');
 }
@@ -647,7 +655,7 @@ function getMonthName(monthNum) {
 // stamp is the app version plus a short hash of the head and this template, so an edit to
 // either one changes it. Compare it with SCRIPT_BUILD in the .gs file you pasted.
 const SCRIPT_PLAN = 'SME';
-const SCRIPT_BUILD = '1.23.0+f6811942';
+const SCRIPT_BUILD = '1.23.0+22051347';
 
 const ARCHIVE_ENABLED_KEY = 'ARCHIVE_ENABLED';
 const ARCHIVE_AFTER_DAYS_KEY = 'ARCHIVE_AFTER_DAYS';

@@ -8,7 +8,7 @@
  *   | RJO INCOMING | RJO RD | TOTAL RJO | Carry Over | MTD | GROSS | NET | TARGET | %
  */
 import { useState, useMemo, useEffect } from 'react'
-import { formatNumber, formatPeso, getBadgeStyle, computeAreaPace, getPaceBadgeStyle } from '../utils/dataProcessor'
+import { formatNumber, formatPeso, formatPesoExact, getBadgeStyle, computeAreaPace, getPaceBadgeStyle } from '../utils/dataProcessor'
 import { readTableState, writeTableState, MAX_AREA_PARAM } from '../utils/urlState'
 import Sparkline from './Sparkline'
 
@@ -153,7 +153,7 @@ function MobileRow({ entry, refDate, overall, collectionBased = false, totalAcce
             {collectionBased && (
               <>
                 <span className="mx-1 opacity-60">·</span>
-                <span className="font-bold text-slate-700 dark:text-slate-100">NET {formatPeso(entry.net)}</span>
+                <span className="font-bold text-slate-700 dark:text-slate-100">NET {formatPesoExact(entry.net)}</span>
               </>
             )}
             <span className="mx-1 opacity-60">·</span>
@@ -430,7 +430,8 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent, coll
               {collectionBased && (
                 <>
                   <Td align="right">{formatPeso(entry.gross)}</Td>
-                  <Td align="right" bold>{formatPeso(entry.net)}</Td>
+                  {/* NET keeps its centavos — see formatPesoExact. GROSS stays whole. */}
+                  <Td align="right" bold>{formatPesoExact(entry.net)}</Td>
                 </>
               )}
               <Td align="right" bold stickyRight={PCT_WIDTH + TARGET_WIDTH} width={MTD_WIDTH} bgColor={i % 2 === 0 ? 'bg-white dark:bg-[#0c1220]' : 'bg-slate-50/50 dark:bg-[#111c2e]'}>{formatNumber(entry.mtd)}</Td>
@@ -460,7 +461,7 @@ export default function DailyTable({ dateData, refDate, areaTrends, accent, coll
               {collectionBased && (
                 <>
                   <Td align="right">{formatPeso(dateData.overallTotal.gross)}</Td>
-                  <Td align="right" bold>{formatPeso(dateData.overallTotal.net)}</Td>
+                  <Td align="right" bold>{formatPesoExact(dateData.overallTotal.net)}</Td>
                 </>
               )}
               <Td align="right" bold stickyRight={PCT_WIDTH + TARGET_WIDTH} width={MTD_WIDTH} bgColor={`${totalAccent.bg} ${totalAccent.text}`}>{formatNumber(dateData.overallTotal.mtd)}</Td>

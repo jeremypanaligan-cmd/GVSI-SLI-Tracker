@@ -45,6 +45,21 @@ export function formatNumber(val, colKey) {
 }
 
 /**
+ * A plain figure that must keep its decimals — SME's monthly collections in the Year-to-Date
+ * strip, where the numbers are money. `formatNumber` rounds to whole numbers because every
+ * other figure it writes is a count; this one is an amount, so 465,023.00 is not shortened to
+ * 465,023. The same shape as `formatPesoExact`, without the symbol.
+ */
+export function formatNumberExact(val) {
+  if (val === null || val === undefined || val === '') return '—'
+  // A column a plan does not have reads as NaN; show that as absent, not as "NaN".
+  if (typeof val === 'number' && isNaN(val)) return '—'
+  const n = cleanNumber(String(val))
+  if (isNaN(n)) return String(val)
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/**
  * Short form for a cell too narrow for the whole figure — the mobile month strip, where
  * 413,275 in a single cell runs into its neighbour. One decimal and a k / M suffix:
  *   413275 → 413.2k · 414880 → 414.8k · 4148 → 4.1k · 899 → 899 · 1250000 → 1.2M
@@ -67,7 +82,8 @@ export function formatCompact(val) {
 
 /**
  * Peso amounts — SME's MRC block (GROSS, NET and the peso TARGET). Whole pesos, with the
- * sign outside the symbol so a shortfall reads as -₱1,500 rather than ₱-1,500.
+ * sign outside the symbol so a shortfall reads as -₱1,500 rather than ₱-1,500. A figure that
+ * has to keep its centavos uses `formatPesoExact` instead.
  */
 export function formatPeso(val) {
   if (val === null || val === undefined || val === '') return '—'
@@ -76,6 +92,21 @@ export function formatPeso(val) {
   const n = cleanNumber(String(val))
   if (isNaN(n)) return String(val)
   return `${n < 0 ? '-' : ''}₱${Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+}
+
+/**
+ * Peso amounts that must keep their centavos — SME's NET COLLECTION. The sheet carries the
+ * money to two decimals and the total is read as written, so this one formats the figure
+ * rather than rounding it: no `Math.round`, no `maximumFractionDigits: 0`. A whole peso
+ * still reads with its `.00`, because the column it stands in is a two-decimal one.
+ */
+export function formatPesoExact(val) {
+  if (val === null || val === undefined || val === '') return '—'
+  // A column a plan does not have reads as NaN; show that as absent, not as "NaN".
+  if (typeof val === 'number' && isNaN(val)) return '—'
+  const n = cleanNumber(String(val))
+  if (isNaN(n)) return String(val)
+  return `${n < 0 ? '-' : ''}₱${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 export function getBadgeStyle(pctValue) {
