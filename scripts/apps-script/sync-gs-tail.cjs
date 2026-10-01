@@ -67,6 +67,12 @@ const lf = (text) => text.replace(/\r\n/g, '\n')
  * it, so 'Show Version' in a plan's menu answers the one question a paste cannot: is this
  * project running the file the repo has?
  *
+ * The two halves move on different clocks, which is worth knowing before comparing them: the
+ * version names the release the file ships in, so a bump re-stamps all three, while the hash
+ * changes only when the head or this template does. A changelog entry is written before the
+ * release that promotes it, so it quotes the version before the one its stamp ends up carrying —
+ * the same hash, a later version. The hash is what says whether a paste matches the repo.
+ *
  * The rendered output is deliberately not part of the input — the stamp lives inside it — so
  * the value is stable across runs and `--check` stays meaningful.
  */

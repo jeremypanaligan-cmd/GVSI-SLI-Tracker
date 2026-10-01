@@ -57,10 +57,12 @@ formats the figure as it stands, and the source column shows the centavos it has
   `#,##0`, so the column displayed — and exported — whole pesos while the cell held the centavos.
   `C:N` (the counts, `LAST MTD`, `GROSS`), `P` (TARGET) and `Q` (%) are unchanged, and the `MTD`
   tab already carried `GROSS`/`NET` at `#,##0.00`, so the two tabs now agree
-- **SME's script has to be re-pasted**: its build id moved to `1.23.0+22051347` (`Show Version`).
-  The formats are applied by the import (`applyRawDataFormat`), so run **Full Sync** once after
-  pasting — a reload alone would not touch them. FIBERX and BIDA are untouched: their `RAW DATA`
-  has no collection columns
+- **SME's script has to be re-pasted**: its build id moved to `1.24.0+22051347` (`Show Version`).
+  The version in that stamp names the release the file ships in, so it moves with every bump while
+  the hash behind it moves only when the code does — which is why an entry written before a release
+  names the version before it, at the same hash. The formats are applied by the import
+  (`applyRawDataFormat`), so run **Full Sync** once after pasting — a reload alone would not touch
+  them. FIBERX and BIDA are untouched: their `RAW DATA` has no collection columns
 - **A count plan is unaffected.** FIBERX and BIDA render no peso figure from this path, and the
   `NET` column only exists on a plan that measures collections
 
