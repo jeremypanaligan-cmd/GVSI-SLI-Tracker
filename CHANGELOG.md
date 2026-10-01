@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.24.0] — 2026-10-01
+
 ### 📱 Tapping a month in Monthly Progress opens its details
 
 The strip has always explained a month through its `title` — `Aug · 465,023.00 of 419,464 target
