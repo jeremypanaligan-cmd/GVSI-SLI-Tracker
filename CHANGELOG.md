@@ -6,6 +6,28 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 👆 Tapping a day in Velocity opens its figures
+
+The Velocity chart could say only that a day came in under the line — that is what a rose bar is.
+The figure behind it lived in the bar's `title`, which a pointer can hover and a finger cannot, and
+which says nothing at all on a phone.
+
+Every bar in the chart is a button now. Tapping one opens that day's own figures, the way tapping a
+month in the Monthly Progress strip opens the month's.
+
+- **The day, laid out**: what it brought in, the rate it had to meet, and the difference between
+  them — `Collected ₱1,428 · Required that day ₱11,022 · Short by ₱9,594`. A day that met the rate
+  reads `Above by` in emerald instead, and a month whose target is already cleared says so rather
+  than showing a shortfall of zero
+- **The day in context**: its share of the day's requirement (`13%`), and the running total through
+  that day — the month to date on SME, the last N days on a ticket plan
+- **On SME everything in it is money**, because the bar and the dashed line above it are money; on
+  FIBERX and BIDA it is completed work, in counts, so the same dialog serves all three plans
+- **The tooltip stays** for a pointer, and each bar names its own day and figure for a screen
+  reader, so the chart can be read without hovering
+- **It closes** on the backdrop, on `Escape` or on the Close button — a sheet at the bottom of a
+  phone, a centered card from `sm` up, the same shape as a month's details
+
 ## [1.25.0] — 2026-10-06
 
 ### 📈 SME's velocity chart plots money, not tickets
