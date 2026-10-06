@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.25.0] — 2026-10-06
+
 ### 📈 SME's velocity chart plots money, not tickets
 
 SME's Executive Overview showed the VELOCITY card's figures — `₱4,195/day` against a `₱11,022/day`
