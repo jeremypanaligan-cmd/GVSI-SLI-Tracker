@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.27.0] — 2026-10-06
+
 ### 📏 A chart's measure travels with its series
 
 The Velocity card read its measure from the plan — one `collectionBased` flag — and applied it to
