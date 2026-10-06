@@ -4,8 +4,8 @@
 **Prepared by:** Jeremy Panaligan
 **System:** GVSI SLI Tracker — React/Vite PWA (GitHub Pages), fed by Google Sheets and the Apps Script
 import, with a Supabase cold archive
-**Release:** **v1.25.0** — committed, tagged and deployed today
-**Subject:** SME's Velocity chart — the graph that was not drawing
+**Release:** **v1.25.0**, then **v1.26.0** — both committed, tagged and deployed today
+**Subject:** SME's Velocity chart — the graph that was not drawing, and the day behind each bar
 
 ---
 
@@ -26,8 +26,14 @@ v1.25.0 charts SME's velocity in the measure the plan is actually read in — **
 tickets — and writes the figures around the chart as peso amounts. The card now shows five bars, each
 one a day's collection, sitting visibly under the required line.
 
-BIDA and FIBERX are untouched: their thirty-day bar chart of ticket completions renders exactly as it
-did yesterday.
+BIDA and FIBERX were untouched by that fix: their thirty-day bar chart of ticket completions renders
+exactly as it did yesterday.
+
+A second change went out the same day, on top of it. **Every bar is tappable now** — on all three
+plans — and opens that day's own figures: what the day collected (or completed), the rate it had to
+meet, and the difference between them. The chart could only ever say that a day came in under the
+line, which is what a rose bar means; the figure behind it was in the bar's hover text, which a phone
+cannot reach.
 
 ---
 
@@ -94,7 +100,33 @@ Once the bars were in money, everything read against them had to follow.
 
 ---
 
-## 5. Verification (evidence)
+## 5. Tapping a day in Velocity (new)
+
+The chart could say that a day came in under the line — that is all a rose bar is. The figure behind
+it lived in the bar's hover text, which a phone cannot reach and which a pointer gives only while it
+stays still.
+
+Every bar is a button now, on all three plans, and tapping one opens that day's own figures:
+
+| | SME | FIBERX and BIDA |
+|---|---|---|
+| What it brought in | `Collected ₱1,428` | `Completed 17` |
+| The rate it had to meet | `Required that day ₱11,022` | `Required that day 29` |
+| The difference | `Short by ₱9,594` | `Short by 12` |
+| Its share of the day's requirement | `13%` | `59%` |
+| The running total through that day | `Month to date ₱20,975` | `Last 5 days 57` |
+
+A day that met the rate reads `Above by` in green instead, and a month whose target is already
+cleared says so rather than showing a shortfall of zero. The dialog closes on the backdrop, on
+`Escape` or on the Close button — a sheet at the bottom of a phone, a centred card on a desktop, the
+same shape a month already opens in from the Monthly Progress strip.
+
+It is one shared component, so the three plans get it through the same switch that already decides
+whether a plan is read in money or in tickets. Nothing is written twice.
+
+---
+
+## 6. Verification (evidence)
 
 | Check | Result |
 |-------|--------|
@@ -104,6 +136,9 @@ Once the bars were in money, everything read against them had to follow.
 | Desktop browser check (1280×900), live sheets | Five bars at **32 / 67 / 51 / 45 / 14 px** inside a 110 px chart, all under the required line, with peso tooltips |
 | Ticket plans | 30 bars, no peso symbol, the `completed` wording unchanged — BIDA and FIBERX read as they did |
 | Production build | Clean (`npm run build`, 72 modules, no errors) |
+| Day dialog, live sheets | Tapping 5 October opens `Collected ₱1,428 · Required ₱11,022 · Short by ₱9,594 · 13% · Month to date ₱20,975`; tapping 2 October totals only the days before it — `₱9,907`, which is the 3,213.39 and 6,693.75 above it added together |
+| Day dialog, three plans | **32 of 32 checks passed** across SME, FIBERX and BIDA — 5 day buttons on SME and 30 on each ticket plan, a peso figure on SME and none anywhere on a ticket plan |
+| Closing the dialog | Backdrop, `Escape` and the Close button each close it; the card is 320×325 centred on a desktop and a bottom sheet at 390×844 |
 | Apps Script files | All three still match the shared template (`sync-gs-tail.cjs --check`) |
 | Live deployment | `version.json` reads **1.25.0**; the GitHub release **GVSI SLI Tracker v1.25.0** is published |
 
@@ -112,22 +147,24 @@ report data was involved.
 
 ---
 
-## 6. Release record
+## 7. Release record
 
-- `feat(sme): chart a money plan's velocity in collections` — the four source files and the changelog
-- `docs(reports): the velocity chart, for the supervisor` — this report
-- `chore(release): v1.25.0` — the version bump, the changelog promotion and the three Apps Script
+- **v1.25.0** — `feat(sme): chart a money plan's velocity in collections` (the four source files and
+  the changelog), `docs(reports): the velocity chart, for the supervisor` (this report), and
+  `chore(release): v1.25.0` with the version bump, the changelog promotion and the three Apps Script
   stamps
-- Tag **v1.25.0**; the branch and the tag are pushed, and the deploy and the release both ran off them
-- `package.json` and both version fields in the lock file read 1.25.0, and what was `[Unreleased]` in
-  the changelog is now `## [1.25.0] — 2026-10-06`
+- **v1.26.0** — `feat(velocity): open a day's figures from its bar`, `docs(reports): the day's second
+  change, in the same report`, and `chore(release): v1.26.0`
+- Both tags are pushed; each branch push deploys and each tag push publishes its release
+- `package.json` and both version fields in the lock file read **1.26.0**; the changelog carries
+  `## [1.25.0] — 2026-10-06` and `## [1.26.0] — 2026-10-06`, and `[Unreleased]` is empty again
 
 ---
 
-## 7. Actions required / next steps
+## 8. Actions required / next steps
 
 1. **Re-paste `SMESCRIPT.gs`** into the SME Apps Script project, then run **Full Sync** once — still
-   open from v1.24.0. `Show Version` should read `1.25.0+22051347`. This is what makes the centavos
+   open from v1.24.0. `Show Version` should read `1.26.0+22051347`. This is what makes the centavos
    reach the sheet; the app is already reading them correctly. FIBERX and BIDA need no re-pasting —
    only the version digits in their stamps moved.
 2. **September's archive is due tomorrow, 7 October**, seven days into the month. It will be the first
@@ -139,7 +176,7 @@ report data was involved.
 
 ---
 
-## 8. Impact
+## 9. Impact
 
 - The VELOCITY card now shows what it was always describing: how much SME is collecting a day against
   how much a day has to bring in. Before this it showed the figures and not the picture, and the one
@@ -148,8 +185,11 @@ report data was involved.
 - October is visible a day at a time now: five bars for five days, each one read against the rate
   the rest of the month needs. The days that fell behind are the rose bars, and their length is the
   amount by which they fell behind.
-- Nothing else moved: BIDA and FIBERX read exactly as they did, no historical figure changed, and
-  there was nothing to migrate.
+- A day can be opened now instead of only being seen as short. Whoever is looking at a phone —
+  which is where the tracker is read in the field — can tap a bar and read the day's collection, the
+  rate it was asked for, and the gap between them, with the month's total through that day.
+- Nothing else moved: BIDA and FIBERX's own numbers and wording are unchanged, no historical figure
+  changed, and there was nothing to migrate.
 
 *For context, the previous release (v1.24.0, 1 October) stopped SME's collection figures from being
 rounded to whole pesos, in the app and in the sheet. It is not repeated here.*
