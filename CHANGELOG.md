@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.26.0] — 2026-10-06
+
 ### 👆 Tapping a day in Velocity opens its figures
 
 The Velocity chart could say only that a day came in under the line — that is what a rose bar is.

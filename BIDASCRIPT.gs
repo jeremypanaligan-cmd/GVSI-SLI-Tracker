@@ -603,7 +603,7 @@ function getMonthName(monthNum) {
 // stamp is the app version plus a short hash of the head and this template, so an edit to
 // either one changes it. Compare it with SCRIPT_BUILD in the .gs file you pasted.
 const SCRIPT_PLAN = 'BIDA';
-const SCRIPT_BUILD = '1.25.0+ac394c87';
+const SCRIPT_BUILD = '1.26.0+ac394c87';
 
 const ARCHIVE_ENABLED_KEY = 'ARCHIVE_ENABLED';
 const ARCHIVE_AFTER_DAYS_KEY = 'ARCHIVE_AFTER_DAYS';
