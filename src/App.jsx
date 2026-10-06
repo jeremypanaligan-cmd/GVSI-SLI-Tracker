@@ -6,7 +6,7 @@ import {
   parseMTDData, extractExecutiveMetrics,
   parseRawDailyData, parseAgingReport, getTodayStr, findClosestDate,
   getCurrentMonthYear, findLatestDataDate, findLatestDateInMonth, monthYearOfDateLabel,
-  buildDailyTrend, buildSeriesFromBlocks, summarizeSeries,
+  buildDailyTrend, buildSeriesFromBlocks, summarizeSeries, buildCollectionSeries,
   computeMoMDelta,
 } from './utils/dataProcessor'
 import ExecutiveOverview from './components/ExecutiveOverview'
@@ -500,8 +500,15 @@ export default function App() {
     for (const k of keys) {
       out[k] = buildDailyTrend(parsed, latestTrendDate, k, 30)
     }
+    // A money-measured plan's pace is read in money, so its velocity has to be
+    // charted in money too — ticket counts bar-charted against a peso-per-day
+    // requirement are invisible under it. The counts stay for the ticket views.
+    if (currentPlan.collectionBased) {
+      const collected = summarizeSeries(buildCollectionSeries(parsed, latestTrendDate, 31))
+      if (collected) out.collected = collected
+    }
     return out
-  }, [trendData])
+  }, [trendData, currentPlan])
 
   // 7-day total-completed trend per area + OVER ALL (for the Provincial table)
   const areaTrends = useMemo(() => {

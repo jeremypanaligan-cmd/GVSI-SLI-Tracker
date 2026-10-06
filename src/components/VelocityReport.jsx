@@ -1,3 +1,5 @@
+import { formatPeso } from '../utils/dataProcessor'
+
 /**
  * VelocityReport — actual daily completion pace vs the rate required to reach target.
  *
@@ -8,13 +10,23 @@
  * Bars are per-day completions from the plan's DATA tab. The dashed line is the
  * required daily rate for the days remaining in the month, so any bar under the
  * line is a day that fell behind.
+ *
+ * `collectionBased` is SME: the plan's target is a peso figure and its pace is read in
+ * money, so every figure here is an amount rather than a count, and the bars arrive as
+ * daily collections. Everything else counts completed installations.
  */
-export default function VelocityReport({ projection, trend }) {
+export default function VelocityReport({ projection, trend, collectionBased = false }) {
   if (!projection) return null
 
   const { totalCompleted, target, daysElapsed, daysInMonth, rate, remainingDays, requiredDaily } = projection
   const toGo = Math.max(0, (target || 0) - (totalCompleted || 0))
   const done = requiredDaily === 0 || toGo === 0
+
+  // A peso pace written as a bare number beside a peso target reads as a count, so the
+  // rates, the drift and the bar tooltips all follow the plan's measure.
+  const amount = (n, digits = 0) => (collectionBased ? formatPeso(n) : fmt(n, digits))
+  const verb = collectionBased ? 'collected' : 'completed'
+  const activity = collectionBased ? 'collections' : 'completions'
 
   const values = (trend && Array.isArray(trend.values) ? trend.values : []).filter((v) => typeof v === 'number' && !isNaN(v))
   const dates = (trend && Array.isArray(trend.dates) ? trend.dates : []) || []
@@ -67,14 +79,14 @@ export default function VelocityReport({ projection, trend }) {
             <div className="rounded-xl border border-slate-200 dark:border-slate-800/60 bg-slate-50/60 dark:bg-slate-900/40 p-3">
               <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Actual</p>
               <p className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                {fmt(rate, 1)}<span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 ml-1">/day</span>
+                {amount(rate, 1)}<span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 ml-1">/day</span>
               </p>
               <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1">month-to-date avg</p>
             </div>
             <div className="rounded-xl border border-slate-200 dark:border-slate-800/60 bg-slate-50/60 dark:bg-slate-900/40 p-3">
               <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Required</p>
               <p className={`text-xl font-black tracking-tight ${done ? 'text-emerald-600 dark:text-emerald-400' : verdict.cls}`}>
-                {fmt(Math.ceil(requiredDaily))}<span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 ml-1">/day</span>
+                {amount(Math.ceil(requiredDaily))}<span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 ml-1">/day</span>
               </p>
               <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1">{done ? 'target reached' : `for ${remainingDays} more days`}</p>
             </div>
@@ -87,20 +99,23 @@ export default function VelocityReport({ projection, trend }) {
               </li>
             )}
             {!done && rate <= 0 && (
-              <li className="font-semibold text-rose-600 dark:text-rose-400">No completions recorded this month yet</li>
+              <li className="font-semibold text-rose-600 dark:text-rose-400">No {activity} recorded this month yet</li>
             )}
             {recentAvg !== null && (
               <li className="text-slate-600 dark:text-slate-300">
-                Last {recent.length} days: <span className="font-semibold text-slate-900 dark:text-white">{fmt(recentAvg, 1)}/day</span>
-                {recentAvg >= rate
+                Last {recent.length} days: <span className="font-semibold text-slate-900 dark:text-white">{amount(recentAvg, 1)}/day</span>
+                {/* A money plan's series begins where its month does, so early in the month the recent
+                    window is the whole month and reading it against the month-to-date rate says
+                    nothing — the verdict arrives once there are days behind the window. */}
+                {recent.length < values.length && (recentAvg >= rate
                   ? <span className="text-emerald-600 dark:text-emerald-400 font-semibold"> · accelerating</span>
-                  : <span className="text-amber-600 dark:text-amber-400 font-semibold"> · slowing</span>}
+                  : <span className="text-amber-600 dark:text-amber-400 font-semibold"> · slowing</span>)}
               </li>
             )}
             <li className="text-slate-600 dark:text-slate-300">
               vs even track:{' '}
               <span className={`font-semibold ${trackDelta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                {trackDelta >= 0 ? '+' : ''}{fmt(Math.round(trackDelta))}
+                {trackDelta >= 0 ? '+' : ''}{amount(trackDelta)}
               </span>
             </li>
             {finishDay !== null && (
@@ -122,7 +137,7 @@ export default function VelocityReport({ projection, trend }) {
                 return (
                   <div
                     key={i}
-                    title={`${dates[i] || 'Day ' + (i + 1)} — ${fmt(v)} completed${!done ? ` (${v >= requiredDaily ? 'at/above' : 'under'} the ${fmt(Math.ceil(requiredDaily))}/day required)` : ''}`}
+                    title={`${dates[i] || 'Day ' + (i + 1)} — ${amount(v)} ${verb}${!done ? ` (${v >= requiredDaily ? 'at/above' : 'under'} the ${amount(Math.ceil(requiredDaily))}/day required)` : ''}`}
                     className={`flex-1 min-w-[3px] rounded-t-[2px] transition-all duration-200 ${
                       done ? 'bg-slate-300 dark:bg-slate-600'
                         : met ? 'bg-emerald-500/80 dark:bg-emerald-400/70 hover:bg-emerald-500'
@@ -139,7 +154,7 @@ export default function VelocityReport({ projection, trend }) {
                   style={{ bottom: `${Math.min((requiredDaily / scaleMax) * 100, 100)}%` }}
                 >
                   <span className="absolute right-0 -top-4 text-[9px] font-bold text-amber-600 dark:text-amber-400 whitespace-nowrap">
-                    required {fmt(Math.ceil(requiredDaily))}/day
+                    required {amount(Math.ceil(requiredDaily))}/day
                   </span>
                 </div>
               )}
@@ -147,7 +162,7 @@ export default function VelocityReport({ projection, trend }) {
 
             <div className="flex items-center justify-between mt-1.5 text-[9px] text-slate-400 dark:text-slate-500">
               <span>{dates[0] || ''}</span>
-              <span className="font-semibold">{values.length} days of completions</span>
+              <span className="font-semibold">{values.length} days of {activity}</span>
               <span>{dates[values.length - 1] || ''}</span>
             </div>
           </div>

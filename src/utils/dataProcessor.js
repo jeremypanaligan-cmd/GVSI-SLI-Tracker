@@ -898,6 +898,43 @@ export function buildDailyTrend(rawDaily, endDateStr, fieldKey, days = 7) {
 }
 
 /**
+ * One day's collected money, taken from the month's running NET counter.
+ *
+ * A money plan's NET column is the month-to-date total, not the day's own figure: the counter
+ * starts over when the month rolls over (30 Sept closes at 324,195.54, 1 Oct opens at
+ * 3,213.39). So a day's collection is the counter's step since the reading before it.
+ *
+ * That step can only be taken inside one month — subtracting September's closing total from
+ * October's first reading would hand October a negative day — so the series is the current
+ * month's days, and the month's first reading stands on its own, which is exactly what a
+ * counter that resets at the boundary means.
+ *
+ * Returns { dates, values } aligned the way buildSeriesFromBlocks returns them. A day the
+ * sheet has no reading for contributes NaN and leaves the counter where it stood, so the next
+ * reading still measures from the last figure the sheet actually carried. On FIBERX and BIDA
+ * there is no NET column at all, so every value is NaN — they chart their ticket counts.
+ */
+export function buildCollectionSeries(rawDaily, endDateStr, days = 31) {
+  const out = { dates: [], values: [] }
+  const month = monthYearOfDateLabel(endDateStr)
+  if (!month) return out
+
+  let counter = 0
+  for (const d of getSeriesWindow(rawDaily, endDateStr, days)) {
+    if (monthYearOfDateLabel(d) !== month) continue
+    const net = rawDaily?.blocks?.[d]?.overallTotal?.net
+    out.dates.push(d)
+    if (typeof net !== 'number' || isNaN(net)) {
+      out.values.push(NaN)
+      continue
+    }
+    out.values.push(net - counter)
+    counter = net
+  }
+  return out
+}
+
+/**
  * Trend delta between the selected MTD month and the previous available month
  * (from the MTD sheet's month sections). Compares achievement % (LAST %).
  *

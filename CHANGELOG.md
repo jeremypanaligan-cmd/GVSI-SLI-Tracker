@@ -6,6 +6,36 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 📈 SME's velocity chart plots money, not tickets
+
+SME's Executive Overview showed the VELOCITY card's figures — `₱4,195/day` against a `₱11,022/day`
+requirement — over an empty chart: the amber required line, the two dates, "30 days of completions",
+and nothing between them.
+
+The bars were the plan's `TOTAL COMPLETED` column, a count of 0–12 a day, drawn to scale against a
+peso-per-day requirement of 11,022. Every bar landed on the chart's 1.5% floor — about 1.6px, in the
+same dark red as the card behind it. A count was being compared with an amount because the series
+the chart was handed never asked which measure the plan is read in — the pace beside it (ACTUAL,
+REQUIRED, the drift from an even track) is NET, the figure SME's target is measured against.
+
+- **SME's velocity is charted in money.** A bar is one day's collection, taken from the month's
+  running `NET` counter. NET is a month-to-date total rather than a daily one — 30 Sept closes at
+  324,195.54 and 1 Oct opens at 3,213.39 — so a day's figure is the counter's step since the reading
+  before it. October's five days read `₱3,213 · ₱6,694 · ₱5,088 · ₱4,553 · ₱1,428`, which is the
+  20,975 NET the card above already shows
+- **The window is the current month on a money plan.** The step can only be taken inside one month:
+  subtracting September's closing total from October's first reading would hand October's first day
+  a negative. The axis therefore runs 1 Oct → 5 Oct and the caption counts *collections*, where a
+  ticket plan keeps its 30 days of *completions*
+- **The figures around the chart follow that measure too** — the ACTUAL and REQUIRED rates, the
+  drift from an even track and each bar's tooltip are written as pesos, so `-28,626` reads
+  `-₱28,626` on SME
+- **The accelerating / slowing verdict waits for a run of days.** Early in the month a money plan's
+  recent window is the whole month, and reading that against the month-to-date rate compares a
+  figure with itself
+- **FIBERX and BIDA are untouched**: their 30-day bar chart of ticket completions renders exactly
+  as it did, and nothing on a plan without a `NET` column builds a money series at all
+
 ## [1.24.0] — 2026-10-01
 
 ### 📱 Tapping a month in Monthly Progress opens its details

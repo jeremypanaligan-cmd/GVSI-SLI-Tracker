@@ -64,6 +64,11 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
   // the sheet holds the most recent window, so showing it on a closed month
   // would read as if it described that month. Hide it for past months.
   const tr30 = (!isPastMonth && trend30Day && trend30Day.totalCompleted) || null
+  // The velocity chart's bars are read against the required rate, so they have to be in the
+  // same measure as the projection that produces it: NET per day on SME, ticket completions
+  // per day everywhere else. Counts against a peso requirement is what left SME's chart with
+  // an amber line and no bars under it.
+  const velocityTrend = (!isPastMonth && ((collectionBased && trend30Day?.collected) || trend30Day?.totalCompleted)) || null
   const tr30Up = tr30 ? tr30.periodDelta >= 0 : true
   return (
     <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-5 space-y-5">
@@ -310,7 +315,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
           for a closed month, where "required per day" is no longer a decision. */}
       {projection && (
         <section>
-          <VelocityReport projection={projection} trend={trend30Day?.totalCompleted} />
+          <VelocityReport projection={projection} trend={velocityTrend} collectionBased={collectionBased} />
         </section>
       )}
 
