@@ -63,12 +63,22 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
   // Like the run-rate projection, it is only meaningful for the current month —
   // the sheet holds the most recent window, so showing it on a closed month
   // would read as if it described that month. Hide it for past months.
-  const tr30 = (!isPastMonth && trend30Day && trend30Day.totalCompleted) || null
-  // The velocity chart's bars are read against the required rate, so they have to be in the
-  // same measure as the projection that produces it: NET per day on SME, ticket completions
-  // per day everywhere else. Counts against a peso requirement is what left SME's chart with
-  // an amber line and no bars under it.
-  const velocityTrend = (!isPastMonth && ((collectionBased && trend30Day?.collected) || trend30Day?.totalCompleted)) || null
+  // The window's series, in the measure the plan is read in: NET per day on SME — how its
+  // target is measured — and completed installations per day everywhere else. The hero
+  // sparkline and the Velocity chart both draw it, so both are money on a money plan: a
+  // sparkline of 0–12 installations a day under a peso achievement rate and a peso projection
+  // tells a second, contradictory story, and counts drawn against a peso-per-day requirement is
+  // what left the velocity chart with an amber line and no visible bars under it.
+  const tr30 = (!isPastMonth && ((collectionBased && trend30Day?.collected) || trend30Day?.totalCompleted)) || null
+  // The velocity chart reads the same window in the same measure as the sparkline above it.
+  const velocityTrend = tr30
+  // And the hero's own label follows the series that was actually drawn, not the plan: with no
+  // money series to draw, a money plan falls back to its ticket counts, and a peso sign over
+  // counted installations would be a lie. The series carries its own measure (see the trend memo
+  // in App), so this reads it rather than re-deriving it from the plan.
+  const tr30IsMoney = Boolean(tr30?.money)
+  // The per-province split behind each bar, keyed by the same date labels as the chart.
+  const velocityAreas = (!isPastMonth && trend30Day?.areasByDate) || null
   const tr30Up = tr30 ? tr30.periodDelta >= 0 : true
   return (
     <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-5 space-y-5">
@@ -150,8 +160,10 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
                 </p>
               )}
               {tr30 && tr30.values.length >= 2 && (
-                <div className="flex items-center gap-2 mt-2.5" title={`Daily completions — last ${tr30.values.length} days (${tr30.dates[0]} → ${tr30.dates[tr30.dates.length - 1]})`}>
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 shrink-0">30-day</span>
+                <div className="flex items-center gap-2 mt-2.5" title={`${tr30IsMoney ? 'Daily collections' : 'Daily completions'} — last ${tr30.values.length} days (${tr30.dates[0]} → ${tr30.dates[tr30.dates.length - 1]})`}>
+                  {/* The window names its own length: a money plan's series is the month to date,
+                      so early in the month it is shorter than the 30 days a ticket plan carries. */}
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 shrink-0">{tr30.values.length}-day</span>
                   <Sparkline
                     data={tr30.values}
                     width={110}
@@ -160,7 +172,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
                     positive={tr30Up}
                   />
                   <span className={`text-[10px] font-bold shrink-0 ${tr30Up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                    {tr30.periodDelta >= 0 ? '+' : ''}{fmt(tr30.periodDelta)}
+                    {tr30.periodDelta >= 0 ? '+' : ''}{tr30IsMoney ? money(tr30.periodDelta) : fmt(tr30.periodDelta)}
                     {tr30.periodPct != null && isFinite(tr30.periodPct) ? ` (${tr30.periodPct >= 0 ? '+' : ''}${tr30.periodPct.toFixed(0)}%)` : ''}
                   </span>
                 </div>
@@ -315,7 +327,7 @@ export default function ExecutiveOverview({ metrics, selectedDate, availableDate
           for a closed month, where "required per day" is no longer a decision. */}
       {projection && (
         <section>
-          <VelocityReport projection={projection} trend={velocityTrend} collectionBased={collectionBased} />
+          <VelocityReport projection={projection} trend={velocityTrend} areasByDate={velocityAreas} collectionBased={collectionBased} />
         </section>
       )}
 

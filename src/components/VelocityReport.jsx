@@ -13,14 +13,22 @@ import { formatPeso } from '../utils/dataProcessor'
  * required daily rate for the days remaining in the month, so any bar under the
  * line is a day that fell behind.
  *
- * `collectionBased` is SME: the plan's target is a peso figure and its pace is read in
- * money, so every figure here is an amount rather than a count, and the bars arrive as
- * daily collections. Everything else counts completed installations.
+ * The plan and the series are measured separately, and neither implies the other. `collectionBased`
+ * is the plan's measure: SME's target is a peso figure, so the rate it must run at and the
+ * requirement the dashed line draws are money whether or not this month's series carries any. The
+ * series carries its own (`trend.money`) — NET collections on SME, completed installations on the
+ * other plans — and the bars, their labels and the running average follow that, so a series that
+ * fell back to counts is never written or named as money. They are drawn together only while the
+ * two agree: bars in one measure under a line in another is how SME's chart came to show an amber
+ * line with no bars beneath it.
  *
  * A bar is a button: it opens that day's own figures, the way a month in the Monthly Progress
  * strip does. The tooltip stays for a pointer — a `title` is unreachable by touch.
+ *
+ * That dialog also breaks the day down by province, from `areasByDate` — a day's total says the
+ * day fell short, but not which areas carried it and which stood still.
  */
-export default function VelocityReport({ projection, trend, collectionBased = false }) {
+export default function VelocityReport({ projection, trend, areasByDate = null, collectionBased = false }) {
   // Which day's details are open, if any. Declared before the early return below — a hook
   // cannot sit behind a condition.
   const [openDay, setOpenDay] = useState(null)
@@ -30,15 +38,37 @@ export default function VelocityReport({ projection, trend, collectionBased = fa
   const toGo = Math.max(0, (target || 0) - (totalCompleted || 0))
   const done = requiredDaily === 0 || toGo === 0
 
-  // A peso pace written as a bare number beside a peso target reads as a count, so the
-  // rates, the drift and the bar tooltips all follow the plan's measure.
+  // Two measures meet in this card, and each side has to be asked for its own.
+  //
+  // `collectionBased` is the *plan's*: its target is money, so the rate it must run at, the drift
+  // from an even track and the requirement the dashed line draws are money whether or not this
+  // month's series carries any. A peso pace written as a bare number beside a peso target reads
+  // as a count.
   const amount = (n, digits = 0) => (collectionBased ? formatPeso(n) : fmt(n, digits))
-  const verb = collectionBased ? 'collected' : 'completed'
-  const activity = collectionBased ? 'collections' : 'completions'
+  // This one is the *series'*, which travels on it — NET collections on SME, ticket counts on the
+  // other plans. The bars, their labels and the running average describe the series, so they
+  // follow the series: one that fell back to counts is never written or named as money.
+  const seriesMoney = Boolean(trend?.money)
+  const seriesAmount = (n, digits = 0) => (seriesMoney ? formatPeso(n) : fmt(n, digits))
+  const verb = seriesMoney ? 'collected' : 'completed'
+  const activity = seriesMoney ? 'collections' : 'completions'
 
-  const values = (trend && Array.isArray(trend.values) ? trend.values : []).filter((v) => typeof v === 'number' && !isNaN(v))
-  const dates = (trend && Array.isArray(trend.dates) ? trend.dates : []) || []
-  const hasChart = values.length >= 2
+  // Bars and labels are paired before use: a series can carry a gap (a day the sheet has no
+  // reading for), and filtering the values alone would slide every later label onto the
+  // wrong bar — and, worse here, onto another day's area split.
+  const pairs = ((trend && Array.isArray(trend.dates) ? trend.dates : []).map((d, i) => ({
+    date: d,
+    value: trend && Array.isArray(trend.values) ? trend.values[i] : undefined,
+  }))).filter((p) => typeof p.value === 'number' && !isNaN(p.value))
+  const values = pairs.map((p) => p.value)
+  const dates = pairs.map((p) => p.date)
+  // The bars are read against the required line, so the series and that line have to be in the
+  // same measure. Normally they are — the caller hands a money plan its money series. When they
+  // are not, there is no money series to draw and all that is left is ticket counts, which drawn
+  // against a peso-per-day line are the invisible bars this chart was fixed for once already. So
+  // it charts nothing rather than charting the wrong thing.
+  const measureAligned = seriesMoney === collectionBased
+  const hasChart = measureAligned && values.length >= 2
 
   // Recent momentum — the last week of actual output, independent of the
   // month-to-date average, which is dragged down by a slow start.
@@ -111,7 +141,7 @@ export default function VelocityReport({ projection, trend, collectionBased = fa
             )}
             {recentAvg !== null && (
               <li className="text-slate-600 dark:text-slate-300">
-                Last {recent.length} days: <span className="font-semibold text-slate-900 dark:text-white">{amount(recentAvg, 1)}/day</span>
+                Last {recent.length} days: <span className="font-semibold text-slate-900 dark:text-white">{seriesAmount(recentAvg, 1)}/day</span>
                 {/* A money plan's series begins where its month does, so early in the month the recent
                     window is the whole month and reading it against the month-to-date rate says
                     nothing — the verdict arrives once there are days behind the window. */}
@@ -148,9 +178,9 @@ export default function VelocityReport({ projection, trend, collectionBased = fa
                     key={i}
                     type="button"
                     onClick={() => setOpenDay(i)}
-                    title={`${label} — ${amount(v)} ${verb}${!done ? ` (${v >= requiredDaily ? 'at/above' : 'under'} the ${amount(Math.ceil(requiredDaily))}/day required)` : ''}`}
+                    title={`${label} — ${seriesAmount(v)} ${verb}${!done ? ` (${v >= requiredDaily ? 'at/above' : 'under'} the ${amount(Math.ceil(requiredDaily))}/day required)` : ''}`}
                     aria-haspopup="dialog"
-                    aria-label={`${label} — ${amount(v)} ${verb}. Open the day's details.`}
+                    aria-label={`${label} — ${seriesAmount(v)} ${verb}. Open the day's details.`}
                     className="group flex-1 min-w-[3px] h-full flex items-end bg-transparent rounded-t-[2px] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60"
                   >
                     <span
@@ -186,7 +216,9 @@ export default function VelocityReport({ projection, trend, collectionBased = fa
         ) : (
           <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center p-6">
             <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center">
-              Not enough daily history yet to chart velocity — figures above still reflect the current pace.
+              {measureAligned
+                ? 'Not enough daily history yet to chart velocity — figures above still reflect the current pace.'
+                : 'Nothing to chart yet — this month is paced in money and the series here is in counts, so it cannot be drawn to the required line’s scale. The rates above stand on their own.'}
             </p>
           </div>
         )}
@@ -203,6 +235,7 @@ export default function VelocityReport({ projection, trend, collectionBased = fa
           through={values.slice(0, openDay + 1).reduce((sum, v) => sum + v, 0)}
           throughLabel={collectionBased ? 'Month to date' : `Last ${openDay + 1} days`}
           done={done}
+          areas={(areasByDate && areasByDate[dates[openDay]]) || []}
           collectionBased={collectionBased}
           onClose={() => setOpenDay(null)}
         />
@@ -228,10 +261,14 @@ function DetailRow({ label, value, tone = 'text-slate-800 dark:text-slate-100', 
  * shortfall here is the gap the bar's own length falls short of: the amount collected (or the
  * work completed) that day, next to what that day needed to bring.
  *
+ * `areas` is that day's per-province split, already sorted descending; each row's bar is the
+ * area's share of the day. An area with nothing that day is listed rather than dropped — the
+ * laggards are half of what the breakdown is for.
+ *
  * Exported so a probe can render the card directly — `createPortal` renders nothing on a
  * server, which is where the rest of this file is checked.
  */
-export function DayDetailCard({ date, index, value, required, through, throughLabel, done, collectionBased = false, onClose }) {
+export function DayDetailCard({ date, index, value, required, through, throughLabel, done, collectionBased = false, areas = [], onClose }) {
   // A rate the chart displays, so it rounds the way the chart's own label does — a peso plan
   // in whole pesos, a ticket plan in whole installations.
   const money = (n) => (collectionBased ? formatPeso(n) : fmt(n))
@@ -239,6 +276,16 @@ export function DayDetailCard({ date, index, value, required, through, throughLa
   const met = done || value >= required
   const difference = Math.abs(goal - value)
   const share = goal > 0 ? (value / goal) * 100 : null
+
+  // The day split by province, straight from the sheet and already sorted descending — the
+  // areas that made up the day lead, the ones that produced nothing sit at the bottom. An idle
+  // area is named rather than dropped: on a day that came up short, which areas stood still is
+  // the operational question, and a bar chart of a day answers it only by which bars are absent.
+  const areaRows = (areas || []).filter((a) => a && a.area && Number.isFinite(a.value))
+  const areaTotal = areaRows.reduce((sum, a) => sum + Math.max(a.value, 0), 0)
+  const idleAreas = areaRows.filter((a) => a.value <= 0)
+  const leader = areaRows.length ? areaRows.reduce((best, a) => (a.value > best.value ? a : best), areaRows[0]) : null
+  const leaderShare = leader && areaTotal > 0 ? Math.round((leader.value / areaTotal) * 100) : null
 
   const verdict = done
     ? 'The month’s target is already cleared — this day no longer has a rate to meet.'
@@ -252,7 +299,7 @@ export function DayDetailCard({ date, index, value, required, through, throughLa
       aria-modal="true"
       aria-labelledby="velocity-day-title"
       onClick={(e) => e.stopPropagation()}
-      className="w-full max-w-xs rounded-2xl border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-[#0E1622] shadow-2xl overflow-hidden"
+      className="w-full max-w-xs max-h-[85vh] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-[#0E1622] shadow-2xl overflow-hidden"
     >
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800">
         <h3 id="velocity-day-title" className="flex items-baseline gap-2 text-sm font-black tracking-tight text-slate-800 dark:text-slate-100">
@@ -271,24 +318,59 @@ export function DayDetailCard({ date, index, value, required, through, throughLa
         </button>
       </div>
 
-      <div className="px-4 py-4 space-y-3">
-        <DetailRow
-          label={collectionBased ? 'Collected' : 'Completed'}
-          value={money(value)}
-          big
-          tone={met ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}
-        />
-        <DetailRow label="Required that day" value={money(goal)} />
-        <DetailRow
-          label={done ? 'Requirement' : met ? 'Above by' : 'Short by'}
-          value={done ? '—' : money(difference)}
-          tone={done || met ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}
-        />
-        <DetailRow label="Of the day’s requirement" value={share === null ? '—' : `${share.toFixed(0)}%`} />
-        <DetailRow label={throughLabel} value={money(through)} />
-      </div>
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-4 py-4 space-y-3">
+          <DetailRow
+            label={collectionBased ? 'Collected' : 'Completed'}
+            value={money(value)}
+            big
+            tone={met ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}
+          />
+          <DetailRow label="Required that day" value={money(goal)} />
+          <DetailRow
+            label={done ? 'Requirement' : met ? 'Above by' : 'Short by'}
+            value={done ? '—' : money(difference)}
+            tone={done || met ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}
+          />
+          <DetailRow label="Of the day’s requirement" value={share === null ? '—' : `${share.toFixed(0)}%`} />
+          <DetailRow label={throughLabel} value={money(through)} />
+        </div>
 
-      <p className="px-4 pb-3 text-[11px] italic text-slate-500 dark:text-slate-400">{verdict}</p>
+        {areaRows.length > 0 && (
+          <div className="px-4 pb-4">
+            <div className="flex items-baseline justify-between gap-2 pt-3 mb-2 border-t border-slate-100 dark:border-slate-800">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">By area</span>
+              <span className="text-[9px] text-slate-400 dark:text-slate-500">{areaRows.length - idleAreas.length} of {areaRows.length} produced</span>
+            </div>
+            <ul className="space-y-1">
+              {areaRows.map(({ area, value: areaValue }) => {
+                const idle = areaValue <= 0
+                const pct = areaTotal > 0 ? Math.max(0, (areaValue / areaTotal) * 100) : 0
+                return (
+                  <li key={area} className="flex items-center gap-2" title={`${area} — ${money(areaValue)}, ${pct.toFixed(0)}% of the day`}>
+                    <span className={`w-[92px] shrink-0 truncate text-[11px] ${idle ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-200'}`}>{area}</span>
+                    <span className="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800/80 overflow-hidden">
+                      <span className="block h-full rounded-full bg-teal-500/70 dark:bg-teal-400/60" style={{ width: `${pct}%` }} />
+                    </span>
+                    <span className={`w-[62px] shrink-0 text-right text-[11px] tabular-nums ${idle ? 'text-slate-400 dark:text-slate-500' : 'font-bold text-slate-800 dark:text-slate-100'}`}>
+                      {idle ? '—' : money(areaValue)}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+            {leader && (
+              <p className="mt-2 text-[10px] text-slate-400 dark:text-slate-500">
+                <span className="font-semibold text-slate-600 dark:text-slate-300">{leader.area}</span>
+                {leaderShare !== null ? ` carried ${leaderShare}% of the day` : ' led the day'}
+                {idleAreas.length > 0 ? `; ${idleAreas.length} of ${areaRows.length} produced nothing.` : '.'}
+              </p>
+            )}
+          </div>
+        )}
+
+        <p className="px-4 pb-3 text-[11px] italic text-slate-500 dark:text-slate-400">{verdict}</p>
+      </div>
 
       <button
         type="button"

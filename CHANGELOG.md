@@ -6,6 +6,72 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 📏 A chart's measure travels with its series
+
+The Velocity card read its measure from the plan — one `collectionBased` flag — and applied it to
+everything it drew. That is right almost always, because the caller hands SME its NET collections.
+But the plan's measure and the series' measure are two different facts, and only the first one holds
+when a money plan has no money series to show.
+
+The series now carries its own measure, set where it is built, and the card reads it there.
+
+- **The bars, their tooltips and the running average follow the series** — a series that fell back
+  to ticket counts is never written, named or captioned as money
+- **The plan's own figures stay in the plan's measure**: the rate SME has to run at, the drift from
+  an even track and the requirement the dashed line draws are money, because SME's target is
+- **The chart draws only while the two agree.** A money plan with no money series is left with
+  ticket counts, and counts drawn to a peso-per-day line are the invisible bars this chart was
+  fixed for once already — so it charts nothing and says which series it is waiting for, rather
+  than charting the wrong thing under a correct-looking line
+- **FIBERX and BIDA are untouched** — their series and their target are both counts, so the two
+  measures have always agreed there
+
+### 📊 The hero's 30-day sparkline plots money on SME
+
+The sparkline under SME's Achievement Rate was the one thing on the card still counted in
+installations: a line of 0–12 a day, sitting directly beneath a peso achievement rate, a peso
+month-end projection and two peso collection cards.
+
+The hero and the Velocity card now draw the same window in the same measure, from one series.
+
+- **On SME the line is money**: the month's daily collections, the same series the Velocity bars
+  are drawn from, instead of `TOTAL COMPLETED` counts
+- **The delta beside it is money too** — `-₱1,786 (-56%)` where the same window previously read
+  `+25 (+36%)` in installations
+- **The window names its own length**: a money plan's series is the month to date, so early in a
+  month it reads `5-DAY` where a ticket plan reads `30-DAY`, and the tooltip gives both the
+  measure and the exact range it covers
+- **FIBERX and BIDA are unchanged** — they still count completed installations, because that is
+  what their target is measured in
+- **The label follows the series, not the plan**: if a money plan's NET column were ever blank
+  there is no money to plot, so the hero falls back to its counts and drops the peso sign rather
+  than printing `₱` over counted installations
+
+### 🗺️ A day in Velocity breaks down by province
+
+The day dialog that a bar opens said the day came in short, and by how much. It could not say which
+areas made up what it did bring, or which stood still — the question a supervisor asks next, and the
+one the provincial table answers only for a whole month.
+
+The dialog now carries the day's own split by area, taken from the same trend tab the bar is drawn
+from: every area's figure for that day, its share of the day, and the areas that produced nothing.
+
+- **In the plan's own measure**: a ticket plan reads each area's `TOTAL COMPLETED` for the day; SME
+  reads money, so each area's day is that area's `NET` step since its own previous reading inside the
+  month — the same cumulative-counter rule the overall chart already uses, because NET is a running
+  month-to-date figure that resets at the month boundary
+- **Sorted by what it brought**, so the areas that carried the day sit on top and the share bars make
+  the concentration visible at a glance — `Benguet ₱3,213 · Nueva Vizcaya ₱1,874 · Ilocos Norte
+  ₱1,606`, then seven areas at `—`
+- **The laggards are named, not hidden**: an area with nothing that day is listed with an em dash
+  rather than dropped, and a caption closes the section — `Benguet carried 48% of the day; 7 of 10
+  produced nothing` — so a day that came up short says where the gap was
+- **It reconciles**: each day's areas sum exactly to the figure the bar above them draws, on all
+  three plans
+- **A gap in the window can no longer move a label onto the wrong day**: the bars paired each date
+  with its value before dropping the days with no reading, where filtering the values alone would
+  have slid every later date — and now every later area split — one bar to the left
+
 ## [1.26.0] — 2026-10-06
 
 ### 👆 Tapping a day in Velocity opens its figures

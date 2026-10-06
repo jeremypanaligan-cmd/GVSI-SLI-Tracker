@@ -935,6 +935,59 @@ export function buildCollectionSeries(rawDaily, endDateStr, days = 31) {
 }
 
 /**
+ * One day's output, split by area — the "who" behind a single bar.
+ *
+ * Sorted descending, so the areas that carried the day sit on top and the ones that
+ * produced nothing fall to the bottom. Rows the sheet has no reading for are dropped
+ * rather than shown as zero: an area absent from a date is unknown, not idle.
+ *
+ * A ticket plan reads the day's own TOTAL COMPLETED column directly.
+ *
+ * A money plan has no per-day column at all: each area's NET is the month's running
+ * counter (it resets when the month rolls over), so an area's day is the step since that
+ * area's own previous reading inside the same month. The month's first reading stands on
+ * its own, exactly as `buildCollectionSeries` treats the overall counter. Areas whose
+ * plan carries no NET column produce nothing, and the caller renders no split.
+ *
+ * @param {Object} rawDaily - parsed daily dataset ({ dates, blocks })
+ * @param {string} dateStr - display date label, e.g. 'October 5, 2026'
+ * @param {boolean} [collectionBased] - measure NET (a money plan) instead of counts
+ * @returns {Array<{area: string, value: number}>} descending, empty when unknown
+ */
+export function buildAreaDayBreakdown(rawDaily, dateStr, collectionBased = false) {
+  const block = rawDaily?.blocks?.[dateStr]
+  if (!block) return []
+  const areas = block.areas || []
+
+  if (!collectionBased) {
+    return areas
+      .filter((a) => Number.isFinite(a.totalCompleted))
+      .map((a) => ({ area: a.area, value: a.totalCompleted }))
+      .sort((x, y) => y.value - x.value)
+  }
+
+  // Without a month there is no counter to measure from, and reading the whole month-to-date
+  // figure as a single day's would be worse than showing nothing.
+  const month = monthYearOfDateLabel(dateStr)
+  if (!month) return []
+  const monthDates = (rawDaily?.dates || []).filter((d) => monthYearOfDateLabel(d) === month)
+  const out = []
+  for (const a of areas) {
+    if (!Number.isFinite(a.net)) continue
+    // The last NET the sheet carried for this area before this date, inside the month.
+    // The month's opening reading measures from zero, the counter's own reset point.
+    let prev = 0
+    for (const d of monthDates) {
+      if (d === dateStr) break
+      const prior = (rawDaily?.blocks?.[d]?.areas || []).find((x) => x.area === a.area)
+      if (prior && Number.isFinite(prior.net)) prev = prior.net
+    }
+    out.push({ area: a.area, value: a.net - prev })
+  }
+  return out.sort((x, y) => y.value - x.value)
+}
+
+/**
  * Trend delta between the selected MTD month and the previous available month
  * (from the MTD sheet's month sections). Compares achievement % (LAST %).
  *

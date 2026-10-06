@@ -7,7 +7,7 @@ import {
   parseRawDailyData, parseAgingReport, getTodayStr, findClosestDate,
   getCurrentMonthYear, findLatestDataDate, findLatestDateInMonth, monthYearOfDateLabel,
   buildDailyTrend, buildSeriesFromBlocks, summarizeSeries, buildCollectionSeries,
-  computeMoMDelta,
+  buildAreaDayBreakdown, computeMoMDelta,
 } from './utils/dataProcessor'
 import ExecutiveOverview from './components/ExecutiveOverview'
 import DailyTable from './components/DailyTable'
@@ -503,9 +503,25 @@ export default function App() {
     // A money-measured plan's pace is read in money, so its velocity has to be
     // charted in money too — ticket counts bar-charted against a peso-per-day
     // requirement are invisible under it. The counts stay for the ticket views.
+    // The chart's dates come from whichever series it draws, so every openable bar
+    // has a per-area split behind it.
+    let chartDates = out.totalCompleted?.dates || []
     if (currentPlan.collectionBased) {
       const collected = summarizeSeries(buildCollectionSeries(parsed, latestTrendDate, 31))
-      if (collected) out.collected = collected
+      if (collected) {
+        // Tagged with its own measure. The chart labels and formats whatever series it is handed,
+        // so a series that is money has to say so rather than leave the reader inferring it from
+        // the plan — a money plan and its money series are two different facts, and only the
+        // first one holds when the NET column is blank and this falls back to ticket counts.
+        out.collected = { ...collected, money: true }
+        chartDates = collected.dates
+      }
+    }
+    // One day's split by province, keyed by date — what the Velocity day dialog lists
+    // so a day says which areas carried it and which produced nothing.
+    out.areasByDate = {}
+    for (const d of chartDates) {
+      out.areasByDate[d] = buildAreaDayBreakdown(parsed, d, Boolean(currentPlan.collectionBased))
     }
     return out
   }, [trendData, currentPlan])
