@@ -136,6 +136,41 @@ all data behind Supabase so RLS can refuse the read — the natural next step is
 public `COMPLETED AGING REPORT` and `<PLAN> DATA` tabs the same way the archive retired
 `RAW DATA` and `MTD`.
 
+## The end-to-end smoke test
+
+`npm run test:e2e` drives the **deployed** app in a real browser — Playwright, and no dev
+server, because the claims worth testing are about what GitHub Pages is serving behind the
+live `verify_login` RPC. Two tests:
+
+| Test | Account | Checks |
+|---|---|---|
+| the deploy loads and the sign-in gate holds | none | the app loads, the version gate lets the current build through, `verify_login` is called and refuses a wrong password, and no retired year tab is requested |
+| the Year-to-Date section is built from `sli_targets` | yes | signs in, then checks the section against the database: `sli_targets` was read for the active plan, neither `YTD 2026` nor `TARGET 2026` was requested, and the months still ahead plus the annual total equal the rows the table holds |
+
+The expected figures are read from `sli_targets` during the run instead of being written
+into the test, so a corrected target does not have to be typed twice — and the retired-tab
+check is there because a source that came back would not show up as a wrong number on screen:
+the section would keep rendering correctly off the worksheet while it happened.
+
+**Credentials.** Sign-in goes through `verify_login`, so the test needs a real password. It
+comes from the environment, or from a gitignored `.env.e2e` at the repository root:
+
+```
+E2E_USERNAME=JSP
+E2E_PASSWORD=…
+```
+
+Without one the signed-in test **skips with a message** rather than failing — a missing
+secret is not a broken build. `E2E_BASE_URL` points the suite somewhere else (a fork's Pages
+site, a preview deploy).
+
+Two deliberate choices. A closed month's target is **not** asserted against the plan: the
+tracker's own record wins for a closed month, so August 2026 reads 1,953 where the plan holds
+2,048 — the archive covers that month from a twelve-province list with no Aurora — and the app
+is right to show it ([YTD_SCOPING.md](YTD_SCOPING.md)). And a signed-in run writes a real
+session row and appears in the Developer roster, which is why the suite runs one worker at a
+time.
+
 ## Getting into the Supabase project
 
 The app talks to one project — **GVSI NetPulse**, ref `fsebdacptgoknbjqdlor` (region

@@ -6,6 +6,19 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 🧪 The deployed app is driven in a browser, not only read
+
+Every check of the Year-to-Date change was made by reading the source and rendering the
+components on a server, because the dashboard sits behind a sign-in gate — nobody had driven
+the real thing in a browser. The deployed app is now checked end to end (`npm run test:e2e`,
+Playwright, against GitHub Pages rather than a dev server). One test needs no account: the
+deploy loads, the version gate lets the current build through, and `verify_login` refuses a
+wrong password. The other signs in and checks the section against `sli_targets` itself — that
+the app read the plan table for the active plan, that it never touches the retired `YTD 2026`
+/ `TARGET 2026` tabs, and that the months still ahead and the annual total equal what the
+database holds, computed from the database during the run so a corrected target is not typed
+into the test as well.
+
 ## [1.29.0] — 2026-10-07
 
 ### 🎯 The year's targets and the province list now come from Supabase too

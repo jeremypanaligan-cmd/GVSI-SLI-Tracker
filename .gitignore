@@ -3,7 +3,15 @@ dist/
 .env
 .env.local
 .env.*.local
+# The end-to-end run's account — a real password, so it is never committed. See e2e/.
+.env.e2e
 *.log
 *.log.err
 .DS_Store
 Thumbs.db
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
