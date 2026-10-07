@@ -6,6 +6,18 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 🔍 The Developer console shows where each province-month came from
+
+The console has said, month by month, which read supplied the Monthly Progress strip —
+`sli_monthly`, the record, the year's own target plan, or nothing at all. That is one row per
+month, and a month is sourced once as a whole, so it could not show the provinces a month's
+read leaves out: the archive writes twelve-province months and the plan lists thirteen, and
+September's archive holds ten. The section now reads the same vocabulary one level down, as a
+province × month grid — one cell per province per elapsed month, colour-coded by the same
+four names — so a month that reads `sli_monthly` as a whole still shows which of its provinces
+that month's read never named. A cell reading `year plan` is the one worth finding: nobody
+measured that province-month, so the only number behind it is the year's own target plan.
+
 ### 🧪 The deployed app is driven in a browser, not only read
 
 Every check of the Year-to-Date change was made by reading the source and rendering the

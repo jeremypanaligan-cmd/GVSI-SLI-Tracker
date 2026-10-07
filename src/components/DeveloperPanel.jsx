@@ -36,22 +36,29 @@ const SOURCE_LABELS = {
  * month; and `plan` is the year's own target plan (`sli_targets`), which states the target under
  * a month the record cannot. `uncovered` is not a source at all: no read carried that month, so
  * the cell is a zero nothing measured.
+ *
+ * `short` is the same name in the three-to-four characters the province x month grid can hold,
+ * so the grid's legend spells the vocabulary out rather than inventing a second one.
  */
 const MONTHLY_SOURCE = {
   monthly: {
     label: 'sli_monthly',
+    short: 'sli',
     cell: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300',
   },
   record: {
     label: 'record',
+    short: 'rec',
     cell: 'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300',
   },
   plan: {
     label: 'year plan',
+    short: 'plan',
     cell: 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300',
   },
   uncovered: {
     label: 'nothing read',
+    short: '\u2014',
     cell: 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300',
   },
 }
@@ -247,6 +254,11 @@ function ArchiveTrim({ status, loading }) {
  * the tracker's measurement; a month the backfill copied out of `YTD 2026` / `TARGET 2026`
  * (`supabase/seed-monthly-progress.sql`) is somebody's worksheet wearing the table's name, and
  * is badged as such rather than counted as measured.
+ *
+ * Beneath the lines is the same vocabulary read one level down: a province × month grid, one
+ * cell per province per elapsed month, so a month that reads `sli_monthly` as a whole can still
+ * show the provinces that month's read never named. `summarizeMonthlyProgressSources` (in
+ * `src/utils/yearTables.js`) does that attribution, and its docblock states the precedence.
  */
 // Exported so a probe can render the panel directly: it is the one place the strip's own
 // figures and the read behind each of them are written down side by side.
@@ -301,6 +313,80 @@ export function MonthlyProgressSources({ report }) {
           </li>
         ))}
       </ul>
+
+      {/* Province x month, one cell each — the same names as the list above, read one level
+          down. The plan lists thirteen provinces and the archive writes twelve-province months,
+          so a month that reads `sli_monthly` overall can still hold `year plan` cells. */}
+      {report.provinces?.length > 0 && months.length > 0 && (
+        <div className="mt-3 pt-2.5 border-t border-slate-200 dark:border-slate-700/60">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              Province × month — where each cell came from
+            </p>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500">
+              {`${formatCount(totals.provinceCells)} province-months`}
+            </span>
+          </div>
+
+          <div className="mt-1.5 overflow-x-auto">
+            <div
+              className="grid gap-0.5 min-w-max text-[10px]"
+              style={{ gridTemplateColumns: `minmax(7rem, 11rem) repeat(${months.length}, 2rem)` }}
+            >
+              <span className="text-slate-400 dark:text-slate-500" />
+              {months.map((month) => (
+                <span
+                  key={month.index}
+                  className="text-center font-semibold text-slate-400 dark:text-slate-500"
+                  title={month.name}
+                >
+                  {month.label.slice(0, 1)}
+                </span>
+              ))}
+
+              {report.provinces.map((province) => (
+                <Fragment key={province.key}>
+                  <span className="truncate pr-2 text-slate-600 dark:text-slate-300" title={province.name}>
+                    {province.name}
+                  </span>
+                  {province.cells.map((cell, position) => {
+                    const month = months[position]
+                    const source = MONTHLY_SOURCE[cell.source]
+                    return (
+                      <span
+                        key={cell.index}
+                        title={`${province.name} · ${month.name} — ${label(cell.source, month.recordVia)}`}
+                        className={`text-center font-semibold rounded-sm py-0.5 ${source?.cell}`}
+                      >
+                        {source?.short || '·'}
+                      </span>
+                    )
+                  })}
+                </Fragment>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500 dark:text-slate-400">
+            {Object.entries(MONTHLY_SOURCE).map(([key, source]) => (
+              <span key={key} className="flex items-center gap-1">
+                <span className={`inline-block w-8 text-center font-semibold rounded-sm ${source.cell}`}>
+                  {source.short}
+                </span>
+                {source.label}
+              </span>
+            ))}
+          </div>
+
+          <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1.5">
+            {`One row per province, one column per elapsed month — ${formatCount(totals.provinceMonthly)} of ${formatCount(totals.provinceCells)} province-months are the archived month table's`}
+            {`, ${formatCount(totals.provinceRecord)} the record's`}
+            {totals.provincePlan ? `, ${formatCount(totals.provincePlan)} carry only the year plan's target under them (nobody measured that province-month)` : ''}
+            {totals.provinceUnread ? `, and ${formatCount(totals.provinceUnread)} have nothing behind them at all.` : '.'}
+            {' A `record` cell under the running month is the live `MTD` tab; every other `record` cell is the archive\u2019s `sli_mtd` rows.'}
+          </p>
+        </div>
+      )}
 
       <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1.5">
         A month is sourced once for its figure and once for the target under it, so a month can

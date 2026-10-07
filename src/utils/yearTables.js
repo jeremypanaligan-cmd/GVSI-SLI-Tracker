@@ -519,10 +519,19 @@ export function buildYearTables({
  * backfill copied it out of the year tabs (`source`). Both are the table speaking, and only
  * the first is the tracker's own measurement — so the second is named rather than folded in.
  *
+ * The same attribution is reported a second time, one level down: `provinces` is one cell per
+ * province per elapsed month, each reading one of the same four names. A month can read
+ * `sli_monthly` in the list above and still hold provinces the table's month never names —
+ * the archive writes a twelve-province month and the plan lists thirteen — so the grid is
+ * where that shows. A province-month neither side's month carries, but the year's own target
+ * plan does, reads `plan`: the strip is showing a target nobody measured. A province-month no
+ * read carries at all reads `uncovered`, which is only reachable without the plan.
+ *
  * Observation only — nothing reads this back, it is rendered in the Developer console.
  *
  * @param {object} args
  * @param {object} args.ytd             a `computeYtd` result, for the strip's own figures
+ *                                      (and its `areas`, for the grid's province list)
  * @param {object} [args.overrides]     the record's figures, what `computeYtd` was given
  * @param {object} [args.monthly]       `buildMonthlyOverrides` output — the `sli_monthly` side
  * @param {number} [args.liveMonthIndex] the month the sheet is still serving, if known
@@ -566,9 +575,36 @@ export function summarizeMonthlyProgressSources({
   const count = (source) => months.filter((month) => month.source === source).length
   const backfilled = months.filter((month) => month.source === 'monthly' && month.tableSource === 'worksheet').length
 
+  // Province x month, the precedence above applied cell by cell. The strip resolves a figure
+  // the same way: the archived month table first, then the record, and the zero a month one of
+  // those holds implies for a province it does not name. Reading the same maps in the same
+  // order is what keeps the grid from disagreeing with the strip it describes.
+  const planKnown = ytd.annualTargetKnown !== false
+  const cellSource = (key, index) => {
+    if (holds(tableValues[index], key)) return 'monthly'
+    if (holds(overrides[index], key)) return 'record'
+    // The month itself is sourced, so a province it leaves out reads as that month's zero —
+    // the table's, or the record's. `computeYtd` zeroes those cells the same way.
+    if (holds(tableValues, index)) return 'monthly'
+    if (holds(overrides, index)) return 'record'
+    // No figure at all. Only the year's own target plan speaks under this province-month, and
+    // it states a target rather than a measurement; without the plan there is nothing to read.
+    return planKnown ? 'plan' : 'uncovered'
+  }
+
+  const provinces = (ytd.areas || []).map((area) => ({
+    key: area.key,
+    name: area.name,
+    cells: months.map((month) => ({ index: month.index, source: cellSource(area.key, month.index) })),
+  }))
+  const provinceCells = provinces.flatMap((province) => province.cells)
+  const cellCount = (source) => provinceCells.filter((cell) => cell.source === source).length
+
   return {
     year,
     months,
+    // One cell per province per elapsed month, in the plan's own province order.
+    provinces,
     totals: {
       months: months.length,
       monthly: count('monthly'),
@@ -579,6 +615,12 @@ export function summarizeMonthlyProgressSources({
       // Of the months the table holds, the ones the backfill copied out of the year tabs
       // rather than the ones the archive job measured itself.
       backfilled,
+      // The same counts one level down, over province-months rather than whole months.
+      provinceCells: provinceCells.length,
+      provinceMonthly: cellCount('monthly'),
+      provinceRecord: cellCount('record'),
+      provincePlan: cellCount('plan'),
+      provinceUnread: cellCount('uncovered'),
     },
   }
 }
