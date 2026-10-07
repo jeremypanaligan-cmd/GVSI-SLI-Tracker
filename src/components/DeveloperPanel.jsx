@@ -27,6 +27,26 @@ const SOURCE_LABELS = {
   error: 'Sheet export failed',
 }
 
+/**
+ * The three ways a Monthly Progress month can arrive, and what each looks like in the panel.
+ * `sli_monthly` is the archive's own month table — one row per area with the figure and the
+ * target together; the year tabs are the shared `YTD 2026` / `TARGET 2026` worksheets.
+ */
+const MONTHLY_SOURCE = {
+  monthly: {
+    label: 'sli_monthly',
+    cell: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300',
+  },
+  record: {
+    label: 'record',
+    cell: 'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300',
+  },
+  worksheet: {
+    label: 'year tabs',
+    cell: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300',
+  },
+}
+
 const formatTime = (value) => {
   const date = value ? new Date(value) : null
   if (!date || isNaN(date.getTime())) return '—'
@@ -241,6 +261,85 @@ function ArchiveTrim({ status, loading }) {
  * names the record side more precisely, using what the archive merge already reported:
  * a month the archive listed is Supabase, a month the sheet still exports is the live tab.
  */
+/**
+ * Which side supplied each month of the Monthly Progress strip.
+ *
+ * One line per elapsed month of the strip, showing the strip's own two figures and the read
+ * behind each: `sli_monthly` (the archive's month table, figure and target together), the
+ * record (the live `MTD` tab's month, or the archive's `sli_mtd` rows for a closed one), or
+ * the shared year tabs. The figures come straight out of the computed year, so this panel
+ * cannot disagree with the strip — and since the archive fills up month by month, so does
+ * the row of green.
+ *
+ * A month reading `sli_monthly` says which read put it there. The archive job's own month is
+ * the tracker's measurement; a month the backfill copied out of `YTD 2026` / `TARGET 2026`
+ * (`supabase/seed-monthly-progress.sql`) is somebody's worksheet wearing the table's name, and
+ * is badged as such rather than counted as measured.
+ */
+// Exported so a probe can render the panel directly: it is the one place the strip's own
+// figures and the read behind each of them are written down side by side.
+export function MonthlyProgressSources({ report }) {
+  const months = report?.months || []
+  if (!months.length) return null
+
+  const totals = report.totals || {}
+  const label = (source, recordVia) => (source === 'record'
+    ? `record — ${recordVia === 'live' ? 'live MTD tab' : 'sli_mtd'}`
+    : MONTHLY_SOURCE[source]?.label || source)
+
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700/60 px-2.5 py-2">
+      <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+        Monthly Progress — where each month came from
+      </p>
+      <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
+        {`The strip's own cells, month by month. ${formatCount(totals.monthly)} of ${formatCount(totals.months)} come from sli_monthly`}
+        {totals.backfilled ? ` (${formatCount(totals.backfilled)} of them backfilled from the year tabs)` : ''}
+        {`, ${formatCount(totals.record)} from the record, ${formatCount(totals.worksheet)} still from the year tabs.`}
+      </p>
+
+      <ul className="mt-1.5 space-y-0.5 text-[11px]">
+        {months.map((month) => (
+          <li key={month.index} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="w-8 shrink-0 font-semibold text-slate-500 dark:text-slate-400">{month.label}</span>
+            <span className="w-20 shrink-0 text-right tabular-nums font-semibold text-slate-700 dark:text-slate-200">
+              {formatValue(month.value)}
+            </span>
+            <span className="text-slate-400 dark:text-slate-500">of</span>
+            <span className="w-20 shrink-0 text-right tabular-nums text-slate-600 dark:text-slate-300">
+              {formatValue(month.target)}
+            </span>
+            <span className={`px-1.5 rounded font-semibold ${MONTHLY_SOURCE[month.source]?.cell}`}>
+              {label(month.source, month.recordVia)}
+            </span>
+            {month.tableSource === 'worksheet' && (
+              <span className="px-1.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+                backfilled from the year tabs
+              </span>
+            )}
+            {month.targetSource !== month.source && (
+              <span className={`px-1.5 rounded ${MONTHLY_SOURCE[month.targetSource]?.cell}`}>
+                {`target: ${label(month.targetSource, month.recordVia)}`}
+              </span>
+            )}
+            {month.live && (
+              <span className="text-slate-400 dark:text-slate-500">the live month</span>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1.5">
+        A month is sourced once for its figure and once for the target under it, so a month can
+        show two badges — the archive states both, `TARGET 2026` states the target where no
+        archived row carries it. Nothing is read from the year tabs for a month the archive holds.
+        A month reading `sli_monthly` was written by the archive job where it has no second badge,
+        and copied out of the year tabs by the backfill where it has one.
+      </p>
+    </div>
+  )
+}
+
 function WorksheetDependency({ dependency, merge, clashes, now }) {
   const { totals } = dependency
   const archiveMonths = new Set(
@@ -400,8 +499,10 @@ function WorksheetDependency({ dependency, merge, clashes, now }) {
 
         <p>
           <span className="text-slate-400 dark:text-slate-500">Targets: </span>
-          {`all ${dependency.target.months} months \u00d7 ${dependency.target.areaCount} provinces `}
-          {`(${formatCount(dependency.target.cells)} cells) come from TARGET 2026, always. No countdown \u2014 there is no record side.`}
+          {`${formatCount(dependency.target.cells)} cells \u2014 ${dependency.target.areaCount} provinces \u00d7 ${dependency.target.months} months. `}
+          {dependency.target.fromRecordMonths?.length
+            ? `${dependency.target.fromRecordMonths.map((index) => monthNameOf(index)).join(', ')} came from the record (sli_monthly) beside their figures; the rest, and the annual totals, still come from TARGET 2026.`
+            : 'All of them come from TARGET 2026 \u2014 no closed month is archived yet.'}
         </p>
       </div>
 
@@ -941,6 +1042,10 @@ export default function DeveloperPanel({
                         clashes={entry.clashes}
                         now={now}
                       />
+                    )}
+
+                    {entry?.monthlyProgress && (
+                      <MonthlyProgressSources report={entry.monthlyProgress} />
                     )}
                   </div>
                 )

@@ -15,7 +15,8 @@ FIBERX / BIDA / SME NEW REPORT   ──┐
                                                     ▼
                                         GVSI SLI Tracker (this app)
                                                     ▲
-   closed months ── Archive (Apps Script) ──▶ Supabase (sli_raw_daily + sli_mtd)
+   closed months ── Archive (Apps Script) ──▶ Supabase (sli_raw_daily + sli_mtd
+                                                     + sli_monthly)
                    then PURGED from NEW REPORT          read as CSV-shaped rows
 ```
 
@@ -30,6 +31,7 @@ Supabase instead. See [ARCHIVE.md](./ARCHIVE.md) for that job and
 | `…  NEW REPORT` | `=IMPORTRANGE(…)` from the plan's `… DAILY` sheet | Source of truth. One block per day, one row per area. A **live mirror**, so its rows are formula output and cannot be deleted — the archive narrows its range instead, on the plans where `PLAN_SHEET_TRIM_ENABLED` allows it. See [ARCHIVE.md](./ARCHIVE.md). |
 | `RAW DATA` | Apps Script (`Import`) | Normalized continuous table: one row per date + area. **What the app reads for daily/provincial views, for the live month.** |
 | `MTD` | Apps Script (`Generate MTD`) | Month-to-date summary. **What the app reads for achievement / target figures, for the live month.** |
+| Supabase `sli_monthly` | Apps Script (`Archive`) + a one-time backfill | The Monthly Progress projection: one row per area per **closed** month with the month's figure and its target. The archive job writes a month in the same run as the two tables above, from the very rows it verified; the months that predate it were backfilled once out of the year tabs (`supabase/seed-monthly-progress.sql`). Read by the Year-to-Date month strip and the provincial grid — so a past month needs neither year tab. Each row's `source` says which of the two wrote it. |
 | Supabase `sli_raw_daily` / `sli_mtd` | Apps Script (`Archive`) | The same two shapes for **closed** months. Taken out of the sheet only when `ARCHIVE_PURGE = TRUE` (off by default): the day blocks are deleted on a hand-encoded tab, or dropped by moving the `IMPORTRANGE` window's start row on a mirror. |
 | `_ARCHIVE_BACKUP` | Apps Script (`Archive`) | Temporary pre-purge copy of the deleted `NEW REPORT` rows, on the hand-encoded path only — a mirror is never deleted from, so nothing needs backing up. Safe to delete. |
 | `CONFIG` | Apps Script (once) + you | Archive settings (`ARCHIVE_*`) and the `LAST_ARCHIVE` audit line. **No area list lives here any more** — see [The area list](#the-area-list). Not read by the app. |

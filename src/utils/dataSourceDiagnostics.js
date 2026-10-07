@@ -14,7 +14,7 @@
  * which is exactly the question being asked.
  */
 
-/** planId → { sheet, archive, merge, dependency, clashes, at } */
+/** planId → { sheet, archive, merge, dependency, clashes, monthlyProgress, at } */
 const planState = new Map()
 
 /**
@@ -26,7 +26,10 @@ let yearState = null
 function entry(planId) {
   let value = planState.get(planId)
   if (!value) {
-    value = { sheet: null, archive: null, merge: null, dependency: null, clashes: null, at: null }
+    value = {
+      sheet: null, archive: null, merge: null, dependency: null, clashes: null,
+      monthlyProgress: null, at: null,
+    }
     planState.set(planId, value)
   }
   return value
@@ -105,6 +108,17 @@ export function recordSourceClashes(planId, report) {
 }
 
 /** The shared year tabs: whether the YTD/target tables came from the sheet or the cache. */
+/**
+ * Where each month of the Monthly Progress strip came from — the `sli_monthly` table, the
+ * record, or the year tabs. Computed by `summarizeMonthlyProgressSources`, which is pure; this
+ * only stores the snapshot for the console to render.
+ */
+export function recordMonthlyProgress(planId, report) {
+  const current = entry(planId)
+  current.monthlyProgress = report || null
+  current.at = Date.now()
+}
+
 export function recordYearTables(patch) {
   yearState = { ...(yearState || {}), ...patch, at: Date.now() }
 }
@@ -161,6 +175,13 @@ export function getDiagnostics() {
         ? {
             ...value.clashes,
             clashes: (value.clashes.clashes || []).map((clash) => ({ ...clash })),
+          }
+        : null,
+      monthlyProgress: value.monthlyProgress
+        ? {
+            ...value.monthlyProgress,
+            months: (value.monthlyProgress.months || []).map((month) => ({ ...month })),
+            totals: { ...value.monthlyProgress.totals },
           }
         : null,
       at: value.at,

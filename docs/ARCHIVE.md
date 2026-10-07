@@ -5,7 +5,7 @@ Supabase and taken out of the sheet, so the spreadsheet stops growing forever:
 
 ```
 current month   → Google Sheet          (hot: RAW DATA + MTD, rebuilt every 5 min)
-previous months → Supabase              (cold: sli_raw_daily + sli_mtd, immutable)
+previous months → Supabase      (cold: sli_raw_daily + sli_mtd + sli_monthly, immutable)
 ```
 
 The app reads both and merges them on the fly — the month picker, achievement figures,
@@ -29,6 +29,15 @@ that is due, oldest first, so nothing is skipped.
 2. **Upload** the month's `RAW DATA` rows to `sli_raw_daily`, and the month's MTD figures
    to `sli_mtd` — both as upserts, so re-running is harmless. The MTD figures are
    **computed from the RAW rows just read**, not read back off the `MTD` tab (see below).
+   The same rows are projected into `sli_monthly` (one row per area: the month's figure and
+   its target, `source = 'archive'`) for the app's Year-to-Date month strip and provincial
+   grid. The months this job never saw — 2026 `JAN–JUL` for all three plans, and SME's `AUG`,
+   whose archived rows carry ticket counts where the plan is measured in pesos — were filled
+   in once by `supabase/seed-monthly-progress.sql`, which writes `source = 'worksheet'` and
+   only touches a month the plan cannot already read. That third write is best-effort on
+   purpose — it is derived from rows the gate already verified, so a failure costs the
+   projection and never the month, and it can never block the purge. The run note counts the
+   rows it landed either way.
 3. **Verify** by reading the counts *and* a checksum back from Supabase.
 4. **Shrink — one switch per shape.** Two independent settings decide this, and step 3 has
    to have matched either way:

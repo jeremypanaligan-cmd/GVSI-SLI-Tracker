@@ -213,9 +213,9 @@ export default function YtdReport({ ytd, plan, planName }) {
         </div>
         <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 p-6 text-center">
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            No year-to-date figures for {planName || 'this plan'} — the
-            <span className="font-semibold"> YTD 2026</span> and <span className="font-semibold">TARGET 2026</span> tabs
-            cover BIDA and FIBERX only, for 2026.
+            No year-to-date figures for {planName || 'this plan'} — no 2026 block for it came back from the
+            <span className="font-semibold"> YTD 2026</span> and <span className="font-semibold">TARGET 2026</span> tabs,
+            and the tracker's own record holds no month of 2026 for this plan yet.
           </p>
         </div>
       </section>
@@ -223,6 +223,11 @@ export default function YtdReport({ ytd, plan, planName }) {
   }
 
   const { overall, monthIndex, months, year } = ytd
+  // The year tabs could not be read, so this section was built from the tracker's own record:
+  // every month it holds is here, the annual targets are not. Anything measured against the
+  // year is absent rather than partial (`annualTargetsKnown` in computeYtd) — the plan-to-date
+  // yardstick, which is the headline, needs only the months that have happened.
+  const annualTargetKnown = overall.annualTargetKnown !== false
   const planBadge = overall.pctOfPlan != null ? getBadgeStyle(overall.pctOfPlan) : null
   const paceBadge = overall.pace ? getPaceBadgeStyle(overall.pace) : null
   const annualPct = overall.pct != null ? Math.min(overall.pct, 100) : 0
@@ -248,6 +253,17 @@ export default function YtdReport({ ytd, plan, planName }) {
             : 'final month of the year'}
         </span>
       </div>
+
+      {!annualTargetKnown && (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/70 dark:bg-amber-950/20 px-3 py-2 mb-3">
+          <p className="text-[11px] text-amber-800 dark:text-amber-200">
+            The <span className="font-semibold">YTD 2026</span> and <span className="font-semibold">TARGET 2026</span> tabs
+            could not be read, so this section is built from the tracker's own record — every month it holds, plus the
+            live month's own target off the <span className="font-semibold">MTD</span> tab. The annual targets and the
+            months still to come are not known, so what depends on them reads as a dash instead of a guess.
+          </p>
+        </div>
+      )}
 
       {/* Hero: actual against the plan to date */}
       <div className={`relative overflow-hidden rounded-2xl border p-5 mb-3 ${
@@ -294,13 +310,15 @@ export default function YtdReport({ ytd, plan, planName }) {
           {/* Progress bar — against the annual target, the number actually being filled */}
           <div className="flex-1 max-w-xs">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Of annual target</span>
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                {annualTargetKnown ? 'Of annual target' : 'Of annual target — not available'}
+              </span>
               <span className={`text-xs font-bold ${
                 planBadge?.pulse ? 'text-emerald-600 dark:text-emerald-300'
                   : planBadge?.label === 'LAG' ? 'text-amber-600 dark:text-amber-300'
                     : 'text-rose-600 dark:text-rose-300'
               }`}>
-                {overall.pct != null ? overall.pct.toFixed(1) : '0'}%
+                {overall.pct != null ? `${overall.pct.toFixed(1)}%` : '—'}
               </span>
             </div>
             <div className="w-full h-3 rounded-full bg-white/60 dark:bg-slate-800/60 overflow-hidden shadow-inner">
@@ -315,7 +333,9 @@ export default function YtdReport({ ytd, plan, planName }) {
             </div>
             <div className="flex justify-between mt-1">
               <span className="text-[9px] text-slate-400 dark:text-slate-500">0</span>
-              <span className="text-[9px] text-slate-400 dark:text-slate-500">{formatNumber(overall.annualTarget)}</span>
+              <span className="text-[9px] text-slate-400 dark:text-slate-500">
+                {annualTargetKnown ? formatNumber(overall.annualTarget) : '—'}
+              </span>
             </div>
           </div>
         </div>
@@ -335,25 +355,35 @@ export default function YtdReport({ ytd, plan, planName }) {
 
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between">
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Annual Target</p>
-          <span className={`text-3xl sm:text-4xl font-black tracking-tight ${accentText}`}>{formatNumber(overall.annualTarget)}</span>
+          <span className={`text-3xl sm:text-4xl font-black tracking-tight ${annualTargetKnown ? accentText : 'text-slate-400 dark:text-slate-500'}`}>
+            {annualTargetKnown ? formatNumber(overall.annualTarget) : '—'}
+          </span>
           <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
-            {formatNumber(overall.planToDate)} planned through {MONTH_LABELS[monthIndex]}
+            {annualTargetKnown
+              ? `${formatNumber(overall.planToDate)} planned through ${MONTH_LABELS[monthIndex]}`
+              : 'the two year tabs could not be read'}
           </p>
         </div>
 
         <div className={`rounded-2xl border p-5 flex flex-col justify-between ${
-          overall.remaining > 0
-            ? 'border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50/80 to-white dark:from-amber-950/20 dark:to-slate-900/60'
-            : 'border-emerald-200 dark:border-emerald-800/50 bg-gradient-to-br from-emerald-50/80 to-white dark:from-emerald-950/20 dark:to-slate-900/60'
+          !annualTargetKnown
+            ? 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60'
+            : overall.remaining > 0
+              ? 'border-amber-200 dark:border-amber-800/50 bg-gradient-to-br from-amber-50/80 to-white dark:from-amber-950/20 dark:to-slate-900/60'
+              : 'border-emerald-200 dark:border-emerald-800/50 bg-gradient-to-br from-emerald-50/80 to-white dark:from-emerald-950/20 dark:to-slate-900/60'
         }`}>
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Remaining</p>
           <span className={`text-3xl sm:text-4xl font-black tracking-tight ${
-            overall.remaining > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-emerald-600 dark:text-emerald-300'
+            !annualTargetKnown
+              ? 'text-slate-400 dark:text-slate-500'
+              : overall.remaining > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-emerald-600 dark:text-emerald-300'
           }`}>
-            {formatNumber(overall.remaining)}
+            {annualTargetKnown ? formatNumber(overall.remaining) : '—'}
           </span>
           <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
-            {overall.remaining === 0 ? 'target reached' : 'installations to the annual target'}
+            {!annualTargetKnown
+              ? 'needs the annual targets'
+              : overall.remaining === 0 ? 'target reached' : 'installations to the annual target'}
           </p>
         </div>
 
@@ -365,7 +395,7 @@ export default function YtdReport({ ytd, plan, planName }) {
           <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
             {overall.requiredPerMonth != null
               ? `per month for the last ${ytd.monthsAfter} month${ytd.monthsAfter === 1 ? '' : 's'}`
-              : 'no month left after this one'}
+              : annualTargetKnown ? 'no month left after this one' : 'needs the annual targets'}
           </p>
         </div>
       </div>

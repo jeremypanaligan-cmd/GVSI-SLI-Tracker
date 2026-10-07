@@ -51,7 +51,16 @@ const MTD_FIELDS = ['comp_from_total', 'comp_from_rjo', 'total_completed', 'this
 const RAW_FIELDS = ['bf', 'inc', 'total_jo', 'comp_from_total', 'comp_from_rjo', 'total_completed',
   'rjo_incoming', 'rjo_redispatched', 'total_rjo', 'carry_over', 'mtd', 'gross', 'net', 'target', 'pct']
 
+// One Monthly Progress row per plan x month x area: the figure the month delivered in the
+// plan's own units, the target it was asked for, and which read put it there — 'archive' for
+// the archive job's own projection of a month it verified, 'worksheet' for a month backfilled
+// from the shared year tabs (supabase/seed-monthly-progress.sql). The figure is read the same
+// either way; the label is what lets the Developer console say which it was.
+const MONTHLY_FIELDS = ['month_key', 'month_label', 'area', 'is_overall_total', 'measure',
+  'value', 'target', 'row_order', 'source']
+
 const indexKey = (planId) => `${CACHE_PREFIX}idx_${planId}_${CACHE_VERSION}`
+const monthlyKey = (planId) => `${CACHE_PREFIX}mon_${planId}_${CACHE_VERSION}`
 const mtdKey = (planId, monthKey) => `${CACHE_PREFIX}mtd_${planId}_${monthKey}_${CACHE_VERSION}`
 const rawKey = (planId, monthKey) => `${CACHE_PREFIX}raw_${planId}_${monthKey}_${CACHE_VERSION}`
 
@@ -80,6 +89,28 @@ async function writeJson(key, value) {
     return
   } catch { /* quota — mirror to IndexedDB instead */ }
   try { await idbSet(key, value) } catch { /* ignore */ }
+}
+
+/**
+ * True when a cached payload actually carries rows.
+ *
+ * A month is immutable once archived, which is why its rows are cached forever — but that
+ * is only safe if what was cached is an *answer*. `{ rows: [] }` is not: it is a read that
+ * came back with nothing. A select denied by RLS answers `[]` with HTTP 200 rather than an
+ * error, so an empty body can be a permission or outage artefact rather than "this month
+ * has no rows". Remembering it freezes the month at nothing for the life of the app
+ * version, and since the sheet has already been purged by then nothing else can supply it —
+ * which is how a closed month's figure silently reads 0 in the year-to-date strip.
+ */
+const hasRows = (cached) => Array.isArray(cached?.rows) && cached.rows.length > 0
+
+/** The same rule for the month list: an empty index is a read that found nothing. */
+const hasMonths = (cached) => Array.isArray(cached?.months) && cached.months.length > 0
+
+/** Forget a cache entry in both stores. Used to retire a remembered empty read. */
+async function dropJson(key) {
+  try { localStorage.removeItem(key) } catch { /* ignore */ }
+  try { await idbRemoveMany([key]) } catch { /* ignore */ }
 }
 
 /**
@@ -190,7 +221,7 @@ export async function fetchArchivedMonths(planId, { force = false } = {}) {
   const cached = await readJson(key)
   const cachedLabels = (cached?.months || []).map((month) => month.month_label)
 
-  if (!force && cached && Date.now() - (cached.at || 0) < INDEX_TTL) {
+  if (!force && hasMonths(cached) && Date.now() - (cached.at || 0) < INDEX_TTL) {
     recordArchiveIndex(planId, { fromCache: true, months: cachedLabels, fetchedAt: cached.at || null, error: null })
     return cached.months || []
   }
@@ -200,7 +231,10 @@ export async function fetchArchivedMonths(planId, { force = false } = {}) {
       `sli_mtd?plan=eq.${planId}&is_overall_total=eq.true` +
       '&select=month_key,month_label&order=month_key.asc'
     )
-    await writeJson(key, { at: Date.now(), months })
+    // Same rule one level up: an empty list is reported but not remembered. It is cheap to
+    // ask again, and remembering an empty archive would hide every archived month — which
+    // reads in the app exactly like "the sheet purged them and nothing replaced them".
+    if (months.length) await writeJson(key, { at: Date.now(), months })
     recordArchiveIndex(planId, {
       fromCache: false,
       months: months.map((month) => month.month_label),
@@ -222,10 +256,49 @@ export async function fetchArchivedMonths(planId, { force = false } = {}) {
   }
 }
 
+/**
+ * Every closed month's Monthly Progress figures for one plan: what the year-to-date strip
+ * shows for a past month, targets included.
+ *
+ * Read as one payload rather than a month at a time. The table is small (one row per area
+ * per closed month) and always grows at the start, so a whole-plan read costs one request
+ * per plan per TTL instead of one per month, and a month that has just been archived
+ * arrives with the rest.
+ *
+ * Cached like the month list: short TTL, because the set of months changes as months close,
+ * while the rows inside a month never do. An empty payload is never remembered — see
+ * `hasRows`.
+ *
+ * @returns {Promise<object[]>} the plan's rows, oldest month first
+ */
+export async function fetchMonthlyProgress(planId, { force = false } = {}) {
+  if (!SUPABASE_ENABLED) return []
+
+  const key = monthlyKey(planId)
+  const cached = await readJson(key)
+  if (!force && hasRows(cached) && Date.now() - (cached.at || 0) < INDEX_TTL) {
+    return cached.rows
+  }
+
+  try {
+    const rows = await supabaseGet(
+      `sli_monthly?plan=eq.${planId}&select=${selectList(MONTHLY_FIELDS)}` +
+      '&order=month_key.asc,row_order.asc'
+    )
+    if (rows.length) await writeJson(key, { at: Date.now(), rows })
+    return rows
+  } catch (error) {
+    // The YTD section falls back to the worksheet for every month it cannot read, so this
+    // is a degraded read, never a broken dashboard.
+    console.warn('[Monthly] progress unavailable:', error.message)
+    return cached?.rows || []
+  }
+}
+
 async function fetchMonthMtdRows(planId, monthKey) {
   const key = mtdKey(planId, monthKey)
   const cached = await readJson(key)
-  if (cached) {
+  if (hasRows(cached)) {
     recordArchiveMonth(planId, monthKey, {
       mtdFromCache: true,
       mtdRows: cached.rows.length,
@@ -233,16 +306,21 @@ async function fetchMonthMtdRows(planId, monthKey) {
     })
     return cached.rows
   }
+  // A remembered empty read is not a cache hit — drop it and ask again.
+  if (cached) await dropJson(key)
 
   const rows = await supabaseGet(
     `sli_mtd?plan=eq.${planId}&month_key=eq.${monthKey}` +
     `&select=area,row_order,${selectList(MTD_FIELDS)}&order=row_order.asc`
   )
-  await writeJson(key, { rows })
+  // Only an answer is cached. An empty read stays unremembered, so the next load asks again
+  // instead of inheriting it forever, and it says so in the Developer console.
+  if (rows.length) await writeJson(key, { rows })
   recordArchiveMonth(planId, monthKey, {
     mtdFromCache: false,
     mtdRows: rows.length,
     mtdBytes: payloadBytes(rows),
+    mtdError: rows.length ? null : 'Supabase returned no MTD rows for this month.',
   })
   return rows
 }
@@ -250,7 +328,7 @@ async function fetchMonthMtdRows(planId, monthKey) {
 async function fetchMonthRawRows(planId, monthKey) {
   const key = rawKey(planId, monthKey)
   const cached = await readJson(key)
-  if (cached) {
+  if (hasRows(cached)) {
     recordArchiveMonth(planId, monthKey, {
       rawFromCache: true,
       rawRows: cached.rows.length,
@@ -258,17 +336,19 @@ async function fetchMonthRawRows(planId, monthKey) {
     })
     return cached.rows
   }
+  if (cached) await dropJson(key)
 
   const rows = await supabaseGet(
     `sli_raw_daily?plan=eq.${planId}&month_key=eq.${monthKey}` +
     `&select=date_label,area,report_date,row_order,${selectList(RAW_FIELDS)}` +
     '&order=report_date.asc,row_order.asc'
   )
-  await writeJson(key, { rows })
+  if (rows.length) await writeJson(key, { rows })
   recordArchiveMonth(planId, monthKey, {
     rawFromCache: false,
     rawRows: rows.length,
     rawBytes: payloadBytes(rows),
+    rawError: rows.length ? null : 'Supabase returned no RAW rows for this month.',
   })
   return rows
 }

@@ -212,6 +212,25 @@ function actualCellRule(actualBlock, overrides, covered, key, index) {
 }
 
 /**
+ * The target side of the same rule, over the archive's own monthly targets.
+ *
+ * A closed month's target is archived beside its figure (`sli_monthly`), and where the record
+ * holds a month its targets win the way its figures do — a month is sourced once, never cell
+ * by cell. Both sides cover the same months by construction: the rows come from one table, so
+ * a month the record can state has a target beside its figure.
+ *
+ * A month the record cannot express — SME's August, whose rows predate the MRC columns —
+ * contributes nothing here either, and keeps the worksheet's target rather than a zero that
+ * would read as "no target was ever set".
+ */
+function targetCellRule(targetBlock, targetOverrides, coveredTargets, key, index) {
+  const override = targetOverrides?.[index]?.[key]
+  if (typeof override === 'number' && Number.isFinite(override)) return override
+  if (coveredTargets.has(index)) return 0
+  return targetBlock.areas[key]?.monthly?.[index] ?? 0
+}
+
+/**
  * The months the record speaks for, read off the overrides themselves.
  *
  * `buildOverrides` writes an entry for a month only when it found at least one figure this plan
@@ -249,14 +268,17 @@ export function archiveDate(year, monthIndex, afterDays = ARCHIVE_AFTER_DAYS) {
  * One entry per province and one per elapsed month, applying exactly the rule
  * `computeYtd` applies.
  *
- * The target side is deliberately not split the same way: every target cell in the year
- * comes from `TARGET 2026`, so it is reported as a single permanent dependency rather
- * than a countdown that will never move.
+ * The target side is almost permanent. A closed month's targets are archived beside its
+ * figure (`sli_monthly`), so the strip reads them from the record for the months the archive
+ * holds and from `TARGET 2026` for everything else — the live month, the months still to
+ * come, and the annual totals. What the record supplies is reported as `fromRecordMonths`,
+ * which is the part of the target column that stops depending on somebody's worksheet as the
+ * year runs.
  *
  * @returns {null|object} null when the plan has no block in either tab
  */
 export function summarizeWorksheetDependency({
-  actual, target, planId, monthIndex, overrides = {}, year = null,
+  actual, target, planId, monthIndex, overrides = {}, targetOverrides = {}, year = null,
 }) {
   const actualBlock = actual?.plans?.[planId]
   const targetBlock = target?.plans?.[planId]
@@ -352,6 +374,8 @@ export function summarizeWorksheetDependency({
       months: MONTHS.length,
       areaCount: order.length,
       cells: MONTHS.length * order.length,
+      // Months whose target came from the record rather than `TARGET 2026`.
+      fromRecordMonths: [...coveredMonthsOf(targetOverrides)].sort((a, b) => a - b),
     },
   }
 }
@@ -590,6 +614,299 @@ export function buildOverrides(sections, year, { collectionBased = false } = {})
 }
 
 /**
+ * Turn the Monthly Progress record — `sli_monthly`, one row per closed month x area — into
+ * the two maps `computeYtd` takes:
+ *
+ *   values   { [monthIndex]: { [areaKey]: delivered } }
+ *   targets  { [monthIndex]: { [areaKey]: target } }
+ *   sources  { [monthIndex]: 'archive' | 'worksheet' }   which read put the month there
+ *
+ * This is the table the strip would rather read for a past month: the figure and the target
+ * in one row, written by the archive job the moment it writes `sli_mtd`, so the year-to-date
+ * section no longer needs the `YTD 2026` / `TARGET 2026` worksheet to describe a closed
+ * month. The worksheet still supplies the live month, the months still to come, the annual
+ * targets and the province list.
+ *
+ * A row is only usable in the plan's own units. `measure` travels with the row — `net` for
+ * SME's collections, `count` for everyone else's tickets — and a row whose measure does not
+ * match the plan is dropped whole, figure *and* target, so the month stays the worksheet's
+ * rather than being read in the wrong basis. That guard is what keeps SME's `2026-08`, which
+ * was archived before the MRC columns existed, out of the year-to-date figures instead of
+ * putting a 174 beside the worksheet's 465,023.
+ *
+ * @param {object[]} rows  `sli_monthly` rows for one plan
+ * @param {object}   [options]
+ * @param {number}   [options.year]             only months in this year are kept
+ * @param {boolean}  [options.collectionBased]  the plan is measured in money (SME)
+ * @returns {{ values: object, targets: object, sources: object }}
+ */
+export function buildMonthlyOverrides(rows, { year = null, collectionBased = false } = {}) {
+  const measure = collectionBased ? 'net' : 'count'
+  const values = {}
+  const targets = {}
+  // Where each month's row came from: the archive job's own projection of a month it
+  // verified, or the backfill that copied a month out of the shared year tabs. Read from the
+  // row rather than assumed, so the Developer console can say which — a month the tracker
+  // measured and a month somebody's worksheet supplied are not the same claim. A month is
+  // written whole by one side or the other (`supabase/seed-monthly-progress.sql` only touches
+  // a month the plan cannot already read), so in practice every row of a month agrees.
+  const sources = {}
+
+  for (const row of rows || []) {
+    if (String(row?.measure || '') !== measure) continue
+    const parts = monthLabelParts(row.month_label)
+    if (!parts || (year != null && parts.year !== year)) continue
+    const key = normalizeAreaKey(row.area)
+    if (!key) continue
+
+    const value = Number(row.value)
+    if (Number.isFinite(value)) {
+      if (!values[parts.monthIndex]) values[parts.monthIndex] = {}
+      values[parts.monthIndex][key] = value
+      // 'worksheet' wins any disagreement: if any row of the month was copied out of the
+      // tabs, the month is not wholly the tracker's own measurement.
+      if (sources[parts.monthIndex] !== 'worksheet') {
+        sources[parts.monthIndex] = String(row.source || '') === 'worksheet' ? 'worksheet' : 'archive'
+      }
+    }
+    const target = Number(row.target)
+    if (Number.isFinite(target)) {
+      if (!targets[parts.monthIndex]) targets[parts.monthIndex] = {}
+      targets[parts.monthIndex][key] = target
+    }
+  }
+
+  return { values, targets, sources }
+}
+
+/**
+ * Whether the shared tabs can serve this plan at all: both of its blocks present.
+ *
+ * "The tabs are unavailable" has two shapes, and the difference matters to the reader. The
+ * whole read can fail — a 404, or an offline browser with no year cache — and one of them can
+ * arrive without a block for the plan. Both leave `computeYtd` with nothing, and both are
+ * handled the same way: the section is rebuilt from the record
+ * (`buildYearTablesFromRecord`) instead of disappearing.
+ */
+export function hasPlanBlocks(actual, target, planId) {
+  return Boolean(actual?.plans?.[planId] && target?.plans?.[planId])
+}
+
+/**
+ * The year tables rebuilt from the app's own record, for when the shared `YTD 2026` /
+ * `TARGET 2026` tabs cannot be read at all.
+ *
+ * The section used to disappear in that case, on the reasoning that a year-to-date table with
+ * no year tables has nothing to show. That stopped being true once `sli_monthly` began holding
+ * every elapsed month: the figures are the app's own record now, and the worksheet is left with
+ * the live month, the months still to come, the annual targets and the province list. So this
+ * rebuilds the two blocks `computeYtd` expects out of what the app already has:
+ *
+ *   provinces  the area list out of `sli_monthly`, in its own row order (the oldest month that
+ *              names a province fixes its place), then any province only the live `MTD` tab has
+ *   figures    the month's figure out of `sli_monthly`, and the live month out of the record
+ *   targets    the month's target out of `sli_monthly`, and the live month's target off the
+ *              `MTD` tab, which is the only place that one is carried
+ *
+ * The province list is the part worth naming: it is the one thing the worksheet was still
+ * exclusively supplying that the record can supply too, because `sli_monthly` carries an area
+ * per row. A plan whose table is empty and whose `MTD` tab says nothing has no provinces, and
+ * returns null — an absent section is better than an empty one.
+ *
+ * What it cannot know is the rest of the year. Every `total` stays null, so the annual target
+ * `computeYtd` falls back to is the sum of the months the record holds — a partial figure that
+ * must not be presented as the year's plan, which is what the `annualTargetsKnown: false` the
+ * caller passes beside these tables is for.
+ *
+ * @param {object}   args
+ * @param {string}   args.planId
+ * @param {object[]} [args.rows]              `sli_monthly` rows for this plan
+ * @param {object}   [args.sections]          `mtdData.sections` — the live `MTD` tab
+ * @param {number}   [args.year]              only months in this year are kept
+ * @param {boolean}  [args.collectionBased]   the plan is measured in money (SME)
+ * @returns {null|{ actual: object, target: object }} two `parseYearTable`-shaped blocks
+ */
+export function buildYearTablesFromRecord({
+  planId, rows = [], sections = null, year = null, collectionBased = false,
+}) {
+  const measure = collectionBased ? 'net' : 'count'
+  const order = []
+  const names = {}
+  const actualMonthly = {}
+  const targetMonthly = {}
+
+  const claim = (key, name) => {
+    if (!key || actualMonthly[key]) return
+    names[key] = String(name || key).trim()
+    order.push(key)
+    actualMonthly[key] = MONTHS.map(() => null)
+    targetMonthly[key] = MONTHS.map(() => null)
+  }
+
+  const monthOf = (row) => {
+    const parts = monthLabelParts(row?.month_label)
+    if (!parts || (year != null && parts.year !== year)) return null
+    return parts.monthIndex
+  }
+
+  // `sli_monthly`: the province list and every month it holds. Oldest month first, then the
+  // plan's own row order, so the list comes out the way the plan is written rather than
+  // alphabetically — the same order the year tabs would give.
+  const table = [...rows].sort((a, b) => (
+    String(a?.month_key || '').localeCompare(String(b?.month_key || ''))
+    || (a?.row_order ?? 0) - (b?.row_order ?? 0)
+  ))
+  for (const row of table) {
+    if (String(row?.measure || '') !== measure) continue
+    if (String(row?.area || '').trim().toUpperCase() === 'OVER ALL TOTAL') continue
+    const index = monthOf(row)
+    if (index == null) continue
+    const key = normalizeAreaKey(row.area)
+    if (!key) continue
+    claim(key, row.area)
+    const value = Number(row.value)
+    if (Number.isFinite(value)) actualMonthly[key][index] = value
+    const target = Number(row.target)
+    if (Number.isFinite(target)) targetMonthly[key][index] = target
+  }
+
+  // The live `MTD` tab: provinces the table has not named, the running month's figure, and
+  // its target — the one figure the record carries that `sli_monthly` never can.
+  for (const [label, section] of Object.entries(sections || {})) {
+    const index = monthOf({ month_label: label })
+    if (index == null) continue
+    for (const area of section?.areas || []) {
+      const key = normalizeAreaKey(area?.area)
+      if (!key) continue
+      claim(key, area.area)
+      const value = recordValueFor(area, collectionBased)
+      if (Number.isFinite(value) && actualMonthly[key][index] == null) {
+        actualMonthly[key][index] = value
+      }
+      if (Number.isFinite(area.target) && targetMonthly[key][index] == null) {
+        targetMonthly[key][index] = area.target
+      }
+    }
+  }
+
+  if (order.length === 0) return null
+
+  const block = (kind, monthly) => ({
+    kind,
+    order: [...order],
+    areas: Object.fromEntries(order.map((key) => [key, {
+      name: names[key],
+      key,
+      monthly: monthly[key],
+      // Unknown, not zero: see the note above about what a partial annual target means.
+      total: null,
+    }])),
+    overall: {
+      monthly: MONTHS.map((_, index) => sum(order.map((key) => monthly[key][index] ?? 0))),
+      total: null,
+    },
+  })
+
+  // Shaped exactly like `parseYearTable`'s output — one block per plan under `plans` — so
+  // `computeYtd` cannot tell which of the two it was handed, which is the point.
+  const shaped = (kind, monthly) => ({
+    year,
+    months: MONTHS,
+    plans: { [planId]: block(kind, monthly) },
+  })
+
+  return {
+    planId,
+    year,
+    actual: shaped('completed', actualMonthly),
+    target: shaped('target', targetMonthly),
+  }
+}
+
+/**
+ * Where each month of the Monthly Progress strip came from.
+ *
+ * The strip is a row of cells, one per month, and each cell has two figures that can come
+ * from two different places: the month's delivered total, and the target under it. This
+ * reports, month by month, which side supplied each — the same question the worksheet
+ * dependency answers for the provincial grid, asked of the one row a reader actually looks
+ * at first.
+ *
+ * It takes the computed year (`ytd`) rather than recomputing anything, so the figures shown
+ * here are the strip's own and the two cannot drift apart. The attribution is read off the
+ * same maps `computeYtd` was handed, in the same precedence order:
+ *
+ *   figure   the archived month in `sli_monthly`, else the record (the live `MTD` tab, or the
+ *            archive's `sli_mtd` rows), else the `YTD 2026` worksheet
+ *   target   the archived month in `sli_monthly` beside that figure, else `TARGET 2026`
+ *
+ * A month reading `sli_monthly` says one more thing about itself, because the table says it:
+ * whether the archive job wrote the month from rows it had just verified, or whether the
+ * backfill copied it out of the year tabs (`source`). Both are the table speaking, and only
+ * the first is the tracker's own measurement — so the second is named rather than folded in.
+ *
+ * Observation only — nothing reads this back, it is rendered in the Developer console.
+ *
+ * @param {object} args
+ * @param {object} args.ytd             a `computeYtd` result, for the strip's own figures
+ * @param {object} [args.overrides]     the record's figures, what `computeYtd` was given
+ * @param {object} [args.monthly]       `buildMonthlyOverrides` output — the `sli_monthly` side
+ * @param {number} [args.liveMonthIndex] the month the sheet is still serving, if known
+ * @param {number} [args.year]
+ * @returns {null|object} null when there is no year to report on
+ */
+export function summarizeMonthlyProgressSources({
+  ytd, overrides = {}, monthly = {}, liveMonthIndex = null, year = null,
+}) {
+  if (!ytd?.overall?.series) return null
+
+  const tableValues = monthly?.values || {}
+  const tableTargets = monthly?.targets || {}
+  const holds = (map, index) => Object.keys(map?.[index] || {}).length > 0
+
+  const months = []
+  for (let index = 0; index <= ytd.monthIndex; index++) {
+    const fromTable = holds(tableValues, index)
+    const fromRecord = holds(overrides, index)
+    const source = fromTable ? 'monthly' : fromRecord ? 'record' : 'worksheet'
+    months.push({
+      index,
+      label: MONTHS[index],
+      name: MONTH_NAMES[index],
+      // The strip's own cell: the delivered total and the target beneath it.
+      value: ytd.overall.series.actual[index] ?? null,
+      target: ytd.overall.series.target[index] ?? null,
+      source,
+      // Which read put the month in the table: the archive job's own projection, or the
+      // backfill that copied it out of the year tabs.
+      tableSource: fromTable ? (monthly?.sources?.[index] || 'archive') : null,
+      // Where the record's month came from: only the live month is still on the sheet's
+      // `MTD` tab, so any other month it holds is the archive's `sli_mtd` rows.
+      recordVia: source === 'record' ? (index === liveMonthIndex ? 'live' : 'archive') : null,
+      targetSource: holds(tableTargets, index) ? 'monthly' : 'worksheet',
+      live: index === liveMonthIndex,
+    })
+  }
+
+  const count = (source) => months.filter((month) => month.source === source).length
+  const backfilled = months.filter((month) => month.source === 'monthly' && month.tableSource === 'worksheet').length
+
+  return {
+    year,
+    months,
+    totals: {
+      months: months.length,
+      monthly: count('monthly'),
+      record: count('record'),
+      worksheet: count('worksheet'),
+      // Of the months the table holds, the ones the backfill copied out of the year tabs
+      // rather than the ones the archive job measured itself.
+      backfilled,
+    },
+  }
+}
+
+/**
  * The year-to-date position for one plan.
  *
  * Source rule, matching the rest of the app (docs/DATASOURCE.md): **the app's own record wins
@@ -605,10 +922,20 @@ export function buildOverrides(sections, year, { collectionBased = false } = {})
  * @param {number}   args.monthIndex    selected month, 0-based
  * @param {object}   [args.overrides]   `{ [monthIndex]: { [areaKey]: actual } }` from the
  *                                      live/archived MTD record
+ * @param {object}   [args.targetOverrides] `{ [monthIndex]: { [areaKey]: target } }` from the
+ *                                      archived Monthly Progress record (`sli_monthly`), so a
+ *                                      closed month's target comes from the same source as
+ *                                      its figure instead of the `TARGET 2026` worksheet
  * @param {number}   [args.progress]    fraction of the selected month elapsed, 0–1
+ * @param {boolean}  [args.annualTargetsKnown] false when the annual targets are not available
+ *                                      — the section was rebuilt from the record because the
+ *                                      year tabs could not be read. Everything measured against
+ *                                      the year then reports absent (`null`) rather than
+ *                                      measured against the months the record happens to hold;
+ *                                      the plan-to-date yardstick is unaffected and still shown.
  * @returns {null|object} null when the plan has no block in either tab
  */
-export function computeYtd({ actual, target, planId, monthIndex, overrides = {}, progress = null }) {
+export function computeYtd({ actual, target, planId, monthIndex, overrides = {}, targetOverrides = {}, progress = null, annualTargetsKnown = true }) {
   const actualBlock = actual?.plans?.[planId]
   const targetBlock = target?.plans?.[planId]
   if (!actualBlock || !targetBlock) return null
@@ -620,7 +947,10 @@ export function computeYtd({ actual, target, planId, monthIndex, overrides = {},
   const closedRecordMonths = new Set()
   const covered = coveredMonthsOf(overrides)
 
+  const targetCovered = coveredMonthsOf(targetOverrides)
+
   const actualFor = (key, index) => actualCellRule(actualBlock, overrides, covered, key, index)
+  const targetFor = (key, index) => targetCellRule(targetBlock, targetOverrides, targetCovered, key, index)
 
   /**
    * Build one row (a province, or the overall roll-up) from full 12-month series. Only the
@@ -643,11 +973,13 @@ export function computeYtd({ actual, target, planId, monthIndex, overrides = {},
     const currentActual = through[monthIndex] ?? 0
     const currentTarget = targetThrough[monthIndex] ?? 0
     const currentRemaining = Math.max(currentTarget - currentActual, 0)
-    const remaining = Math.max(annualTarget - ytd, 0)
-    const remainingAfterCurrent = Math.max(annualTarget - ytd - currentRemaining, 0)
-    const requiredPerMonth = monthsAfter > 0 ? remainingAfterCurrent / monthsAfter : null
+    // Absent, not zero: without the annual targets a "remaining" is the distance to a figure
+    // nobody stated, and a "% of target" can read as 100% of a year that has two months left.
+    const remaining = annualTargetsKnown ? Math.max(annualTarget - ytd, 0) : null
+    const remainingAfterCurrent = annualTargetsKnown ? Math.max(annualTarget - ytd - currentRemaining, 0) : null
+    const requiredPerMonth = annualTargetsKnown && monthsAfter > 0 ? remainingAfterCurrent / monthsAfter : null
 
-    const pct = annualTarget > 0 ? (ytd / annualTarget) * 100 : null
+    const pct = annualTargetsKnown && annualTarget > 0 ? (ytd / annualTarget) * 100 : null
     const pctOfPlan = planToDate > 0 ? (ytd / planToDate) * 100 : null
     const deficit = planToDate - ytd
 
@@ -656,7 +988,7 @@ export function computeYtd({ actual, target, planId, monthIndex, overrides = {},
     const paceMonthly = completedMonths > 0 ? completedActual / completedMonths : ytd / (monthIndex + 1)
     const monthsAhead = monthsAfter + (progress != null ? Math.max(1 - progress, 0) : 0)
     const projected = ytd + paceMonthly * monthsAhead
-    const projectedPct = annualTarget > 0 ? (projected / annualTarget) * 100 : null
+    const projectedPct = annualTargetsKnown && annualTarget > 0 ? (projected / annualTarget) * 100 : null
 
     // The verdict needs a denominator. A province whose target has not started yet — BIDA's
     // Aurora is 0 for JAN–AUG and 26/28/25/26 from SEP on — cannot be on pace or behind, and
@@ -683,6 +1015,9 @@ export function computeYtd({ actual, target, planId, monthIndex, overrides = {},
       deficit,
       pct,
       pctOfPlan,
+      // Whether there was a whole-year target to measure `pct`, `remaining` and
+      // `requiredPerMonth` against. False means those three are absent on purpose.
+      annualTargetKnown: annualTargetsKnown,
       currentActual,
       currentTarget,
       currentRemaining,
@@ -710,7 +1045,7 @@ export function computeYtd({ actual, target, planId, monthIndex, overrides = {},
     for (let index = 0; index < monthIndex; index++) {
       if (actualFor(key, index).fromRecord) closedRecordMonths.add(index)
     }
-    const seriesTarget = MONTHS.map((_, index) => targetBlock.areas[key]?.monthly?.[index] ?? 0)
+    const seriesTarget = MONTHS.map((_, index) => targetFor(key, index))
     const annualTarget = targetBlock.areas[key]?.total ?? sum(seriesTarget)
     return buildRow(key, name, seriesActual, seriesTarget, annualTarget)
   })
@@ -737,6 +1072,7 @@ export function computeYtd({ actual, target, planId, monthIndex, overrides = {},
     // surfaced in the UI, because that is the difference between "the sheet says so" and
     // "the tracker says so".
     closedRecordMonths: [...closedRecordMonths].sort((a, b) => a - b),
+    annualTargetKnown: annualTargetsKnown,
     progress,
   }
 }

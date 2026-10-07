@@ -84,7 +84,7 @@ opening the console by hand grants nothing.
 |---|---|
 | **Build status** | the bundle actually loaded (the hashed file name), the build version, whether Supabase is configured, and which months each plan has archived |
 | **Archive trim** | per plan, the archive switches from its own `CONFIG` tab and whether the last run moved its `IMPORTRANGE` window — with the reason when it refused |
-| **Data source diagnostics** | per plan: the live-month source, the sheet payload, the months Supabase holds, what was handed to the parser, and which province-months still need the `YTD 2026` worksheet |
+| **Data source diagnostics** | per plan: the live-month source, the sheet payload, the months Supabase holds, what was handed to the parser, which province-months still need the `YTD 2026` worksheet — and, per month of the Executive Overview's Monthly Progress strip, whether its figure and target came from `sli_monthly`, the record, or the year tabs, with a month the backfill copied out of the year tabs badged as such rather than counted as measured |
 | **Active now** | username, full name, role, plan/view, session start, a live-ticking duration, and a count in the icon badge |
 | **Maintenance mode** | the switch, the message users will read, an auto-off timer, who turned it on and when, plus **Force sign-out all** |
 | **Recent sessions** | the last 25 sessions with their duration, and which were revoked — the "who came in, and for how long" trail |
@@ -144,7 +144,7 @@ The app talks to one project — **GVSI NetPulse**, ref `fsebdacptgoknbjqdlor` (
 | What you want | Where |
 |---|---|
 | The dashboard | <https://supabase.com/dashboard/project/fsebdacptgoknbjqdlor> |
-| Rows — `sli_users`, `sli_sessions`, `sli_settings`, `sli_raw_daily`, `sli_mtd` | **Table Editor** (`sli_*` is the SLI Tracker, everything else is NetPulse) |
+| Rows — `sli_users`, `sli_sessions`, `sli_settings`, `sli_raw_daily`, `sli_mtd`, `sli_monthly` | **Table Editor** (`sli_*` is the SLI Tracker, everything else is NetPulse) |
 | Ad-hoc queries | **SQL Editor** — this is also where `supabase/schema.sql` was applied |
 | The service_role secret | **Project Settings → API keys** |
 | Who can open the project at all | **Organization → Team** — you must be a member |
@@ -177,7 +177,7 @@ curl -s "https://fsebdacptgoknbjqdlor.supabase.co/rest/v1/rpc/maintenance_get" \
 | Table | anon (in the app bundle) |
 |---|---|
 | `sli_users`, `sli_sessions`, `sli_settings` | **nothing** — `401 permission denied` |
-| `sli_raw_daily`, `sli_mtd` | readable; writes need the service_role key |
+| `sli_raw_daily`, `sli_mtd`, `sli_monthly` | readable; writes need the service_role key |
 
 All app access goes through the RPCs in [`supabase/schema.sql`](../supabase/schema.sql).
 Verify it yourself:

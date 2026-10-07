@@ -47,21 +47,60 @@ an annual table cannot change between two loads. All three plans have a block, i
 `SME`'s, so the Year-to-Date sections render for each of them.
 
 For those two tabs only, the rule above is refined: the app's own record supersedes the
-worksheet for **any month it holds** — the archived month in `sli_mtd` first, then the live
-`MTD` tab (`buildOverrides` in `src/utils/yearTables.js`). The record is the app's own
+worksheet for **any month it holds** — the archived month first, then the live `MTD` tab
+(`buildOverrides` in `src/utils/yearTables.js`). The record is the app's own
 measurement, taken at trim time and immutable afterwards; the worksheet is a cell somebody
 maintains. One guard applies: a collection-based plan (SME) may only contribute its `NET`,
 so a record row written before the MRC columns existed carries no weight at all and leaves
 its month to the worksheet. See [YTD_SCOPING.md](./YTD_SCOPING.md) for that case in full.
 
+`sli_monthly` is the app's **priority source**, and it is meant to hold every elapsed month.
+It is one row per area per closed month with the month's **figure and target together**: the
+archive job writes a month in the same run that writes `sli_mtd`, and the months that predate
+the archive were backfilled out of the two year tabs (`supabase/seed-monthly-progress.sql`) —
+2026 `JAN–JUL` for all three plans, and SME's `AUG` because its archived rows hold ticket
+counts where the plan is measured in pesos. Both the Year-to-Date month strip and the
+provincial grid read a month from there (`buildMonthlyOverrides` in
+`src/utils/yearTables.js`), so the two year tabs are left holding only the **live month**, the
+months still to come, the annual targets and the province list. A row is read only when its
+`measure` matches the plan (`net` for SME's collections, `count` otherwise), which is what keeps
+a month archived before the MRC columns existed — SME's `2026-08`, a count with no NET — from
+being measured against its worksheet.
+
+Each row also says which read wrote it (`source`): `archive` for the months the archive job
+measured itself, `worksheet` for the months the backfill copied out of the year tabs. A month
+is written whole by one side or the other, so the label is trustworthy month by month, and the
+Developer console names the backfilled ones rather than counting somebody's worksheet cell as
+the tracker's own measurement.
+
+When both year tabs are unavailable at once — offline with no cache, or a 404 — the section is
+rebuilt from the record instead of disappearing (`buildYearTablesFromRecord` in the same
+module): `sli_monthly` supplies the months and the province list, its rows carrying an area and
+the plan's own order, and the live `MTD` tab supplies the running month's figure and target. The
+annual targets and the months still to come exist only in those two tabs, so a rebuilt section
+reports everything measured against the year as absent rather than partial
+(`annualTargetsKnown`), and says so on screen — the plan-to-date headline needs only the months
+that have happened. One number can legitimately differ from the tabs: the running month's
+target, which `TARGET 2026` and the `MTD` tab state separately (FIBERX's Isabela reads 229 in
+`MTD` and 224 in the year tab today). The record's own answer is used, so the section agrees
+with the Month-to-Date card beside it.
+
+Which side each month of the strip came from is reported month by month in the
+**Developer console → Data source diagnostics → Monthly Progress**
+(`summarizeMonthlyProgressSources` in `src/utils/yearTables.js`): the strip's own two figures
+and the read behind each, so a month reading `sli_monthly` needs no year tab at all and a month
+reading `year tabs` is the one to watch as the archive fills.
+
 Which side supplied each figure is reported, per province and per month, in the
 **Developer console → Data source diagnostics → Worksheet dependency**
 (`summarizeWorksheetDependency` in the same module). It exists because nothing on the
 dashboard can show the difference — an actual reads the same whichever tab it came from —
-while the dependency itself shrinks every month as the archive fills. `JAN–JUL` 2026 can
-never convert, because they fall before the first month the tracker held. The target side is
-reported as permanent instead: every target cell in the year comes from `TARGET 2026`, so it
-gets no countdown.
+while the dependency itself shrinks every month as the archive fills. `JAN–JUL` 2026 can never
+be archived by the job itself — they fall before the first month the tracker held — so they
+come from the table's backfill instead, and read as the record side from the month they cover.
+The target side is
+reported the same way: `fromRecordMonths` names the months whose target came from
+`sli_monthly` beside its figure, and everything else still comes from `TARGET 2026`.
 
 Two disagreements are reported beside it, because precedence makes both invisible
 (`summarizeSourceClashes`). **Cells both sides hold and disagree about** are listed with

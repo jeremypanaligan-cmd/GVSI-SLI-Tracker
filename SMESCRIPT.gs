@@ -655,7 +655,7 @@ function getMonthName(monthNum) {
 // stamp is the app version plus a short hash of the head and this template, so an edit to
 // either one changes it. Compare it with SCRIPT_BUILD in the .gs file you pasted.
 const SCRIPT_PLAN = 'SME';
-const SCRIPT_BUILD = '1.27.0+22051347';
+const SCRIPT_BUILD = '1.27.0+029dfe55';
 
 const ARCHIVE_ENABLED_KEY = 'ARCHIVE_ENABLED';
 const ARCHIVE_AFTER_DAYS_KEY = 'ARCHIVE_AFTER_DAYS';
@@ -1279,6 +1279,47 @@ function deriveMtdArchiveRows_(rawRows, monthKey, monthLabel, planAreas) {
   return rows;
 }
 
+/**
+ * The month's Monthly Progress rows, shaped for sli_monthly.
+ *
+ * One row per area (and the month's OVER ALL TOTAL) carrying only what the year-to-date
+ * strip shows: the figure the month delivered, and the target it was asked for. The value
+ * is the column the archive already trusts for that plan — SME's MRC NET, the LAST MTD
+ * count everywhere else — and `measure` names which one it came from, so the app can
+ * refuse to read a count as money. That refusal is not theoretical: SME's August rows
+ * predate the MRC columns, so they hold a count and no NET, and without the label the
+ * worksheet's 465,023 would be measured against a 174 that meant something else.
+ *
+ * Derived from the MTD rows this same run just verified, so it is a projection of the
+ * archive rather than a second reading of the sheet, and it can never disagree with
+ * sli_mtd about a closed month.
+ *
+ * `source` says which read wrote the row: 'archive' here, 'worksheet' for the months the
+ * backfill copied out of the shared year tabs (supabase/seed-monthly-progress.sql). A month
+ * is written whole by one side or the other, so the label is what lets a reader tell the
+ * tracker's own measurement from somebody's worksheet cell.
+ */
+function monthlyProgressRows_(mtdRows) {
+  var rows = [];
+  for (var i = 0; i < mtdRows.length; i++) {
+    var row = mtdRows[i];
+    var hasNet = row.net !== null && row.net !== undefined;
+    rows.push({
+      plan: row.plan,
+      month_key: row.month_key,
+      month_label: row.month_label,
+      area: row.area,
+      is_overall_total: row.is_overall_total,
+      measure: hasNet ? 'net' : 'count',
+      value: hasNet ? row.net : row.last_mtd,
+      target: row.target,
+      row_order: row.row_order,
+      source: 'archive'
+    });
+  }
+  return rows;
+}
+
 function sumCompleted_(rows) {
   var sum = 0;
   for (var i = 0; i < rows.length; i++) {
@@ -1757,6 +1798,12 @@ function archiveOneMonth_(month, dryRun, purge, trim) {
   // Computed from the rows just read, not read back off the MTD sheet — see
   // deriveMtdArchiveRows_ for why the sheet was the wrong source.
   var mtdRows = deriveMtdArchiveRows_(rawRows, month.key, month.label, planAreas);
+  // The same month, projected to what the year-to-date strip shows. Written best-effort:
+  // it is derived from rows sli_mtd already carries, so a failure here costs a projection
+  // and never the month itself — and it must not be able to block the purge of a month
+  // the gate has already verified.
+  var monthlyRows = monthlyProgressRows_(mtdRows);
+  var monthlyNote = '';
 
   if (!rawRows.length) {
     return { note: month.label + ': walang RAW DATA rows — nilaktawan.', verified: false };
@@ -1799,6 +1846,7 @@ function archiveOneMonth_(month, dryRun, purge, trim) {
     return {
       note: month.label + ' (DRY RUN): ' + rawRows.length + ' RAW rows (sum ' + localRawSum +
         '), ' + mtdRows.length + ' MTD rows (sum ' + localMtdSum + '). ' + shrink +
+        ' Monthly progress: ' + monthlyRows.length + ' rows (hindi isinulat).' +
         ' Walang in-upload at walang binura.',
       verified: false
     };
@@ -1806,6 +1854,18 @@ function archiveOneMonth_(month, dryRun, purge, trim) {
 
   supabaseUpsert_('sli_raw_daily', rawRows, 'plan,report_date,area');
   supabaseUpsert_('sli_mtd', mtdRows, 'plan,month_key,area');
+
+  // The Monthly Progress projection, so a past month is readable from Supabase without the
+  // YTD worksheet. Counted back so a partial write is visible in the run log.
+  try {
+    supabaseUpsert_('sli_monthly', monthlyRows, 'plan,month_key,area');
+    var remoteMonthlyCount = supabaseCount_('sli_monthly',
+      'plan=eq.' + PLAN_ID + '&month_key=eq.' + month.key);
+    monthlyNote = ' Monthly progress: ' + remoteMonthlyCount + '/' + monthlyRows.length +
+      ' rows' + (remoteMonthlyCount === monthlyRows.length ? '.' : ' — HINDI KUMPLETO.');
+  } catch (error) {
+    monthlyNote = ' Monthly progress: HINDI NAISULAT (' + error.message + ').';
+  }
 
   // GATE: nothing is deleted until Supabase demonstrably holds the whole month —
   // row counts AND a checksum, so a partial write can never be mistaken for success.
@@ -1845,7 +1905,7 @@ function archiveOneMonth_(month, dryRun, purge, trim) {
     // the run is shorter and the sheet is left exactly as it was found.
     return {
       note: month.label + ': archived ' + rawRows.length + ' RAW + ' + mtdRows.length +
-        ' MTD rows sa Supabase; walang binura — ' + whyNoShrink + '.',
+        ' MTD rows sa Supabase;' + monthlyNote + ' Walang binura — ' + whyNoShrink + '.',
       verified: true
     };
   }
@@ -1855,8 +1915,8 @@ function archiveOneMonth_(month, dryRun, purge, trim) {
 
   return {
     note: month.label + ': archived ' + rawRows.length + ' RAW + ' + mtdRows.length +
-      ' MTD rows; purged ' + purged.rows + ' NEW REPORT rows (' + purged.labels.length +
-      ' day blocks, ' + purged.labels.join(', ') + ').',
+      ' MTD rows;' + monthlyNote + ' purged ' + purged.rows + ' NEW REPORT rows (' +
+      purged.labels.length + ' day blocks, ' + purged.labels.join(', ') + ').',
     verified: true
   };
 }
@@ -2008,7 +2068,8 @@ function testSupabaseConnection() {
 
     var tables = [
       { name: 'sli_raw_daily', conflict: 'plan,report_date,area' },
-      { name: 'sli_mtd', conflict: 'plan,month_key,area' }
+      { name: 'sli_mtd', conflict: 'plan,month_key,area' },
+      { name: 'sli_monthly', conflict: 'plan,month_key,area' }
     ];
 
     for (var i = 0; i < tables.length; i++) {

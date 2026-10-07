@@ -6,6 +6,116 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 🧭 The Year-to-Date section no longer needs the year tabs
+
+`YTD 2026` and `TARGET 2026` were the last two reads the section could not do without: each is
+one big tab holding a block per plan, and when either fetch failed the whole section vanished
+behind "no year-to-date figures". That stopped being necessary once `sli_monthly` began holding
+every elapsed month, so a failed read of the worksheet now rebuilds the section from the app's
+own record instead of losing it.
+
+- **What it is rebuilt from.** `sli_monthly` supplies the months *and* the province list — its
+  rows carry an area each, in the plan's own order — and the live `MTD` tab supplies the running
+  month's figure and its target, which is the one month the tabs are the only other source for.
+- **What it cannot know, it says.** The annual targets and the months still to come live only in
+  those two tabs, so a rebuilt section reports everything measured against the year as absent
+  (`annualTargetKnown: false`): the Annual Target, Remaining and Required Pace figures read as a
+  dash rather than measured against the months the record happens to hold, and the strip's
+  months still to come lose their targets. The headline — actual against the plan to date, % of
+  plan, pace, projection — needs only the months that have happened, and is unchanged.
+- **The running month's target can differ**, because the two sheets are maintained separately and
+  disagree about a month that is still being worked: FIBERX's Isabela reads 229 in the `MTD` tab
+  and 224 in `TARGET 2026` today. The record's own answer is used, so the strip agrees with the
+  Month-to-Date card beside it rather than with a tab that could not be read anyway.
+- **The empty state now says what actually happened** — the two tabs could not be read and the
+  record holds no 2026 month for the plan — instead of the stale claim that the tabs cover BIDA
+  and FIBERX only.
+
+Verified by rendering both modes from live data: every finished province-month identical figure
+for figure and target for target, the same 13-province list, the same strip cell for cell, and
+the plan-to-date differing only by that one live-month target.
+
+### 🗂️ Every elapsed month now reads from `sli_monthly`
+
+`sli_monthly` was only ever as complete as the archive, and the archive only began in August
+2026 — so January to July, and SME's August, had no row at all and the strip fell back to the
+shared `YTD 2026` / `TARGET 2026` worksheet for them. The table is now the app's **priority
+source for every elapsed month**: the strip and the provincial grid read it wherever it holds
+a month, the live month still comes from the sheet, and the year tabs are left holding only
+the months still to come, the annual targets and the province list.
+
+- **The missing months were backfilled** out of those two tabs —
+  `supabase/seed-monthly-progress.sql`, one row per area per closed month, for all three plans:
+  FIBERX and BIDA `JAN–JUL`, SME `JAN–AUG`. SME's August is in the file because the archive's own
+  rows for it predate the MRC columns and hold ticket counts where the plan is measured in pesos.
+- **A month is seeded only when the plan cannot already read it.** The guard is per month, not
+  per row: a month the archive owns is left alone whole, so nothing here walks over a month the
+  tracker measured itself, and re-running the file once the archive has picked a month up changes
+  nothing.
+- **No figure moved.** The dashboard's own numbers were compared before and after, province by
+  province and month by month; only the read behind each month changed.
+- **Each row says which read wrote it** (`source`: `archive` from the archive job, `worksheet`
+  from this backfill), and the Developer console badges a backfilled month as such rather than
+  counting it as the tracker's own measurement.
+
+### 🔍 Which read each Monthly Progress month came from
+
+The strip answers "how did the year go" one cell at a time, and a cell has two figures that can
+come from two different places — the month's delivered total and the target under it. Nothing on
+the dashboard says which, and now that `sli_monthly` supplies a closed month, "the worksheet has
+this month" and "the archive has this month" look identical.
+
+The Developer console shows it per month, next to the worksheet dependency it mirrors: the
+strip's own figures, and for each the read behind it — `sli_monthly`, the record (the live `MTD`
+tab's month, or `sli_mtd` for a closed one), or the year tabs — with a second badge when the
+target comes from somewhere else. The counts read straight off the computed year
+(`summarizeMonthlyProgressSources`), so the panel cannot disagree with the strip it describes.
+
+### 📅 Monthly Progress now comes from Supabase, not the worksheet
+
+The Executive Overview's Monthly Progress strip drew every month from the shared `YTD 2026`
+worksheet, and the archive could only correct the months it happened to state in the plan's own
+units. When September was closed into Supabase the sheet gave up the month, so the strip had
+nothing left to read.
+
+A closed month is now its own record. The archive job writes `sli_monthly` — one row per area
+per closed month, the month's figure and the target it was asked for — in the same run that
+writes `sli_raw_daily` and `sli_mtd`, derived from the rows that run just verified. The
+Year-to-Date section reads a past month from there, figure and target together.
+
+- **The current month still comes from the live sheet.** `sli_monthly` only ever holds closed
+  months, so October reads exactly as it always did, and the worksheet keeps the months still to
+  come, the annual totals and the province list.
+- **A row carries its own units** (`measure`: `net` for SME's collections, `count` otherwise).
+  A row that cannot be stated in the plan's units is dropped whole, so SME's `2026-08` —
+  archived before the MRC columns existed — stays the worksheet's month instead of putting a
+  174 beside its 465,023.
+- **The target side is archived with the figure**, so the strip no longer needs `TARGET 2026`
+  for a month the archive holds. The Developer console names those months.
+- **Already-archived months were backfilled** from `sli_mtd`, so August and September 2026 read
+  from Supabase immediately: FIBERX 2,543 / 2,790, BIDA 523 / 381, SME ₱324,195.54 for
+  September.
+
+### 🗄️ A month the archive holds is never remembered as empty
+
+A closed month's rows are cached forever, which is only safe if what was cached is an
+answer. `{ rows: [] }` is not: a select denied by RLS answers `[]` with HTTP 200 rather
+than an error, so an empty body can be a permission or outage artefact rather than "this
+month has no rows". Once such a read was remembered, the month read 0 for the life of that
+app version — and by then the sheet had been purged, so nothing else could supply it.
+
+September 2026 was reading exactly that in the Executive Overview's Monthly Progress strip
+for FIBERX, BIDA and SME. The month is in Supabase and reads 2,790 / 381 / 324,195.54
+there; a browser holding a remembered empty read had no way back to it.
+
+- **An empty payload is no longer cached** — a month that comes back with no rows is
+  reported in the Developer console (`mtdError` / `rawError`) and asked for again on the
+  next load.
+- **A remembered empty is retired on sight** — the stale entry is dropped from both stores
+  rather than trusted, so a browser already in that state repairs itself.
+- **The month list follows the same rule** — an empty archive index is not remembered
+  either, because remembering it would hide every archived month at once.
+
 ## [1.27.0] — 2026-10-06
 
 ### 📏 A chart's measure travels with its series
