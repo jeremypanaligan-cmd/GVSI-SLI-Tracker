@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.29.0] — 2026-10-07
+
 ### 🎯 The year's targets and the province list now come from Supabase too
 
 `YTD 2026` and `TARGET 2026` were still fetched on every visit for the two things nothing else
