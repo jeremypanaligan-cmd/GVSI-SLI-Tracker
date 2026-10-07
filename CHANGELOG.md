@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.28.0] — 2026-10-07
+
 ### 🧭 The Year-to-Date section no longer needs the year tabs
 
 `YTD 2026` and `TARGET 2026` were the last two reads the section could not do without: each is
