@@ -6,6 +6,7 @@ import {
   recordArchiveIndex,
   recordArchiveMonth,
   recordMerge,
+  recordYearPlan,
   payloadBytes,
 } from './dataSourceDiagnostics'
 
@@ -59,8 +60,15 @@ const RAW_FIELDS = ['bf', 'inc', 'total_jo', 'comp_from_total', 'comp_from_rjo',
 const MONTHLY_FIELDS = ['month_key', 'month_label', 'area', 'is_overall_total', 'measure',
   'value', 'target', 'row_order', 'source']
 
+// The year's target plan, one row per plan x month x area: the target the month was asked for
+// and the plan's own province order, copied out of the shared `TARGET 2026` worksheet
+// (supabase/seed-year-targets.sql). This is what the year-to-date section measures against —
+// the annual targets, the months still to come, and the province list all come from here.
+const TARGET_FIELDS = ['month_key', 'month_label', 'area', 'target', 'row_order', 'source']
+
 const indexKey = (planId) => `${CACHE_PREFIX}idx_${planId}_${CACHE_VERSION}`
 const monthlyKey = (planId) => `${CACHE_PREFIX}mon_${planId}_${CACHE_VERSION}`
+const targetKey = (planId) => `${CACHE_PREFIX}tgt_${planId}_${CACHE_VERSION}`
 const mtdKey = (planId, monthKey) => `${CACHE_PREFIX}mtd_${planId}_${monthKey}_${CACHE_VERSION}`
 const rawKey = (planId, monthKey) => `${CACHE_PREFIX}raw_${planId}_${monthKey}_${CACHE_VERSION}`
 
@@ -288,10 +296,94 @@ export async function fetchMonthlyProgress(planId, { force = false } = {}) {
     if (rows.length) await writeJson(key, { at: Date.now(), rows })
     return rows
   } catch (error) {
-    // The YTD section falls back to the worksheet for every month it cannot read, so this
-    // is a degraded read, never a broken dashboard.
+    // The YTD section reads every elapsed month from here, so this is a degraded read — the
+    // months it cannot supply fall to the year's plan for their target and read 0 for their
+    // figure — never a broken dashboard.
     console.warn('[Monthly] progress unavailable:', error.message)
     return cached?.rows || []
+  }
+}
+
+/**
+ * The year's target plan for one plan: `sli_targets`, one row per month x area.
+ *
+ * Read as one payload for the same reason the Monthly Progress table is — it is small (156
+ * rows for a plan) and it is per plan — and cached the same way, with an empty read never
+ * remembered (`hasRows`): a plan whose plan table came back empty is a plan with no annual
+ * targets, and remembering that would keep the section in its degraded state for the life of
+ * the app version.
+ *
+ * Never throws. The year-to-date section falls back to the record alone when this fails, which
+ * is `buildYearTables`' own case for `annualTargetsKnown: false`.
+ *
+ * `force` is the manual **Sync Data** path: it skips the TTL and marks the read as forced,
+ * which the Developer console counts — so pressing the button is visible even when the rows
+ * come back identical to the cached copy it replaced.
+ *
+ * @returns {Promise<object[]>} the plan's rows, oldest month first, in the plan's own order
+ */
+export async function fetchYearTargets(planId, { force = false } = {}) {
+  if (!SUPABASE_ENABLED) {
+    recordYearPlan(planId, { ...yearPlanSummary([], { error: 'Supabase is not configured.' }) })
+    return []
+  }
+
+  const key = targetKey(planId)
+  const cached = await readJson(key)
+  if (!force && hasRows(cached) && Date.now() - (cached.at || 0) < INDEX_TTL) {
+    recordYearPlan(planId, yearPlanSummary(cached.rows, { fromCache: true, fetchedAt: cached.at || null }))
+    return cached.rows
+  }
+
+  try {
+    const rows = await supabaseGet(
+      `sli_targets?plan=eq.${planId}&select=${selectList(TARGET_FIELDS)}` +
+      '&order=month_key.asc,row_order.asc'
+    )
+    if (rows.length) await writeJson(key, { at: Date.now(), rows })
+    recordYearPlan(planId, yearPlanSummary(rows, { fetchedAt: Date.now(), forced: force }))
+    return rows
+  } catch (error) {
+    console.warn('[Targets] year plan unavailable:', error.message)
+    recordYearPlan(planId, yearPlanSummary(cached?.rows, {
+      fromCache: Boolean(cached),
+      fetchedAt: cached?.at || null,
+      error: error.message,
+      forced: force,
+    }))
+    return cached?.rows || []
+  }
+}
+
+/**
+ * What one plan's plan table holds, for the Developer console: how many rows, over how many
+ * provinces and months, what it adds up to for the year, and which read put the rows there.
+ * The panel states the read failing, so an empty summary is not mistaken for "no targets".
+ */
+function yearPlanSummary(rows, {
+  fromCache = false, fetchedAt = null, error = null, forced = false,
+} = {}) {
+  const provinces = new Set()
+  const months = new Set()
+  const sources = new Set()
+  let annualTarget = 0
+  for (const row of rows || []) {
+    provinces.add(String(row?.area || '').trim())
+    if (row?.month_key) months.add(String(row.month_key))
+    if (row?.source) sources.add(String(row.source))
+    const target = Number(row?.target)
+    if (Number.isFinite(target)) annualTarget += target
+  }
+  return {
+    fromCache,
+    fetchedAt,
+    error,
+    forced: Boolean(forced),
+    rows: (rows || []).length,
+    provinces: provinces.size,
+    months: months.size,
+    annualTarget,
+    sources: [...sources].sort(),
   }
 }
 

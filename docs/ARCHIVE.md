@@ -222,10 +222,15 @@ or the VAT-exclusive `NET`, and the two differ by exactly 12%: on the live MTD,
 (290,900 × 1.12 = 325,808). Reconstructing from the wrong one would write a figure 12% off
 into the record, so the rows were left as they are.
 
-Nothing is missing from the dashboard because of it: the `MONTHLY PROGRESS` strip and the
-`YEAR-TO-DATE` section read `YTD 2026` for every closed month, and the archive only supplies
-the month the worksheet has not been given yet. A future SME month archived without MRC is a
-different case — by then `MTD` carries `GROSS`/`NET`, so the derivation picks them up itself.
+Nothing is missing from the dashboard because of it: the month was copied into `sli_monthly`
+once, out of the same `YTD 2026` column (`supabase/seed-monthly-progress.sql`), and the
+`MONTHLY PROGRESS` strip and the `YEAR-TO-DATE` section read it from there like any other
+closed month — `measure` says `count` while the plan is measured in pesos, so the row is the
+one thing that says "this month cannot be read for this plan" rather than being read in the
+wrong units. (Update, 2026-10-07: the app no longer reads `YTD 2026` at all — the worksheet
+left the data path when the year's targets moved into `sli_targets`. See
+[DATASOURCE.md](./DATASOURCE.md).) A future SME month archived without MRC is a different
+case — by then `MTD` carries `GROSS`/`NET`, so the derivation picks them up itself.
 
 ## Setup (once per plan spreadsheet)
 

@@ -1,10 +1,15 @@
 /**
  * Where the dashboard's data actually came from.
  *
- * Three readers feed this: the Google Sheet export, the Supabase archive, and the
- * per-plan cache that sits in front of the sheet. Every read writes one line here and
- * the Developer console renders it, so "is this number from the sheet or from
- * Postgres?" stops being a question you answer with DevTools.
+ * Four readers feed this: the Google Sheet export, the Supabase archive, the year's target
+ * plan (`sli_targets`), and the per-plan cache that sits in front of the sheet. Every read
+ * writes one line here and the Developer console renders it, so "is this number from the
+ * sheet or from Postgres?" stops being a question you answer with DevTools.
+ *
+ * A manual sync writes one line too: when it ran, and how many of the target reads it
+ * forced. Both the archive month list and the year's target plan are cached for five minutes,
+ * so "did the button actually reach the database?" is a question with an answer — the counter
+ * moves, and the read it produced is marked forced.
  *
  * Nothing in the data path depends on this module — every entry point is a plain
  * function call whose result is discarded. A bug here can make the panel wrong, but it
@@ -14,21 +19,15 @@
  * which is exactly the question being asked.
  */
 
-/** planId → { sheet, archive, merge, dependency, clashes, monthlyProgress, at } */
+/** planId → { sheet, archive, merge, yearPlan, monthlyProgress, manual, at } */
 const planState = new Map()
-
-/**
- * The year tabs (`YTD 2026` / `TARGET 2026`) are shared by every plan, so they get their
- * own slot rather than one per plan — reading them once is the point of the 24h cache.
- */
-let yearState = null
 
 function entry(planId) {
   let value = planState.get(planId)
   if (!value) {
     value = {
-      sheet: null, archive: null, merge: null, dependency: null, clashes: null,
-      monthlyProgress: null, at: null,
+      sheet: null, archive: null, merge: null, yearPlan: null,
+      monthlyProgress: null, manual: null, at: null,
     }
     planState.set(planId, value)
   }
@@ -84,33 +83,40 @@ export function recordMerge(planId, patch) {
 }
 
 /**
- * Who supplied the year-to-date actuals — the tracker's own record or the `YTD 2026`
- * worksheet — for one plan. Computed by `summarizeWorksheetDependency`, which is pure;
- * this only stores the snapshot for the console to render.
+ * The year's target plan (`sli_targets`) for one plan: how many rows came back, from where,
+ * and whether the read failed. A plan with no rows has no annual targets and no province
+ * list, which is the degraded state the Year-to-Date section says so about.
+ *
+ * A `patch.forced` read — one a manual sync asked for, past the five-minute TTL — is counted
+ * here as well, so the panel can show the button working even when the rows come back
+ * identical to the cached copy it replaced.
  */
-export function recordYearDependency(planId, report) {
+export function recordYearPlan(planId, patch) {
   const current = entry(planId)
-  current.dependency = report || null
+  current.yearPlan = { ...(current.yearPlan || {}), ...patch }
+  if (patch.forced) {
+    const manual = current.manual || { at: null, targetReadsForced: 0 }
+    manual.targetReadsForced += 1
+    current.manual = manual
+  }
   current.at = Date.now()
 }
 
 /**
- * Where the record and the `YTD 2026` worksheet disagree about the same province-month.
- * Computed by `summarizeSourceClashes`, which is pure; this only stores the snapshot.
- *
- * Worth surfacing because the worksheet wins wherever it has a figure, so a disagreement is
- * otherwise invisible — the dashboard shows one figure and the other is silently not used.
+ * A manual **Sync Data**: when it ran, in this tab. The count of the target reads it forced is
+ * kept beside it by `recordYearPlan`, because it is the read that counts, not the press.
  */
-export function recordSourceClashes(planId, report) {
+export function recordManualSync(planId) {
   const current = entry(planId)
-  current.clashes = report || null
+  const manual = current.manual || { at: null, targetReadsForced: 0 }
+  manual.at = Date.now()
+  current.manual = manual
   current.at = Date.now()
 }
 
-/** The shared year tabs: whether the YTD/target tables came from the sheet or the cache. */
 /**
  * Where each month of the Monthly Progress strip came from — the `sli_monthly` table, the
- * record, or the year tabs. Computed by `summarizeMonthlyProgressSources`, which is pure; this
+ * record, or nothing at all. Computed by `summarizeMonthlyProgressSources`, which is pure; this
  * only stores the snapshot for the console to render.
  */
 export function recordMonthlyProgress(planId, report) {
@@ -119,13 +125,8 @@ export function recordMonthlyProgress(planId, report) {
   current.at = Date.now()
 }
 
-export function recordYearTables(patch) {
-  yearState = { ...(yearState || {}), ...patch, at: Date.now() }
-}
-
 export function clearDiagnostics() {
   planState.clear()
-  yearState = null
 }
 
 /**
@@ -146,37 +147,8 @@ export function getDiagnostics() {
           }
         : null,
       merge: value.merge ? { ...value.merge } : null,
-      dependency: value.dependency
-        ? {
-            ...value.dependency,
-            areas: (value.dependency.areas || []).map((area) => ({
-              ...area,
-              worksheetMonths: [...area.worksheetMonths],
-              recordMonths: [...area.recordMonths],
-            })),
-            monthDetail: (value.dependency.monthDetail || []).map((month) => ({
-              ...month,
-              worksheetAreas: [...month.worksheetAreas],
-              recordAreas: [...month.recordAreas],
-            })),
-            totals: value.dependency.totals
-              ? {
-                  ...value.dependency.totals,
-                  worksheetMonths: [...value.dependency.totals.worksheetMonths],
-                  recordMonths: [...value.dependency.totals.recordMonths],
-                  fullyWorksheetMonths: [...value.dependency.totals.fullyWorksheetMonths],
-                  areasWithNoRecord: [...value.dependency.totals.areasWithNoRecord],
-                  permanentWorksheetMonths: [...value.dependency.totals.permanentWorksheetMonths],
-                }
-              : null,
-          }
-        : null,
-      clashes: value.clashes
-        ? {
-            ...value.clashes,
-            clashes: (value.clashes.clashes || []).map((clash) => ({ ...clash })),
-          }
-        : null,
+      yearPlan: value.yearPlan ? { ...value.yearPlan } : null,
+      manual: value.manual ? { ...value.manual } : null,
       monthlyProgress: value.monthlyProgress
         ? {
             ...value.monthlyProgress,
@@ -187,5 +159,5 @@ export function getDiagnostics() {
       at: value.at,
     }
   }
-  return { plans, year: yearState ? { ...yearState } : null }
+  return { plans }
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { fetchAllData, getCachedData, prefetchAllPlans, fetchYearTables } from './utils/dataFetcher'
-import { fetchArchivedMonths, fetchMonthlyProgress } from './utils/archiveFetcher'
-import { recordYearDependency, recordSourceClashes, recordMonthlyProgress } from './utils/dataSourceDiagnostics'
+import { fetchAllData, getCachedData, prefetchAllPlans } from './utils/dataFetcher'
+import { fetchArchivedMonths, fetchMonthlyProgress, fetchYearTargets } from './utils/archiveFetcher'
+import { recordManualSync, recordMonthlyProgress } from './utils/dataSourceDiagnostics'
 import {
   parseMTDData, extractExecutiveMetrics,
   parseRawDailyData, parseAgingReport, getTodayStr, findClosestDate,
@@ -18,7 +18,7 @@ import SyncIcon from './components/SyncIcon'
 import ThemeToggle from './components/ThemeToggle'
 import PlanSelector from './components/PlanSelector'
 import { PLANS, PLAN_ORDER, DEFAULT_PLAN, YTD_YEAR } from './config/plans'
-import { parseYearTable, computeYtd, buildOverrides, buildMonthlyOverrides, buildYearTablesFromRecord, hasPlanBlocks, monthLabelParts, monthProgress, summarizeWorksheetDependency, summarizeSourceClashes, summarizeMonthlyProgressSources } from './utils/yearTables'
+import { computeYtd, buildOverrides, buildMonthlyOverrides, buildYearTables, monthLabelParts, monthProgress, summarizeMonthlyProgressSources } from './utils/yearTables'
 import YtdTable from './components/YtdTable'
 import PWAInstallBanner from './components/PWAInstallBanner'
 
@@ -92,8 +92,10 @@ export default function App() {
   const [rawDaily, setRawDaily] = useState(null)
   const [agingData, setAgingData] = useState(null)
   const [trendData, setTrendData] = useState(null)
-  // The shared year tabs (`YTD 2026` / `TARGET 2026`) — raw CSV, shared by every plan
-  const [yearTables, setYearTables] = useState(null)
+  // The year's target plan (`sli_targets`) — the annual targets, the months still to come and
+  // the province list, all of them per plan. Tagged with the plan it was read for, for the same
+  // reason the Monthly Progress record is.
+  const [yearTargets, setYearTargets] = useState(null)
   // The Monthly Progress record (`sli_monthly`): one row per closed month x area, figure and
   // target together. Tagged with the plan it was read for, so a plan switch never renders one
   // plan's past months against another plan's figures.
@@ -132,19 +134,21 @@ export default function App() {
     setError(null)
 
     try {
-      // A manual sync re-checks which months are archived, so a month archived since
-      // the last load appears without waiting for the month-index TTL to lapse.
+      // A manual sync re-checks which months are archived and re-reads the year's
+      // target plan: a month archived since the last load, or a target corrected in
+      // `sli_targets` since then, appears without waiting for either TTL to lapse. Both
+      // are forced in one round trip, before the load, so the effect below finds a cache
+      // the sync just refreshed rather than racing it. The press itself is recorded for the
+      // Developer console, which counts the target reads it forced.
       if (showSyncing) {
-        await fetchArchivedMonths(activePlan, { force: true }).catch(() => {})
+        recordManualSync(activePlan)
+        await Promise.all([
+          fetchArchivedMonths(activePlan, { force: true }).catch(() => {}),
+          fetchYearTargets(activePlan, { force: true }).catch(() => {}),
+        ])
       }
 
-      // The year tabs ride along with the live load — they are two small payloads on a
-      // 24h cache, and a failure there must not fail the load.
-      const [result, year] = await Promise.all([
-        fetchAllData(activePlan, selectedMonthYear),
-        fetchYearTables({ force: showSyncing }),
-      ])
-      setYearTables(year)
+      const result = await fetchAllData(activePlan, selectedMonthYear)
 
       const parsed = parseMTDData(result.mtd, selectedMonthYear)
       setMtdData(parsed)
@@ -180,7 +184,6 @@ export default function App() {
       }
     } catch (err) {
       setError(err.message)
-      setYearTables(await fetchYearTables())
       const cached = await getCachedData(activePlan, selectedMonthYear)
       if (cached.mtd) {
         setMtdData(parseMTDData(cached.mtd, selectedMonthYear))
@@ -389,16 +392,21 @@ export default function App() {
   const latestDataDate = findLatestDataDate(rawDaily)
   const executiveMetrics = extractExecutiveMetrics(mtdData, dailyBlock)
 
-  // ---- Year-to-date, from the shared `YTD 2026` / `TARGET 2026` tabs ----
+  // ---- Year-to-date, from the year's target plan and the app's own record ----
 
-  // Parsed once per payload rather than once per plan: each tab carries a block for every
-  // plan, so the two fetches serve all three plans.
-  const yearData = useMemo(() => {
-    if (!yearTables?.actual || !yearTables?.target) return null
-    const actual = parseYearTable(yearTables.actual)
-    const target = parseYearTable(yearTables.target)
-    return actual && target ? { actual, target } : null
-  }, [yearTables])
+  // The year's target plan for the plan on screen, re-read on the same trigger as the Monthly
+  // Progress record for the same reason: a plan switch must never render one plan's year
+  // against another plan's targets, and a read that fails must leave the section buildable
+  // from the record rather than empty.
+  useEffect(() => {
+    let cancelled = false
+    fetchYearTargets(activePlan)
+      .then((rows) => { if (!cancelled) setYearTargets({ plan: activePlan, rows }) })
+      .catch(() => { if (!cancelled) setYearTargets({ plan: activePlan, rows: [] }) })
+    return () => { cancelled = true }
+    // Re-read when a load lands, so a plan row added or corrected in the meantime arrives on
+    // the next refresh rather than on the next reload.
+  }, [activePlan, lastSync])
 
   // The Monthly Progress record for the plan on screen. Read separately from the sheet load:
   // it is one small query, it is per plan, and a failure must leave the year-to-date section
@@ -420,10 +428,10 @@ export default function App() {
     [monthlyRecord, activePlan, currentPlan],
   )
 
-  // The app's own record supersedes the worksheet for any month it holds — the archive first,
-  // then the live tab, the same rule the RAW/MTD merge already follows. A collection-based plan
-  // has to contribute its NET, because a ticket count dropped into a series measured in pesos
-  // is worse than no figure at all — and that guard is what lets the record keep precedence.
+  // The app's own record is the only source of a figure — the archive first, then the live tab,
+  // the same rule the RAW/MTD merge already follows. A collection-based plan has to contribute
+  // its NET, because a ticket count dropped into a series measured in pesos is worse than no
+  // figure at all — and that guard is what makes the record trustworthy.
   //
   // A closed month now arrives twice over: as a month of MTD rows (`sli_mtd`) and as the
   // Monthly Progress projection (`sli_monthly`). Where the projection holds a month it is the
@@ -447,32 +455,26 @@ export default function App() {
     [latestDataDate, selectedMonthYear],
   )
 
-  // The worksheet can fail the plan in two ways — both reads failing outright (an offline
-  // browser with no year cache, a 404 on one of the tabs), or one arriving without a block for
-  // the plan — and the section used to disappear in both cases. It no longer has to: the
-  // Monthly Progress table holds every elapsed month, and the live `MTD` tab supplies the
-  // running month's target and any province the table has not named. So the year tables are
-  // rebuilt from the record whenever the tabs cannot serve this plan, and the annual-target
-  // figures go absent rather than partial (`annualTargetsKnown`).
-  const ytdTables = useMemo(() => {
-    if (yearData && hasPlanBlocks(yearData.actual, yearData.target, activePlan)) {
-      return { actual: yearData.actual, target: yearData.target, from: 'tabs' }
-    }
-    const rebuilt = buildYearTablesFromRecord({
-      planId: activePlan,
-      rows: monthlyRecord?.plan === activePlan ? monthlyRecord.rows : [],
-      sections: mtdData?.sections,
-      year: YTD_YEAR,
-      collectionBased: Boolean(currentPlan.collectionBased),
-    })
-    return rebuilt ? { ...rebuilt, from: 'record' } : null
-  }, [yearData, activePlan, monthlyRecord, mtdData, currentPlan])
+  // The two blocks the section is computed from: the year's target plan (`sli_targets` — the
+  // annual targets, the months still to come and the province list) and the app's own record
+  // (the figures, from `sli_monthly` and the live `MTD` tab). Neither is required to be there:
+  // without the plan the section is built from the record alone and everything measured against
+  // the year goes absent rather than partial (`annualTargetsKnown`), and with neither it is
+  // absent, which is better than empty.
+  const ytdTables = useMemo(() => buildYearTables({
+    planId: activePlan,
+    rows: monthlyRecord?.plan === activePlan ? monthlyRecord.rows : [],
+    targetRows: yearTargets?.plan === activePlan ? yearTargets.rows : [],
+    sections: mtdData?.sections,
+    year: YTD_YEAR,
+    collectionBased: Boolean(currentPlan.collectionBased),
+  }), [activePlan, monthlyRecord, yearTargets, mtdData, currentPlan])
 
   const ytdMetrics = useMemo(() => {
     if (!ytdTables) return null
     const parts = monthLabelParts(selectedMonthYear)
-    // The tabs hold one year's plan, so against any other year there is nothing to show —
-    // better an absent section than one that mislabels itself.
+    // The plan is one year's, so against any other year there is nothing to show — better an
+    // absent section than one that mislabels itself.
     if (!parts || parts.year !== YTD_YEAR) return null
     return computeYtd({
       actual: ytdTables.actual,
@@ -482,56 +484,12 @@ export default function App() {
       overrides: ytdOverrides,
       targetOverrides: monthlyOverrides.targets,
       progress: monthProgressValue,
-      annualTargetsKnown: ytdTables.from === 'tabs',
+      annualTargetsKnown: ytdTables.annualTargetsKnown,
     })
   }, [ytdTables, activePlan, selectedMonthYear, ytdOverrides, monthProgressValue])
 
-  // Who supplied those actuals — the tracker's own record, or the `YTD 2026` worksheet.
-  // Nothing on the dashboard shows this (an actual is an actual either way), so it is
-  // handed to the Developer console instead: `recordYearDependency` is observation only
-  // and nothing here reads it back.
-  const ytdDependency = useMemo(() => {
-    if (!yearData) return null
-    const parts = monthLabelParts(selectedMonthYear)
-    if (!parts || parts.year !== YTD_YEAR) return null
-    return summarizeWorksheetDependency({
-      actual: yearData.actual,
-      target: yearData.target,
-      planId: activePlan,
-      monthIndex: parts.monthIndex,
-      overrides: ytdOverrides,
-      targetOverrides: monthlyOverrides.targets,
-      year: parts.year,
-    })
-  }, [yearData, activePlan, selectedMonthYear, ytdOverrides])
-
-  useEffect(() => {
-    recordYearDependency(activePlan, ytdDependency)
-  }, [activePlan, ytdDependency])
-
-  // Where the record and the worksheet disagree about the same province-month. The record wins
-  // wherever it holds a month, so the worksheet's figure never reaches the screen — which is
-  // why it is reported here instead of being left to be noticed by eye. Observation only.
-  const ytdClashes = useMemo(() => {
-    if (!yearData) return null
-    const parts = monthLabelParts(selectedMonthYear)
-    if (!parts || parts.year !== YTD_YEAR) return null
-    return summarizeSourceClashes({
-      actual: yearData.actual,
-      planId: activePlan,
-      monthIndex: parts.monthIndex,
-      overrides: ytdOverrides,
-      sections: mtdData?.sections,
-      collectionBased: Boolean(currentPlan.collectionBased),
-    })
-  }, [yearData, activePlan, selectedMonthYear, ytdOverrides, mtdData, currentPlan])
-
-  useEffect(() => {
-    recordSourceClashes(activePlan, ytdClashes)
-  }, [activePlan, ytdClashes])
-
   // Which side supplied each month of the Monthly Progress strip — `sli_monthly`, the record,
-  // or the year tabs. Observation only; the Developer console renders it.
+  // or nothing at all. Observation only; the Developer console renders it.
   const liveMonthIndex = useMemo(
     () => monthLabelParts(getCurrentMonthYear())?.monthIndex ?? null,
     [],

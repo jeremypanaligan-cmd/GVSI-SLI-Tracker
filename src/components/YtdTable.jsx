@@ -151,7 +151,7 @@ function MobileRow({ row, totalAccent = DEFAULT_TOTAL_ACCENT, overall = false })
           </span>
         </div>
         <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-          {row.annualTargetKnown === false ? 'Annual targets unavailable — the year tabs could not be read' : (
+          {row.annualTargetKnown === false ? "Annual targets unavailable — the year's plan could not be read" : (
             <>
               Annual target {formatNumber(row.annualTarget)}
               {row.requiredPerMonth !== null && row.requiredPerMonth > 0
@@ -211,9 +211,9 @@ export default function YtdTable({ ytd, accent, planName }) {
     return (
       <div className="m-4 sm:m-6 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 p-6 text-center">
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Year-to-date figures are not published for {planName || 'this plan'} yet — no 2026 block for it came
-          back from the <span className="font-semibold"> YTD 2026</span> and <span className="font-semibold">TARGET 2026</span> tabs,
-          and the tracker's own record holds no month of 2026 for this plan yet.
+          Year-to-date figures are not published for {planName || 'this plan'} yet — the year's target plan
+          (<span className="font-semibold">sli_targets</span>) holds no 2026 row for it, and the tracker's own record
+          holds no month of 2026 for this plan yet.
         </p>
       </div>
     )
@@ -221,7 +221,7 @@ export default function YtdTable({ ytd, accent, planName }) {
 
   const { overall } = ytd
   const recordNote = ytd.closedRecordMonths?.length
-    ? `${ytd.closedRecordMonths.map((index) => `${monthName(index)} ${ytd.year ?? ''}`.trim()).join(', ')} ${ytd.closedRecordMonths.length > 1 ? 'come' : 'comes'} from the tracker's own record, not the worksheet`
+    ? `${ytd.closedRecordMonths.map((index) => `${monthName(index)} ${ytd.year ?? ''}`.trim()).join(', ')} ${ytd.closedRecordMonths.length > 1 ? 'come' : 'comes'} from the tracker's own record`
     : null
 
   return (
@@ -243,8 +243,8 @@ export default function YtdTable({ ytd, accent, planName }) {
           </span>
         )}
         {overall.annualTargetKnown === false && (
-          <span className="text-[10px] text-amber-700 dark:text-amber-300 italic" title="The two year tabs could not be read, so the annual targets are not known — the annual columns read as a dash rather than a partial figure">
-            annual targets unavailable — the year tabs could not be read
+          <span className="text-[10px] text-amber-700 dark:text-amber-300 italic" title="The year's target plan could not be read, so the annual targets are not known — the annual columns read as a dash rather than a partial figure">
+            annual targets unavailable — the year's plan could not be read
           </span>
         )}
 

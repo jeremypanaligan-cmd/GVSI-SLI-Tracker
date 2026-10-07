@@ -6,6 +6,67 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 🎯 The year's targets and the province list now come from Supabase too
+
+`YTD 2026` and `TARGET 2026` were still fetched on every visit for the two things nothing else
+held: the year's **monthly and annual targets**, and the **province list** the grid is written
+in — thirteen provinces, three of which (`Cagayan`, `Kalinga`, `Apayao`) no `RAW DATA` block
+carries. Both are now copied **once** into `sli_targets` and read from Supabase, which leaves
+the app with no reason to read either tab at all: the Year-to-Date section is built from the
+year's own target plan and the app's own record, and the shared worksheet is a place a human
+edits the plan rather than a source the dashboard reads.
+
+- **`sli_targets`** — one row per plan × month × area: the target that month was asked for, and
+  the plan's own `row_order`. It carries the *monthly* plan rather than one annual figure per
+  province because the section needs three different things from it — the target under each
+  cell of the strip, the plan to date behind `% of plan`, and the year a province is measured
+  against.
+- **The annual target is stated, not summed.** It is the total of the province's twelve rows —
+  the figure the worksheet's `TOTAL` column prints, and the one `scripts/targets-seed.cjs`
+  refuses to differ from — and it has to be stated, because the effective series is shorter: a
+  month the record holds zeroes every province the record does not list, so FIBERX's `Aurora` is
+  95 in `AUG`, a month the archive covers from a twelve-province list without her, and the
+  overridden series adds up to 334 where the plan's year is 429.
+- **The province list is the plan's own order**, so the grid comes out the way the plan is
+  written instead of in whatever order the first archived month happened to list its areas.
+- **`scripts/targets-seed.cjs`** prints the seed (`supabase/seed-year-targets.sql`, 468 rows)
+  from a `TARGET` export of the shared workbook, and refuses to emit anything it cannot prove:
+  every province's twelve months must add up to the `TOTAL` column the tab prints for that row,
+  and every plan's block must list the same provinces in the same order. Re-running it is how a
+  new year's plan is loaded; re-running it after a correction replaces the plan with the
+  corrected one.
+- **Both tabs are gone from the code path.** `fetchYearTables`, its 24-hour cache and keys,
+  `YTD_URL` / `TARGET_URL`, the `parseYearTable` parser that understood the tabs' block layout,
+  and the two diagnostics that existed only to compare the record against the worksheet
+  (`summarizeWorksheetDependency`, `summarizeSourceClashes`) are all deleted — the section no
+  longer has a second source to disagree with, so the panels that reported on it are gone rather
+  than left showing nothing.
+- **What the console shows instead.** *Data source diagnostics* gained a **Year target plan**
+  block: the rows the read returned, provinces × months, the annual total they add up to, whether
+  they came from Supabase or the cache, which read wrote them (`worksheet` for the copy above),
+  and the same *next conversion* countdown the archive schedule uses. The *Monthly Progress*
+  block now names a month's figure as `sli_monthly`, `record`, or **nothing read** — the last
+  being the case worth chasing, since a month no read held is a zero nobody measured.
+- **A corrected target lands without a reload.** A manual **Sync Data** now re-reads
+  `sli_targets` the way it already re-checks the archive index — `fetchYearTargets(plan,
+  { force: true })`, in the same round trip and before the load. The plan read is cached for
+  five minutes and a plain plan switch may legitimately be served from that cache, so without
+  this a row corrected in the database could sit invisible until the TTL lapsed or the page
+  was reloaded. The Developer console says which happened: the **Year target plan** block
+  labels a read the sync forced, and records the press with the number of target reads it
+  forced, so pressing the button and watching the count move is how you tell it reached the
+  database — even when the rows that come back are the ones already cached.
+- **The section still degrades, and still says so.** Without `sli_targets` — offline with no
+  cache, a fresh project, a failed read — it is built from the record alone and the annual
+  target, remaining, required pace and projected-year figures go absent rather than partial,
+  exactly as before.
+
+Verified against the worksheet path it replaces, on live data: **3,264 checks over three plans
+and three months, 0 failed** — every province-month figure and target, every field of every
+row, all twelve cells of the strip, the annual totals, and the rendered Year-to-Date report and
+provincial table, byte for byte. The degraded path is rendered too, and its banner and dashes
+are asserted rather than assumed.
+
 ## [1.28.0] — 2026-10-07
 
 ### 🧭 The Year-to-Date section no longer needs the year tabs

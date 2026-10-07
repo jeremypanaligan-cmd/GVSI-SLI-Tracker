@@ -6,6 +6,32 @@ section and the Provincial table are live, under `src/components/YtdReport.jsx`,
 record of why it is shaped the way it is; *Decisions taken* at the end lists what was decided
 while building it, including the two items that still need a decision from the sheet's owner.
 
+> **Update, 2026-10-07 — the two tabs are retired, and the app no longer reads either one.**
+> The scoping below is kept as the record of what the worksheet held and why the app read it
+> the way it did; none of it describes a live read any more. The last two things only the
+> worksheet still held — the **annual targets** (and the months still to come) and the
+> **province list** — were copied into `sli_targets`, one row per plan × month × area, by
+> `scripts/targets-seed.cjs` (`supabase/seed-year-targets.sql`), and `src/utils/yearTables.js`
+> now builds the section from that table plus the app's own record:
+>
+> - **figures** — `sli_monthly` for a closed month, the live `MTD` tab for the running one. A
+>   month the record holds is sourced whole, so a province it does not list is zero for that
+>   month;
+> - **monthly targets** — the record's own where it holds the month (archived beside the
+>   figure), `sli_targets`' otherwise;
+> - **annual targets** — summed from `sli_targets`' twelve months for that province, never from
+>   the effective series. The difference is real: FIBERX's `Aurora` is 95 in `AUG`, a month the
+>   archive covers from a twelve-province list without her, so the plan's year is 429 while the
+>   overridden series adds up to 334;
+> - **province list** — `sli_targets`' own `row_order`: thirteen provinces, including Cagayan,
+>   Kalinga and Apayao, which no `RAW DATA` block carries.
+>
+> The section was verified figure-for-figure against this worksheet path before the tabs were
+> dropped: 3,264 checks over three plans and three months, comparing every row field, every
+> month of the strip, the annual totals and the rendered Year-to-Date report and table — no
+> differences. The worksheet itself is untouched and still the place a human edits the plan; it
+> is simply copied in rather than read, which is why the path is retired rather than the sheet.
+>
 > **Update, 2026-09-22 — three of these findings are closed, the scoping is kept as written.**
 > The `YTD 2026` `AUG` column has been corrected in the sheet: Cagayan 131, Kalinga 5, Apayao 0
 > and Aurora 17 are now real values rather than a copy of the target column, so the 1,044 and 354

@@ -4,7 +4,7 @@ import { fetchArchivedMonths } from '../utils/archiveFetcher'
 import { getDiagnostics } from '../utils/dataSourceDiagnostics'
 import { fetchArchiveStatus } from '../utils/archiveStatus'
 import { monthLabelParts, archiveDate } from '../utils/yearTables'
-import { ARCHIVE_AFTER_DAYS } from '../config/plans'
+import { ARCHIVE_AFTER_DAYS, YTD_YEAR } from '../config/plans'
 import { SUPABASE_ENABLED } from '../config/supabase'
 import { PLANS } from '../config/plans'
 import { APP_VERSION } from '../utils/version'
@@ -28,9 +28,14 @@ const SOURCE_LABELS = {
 }
 
 /**
- * The three ways a Monthly Progress month can arrive, and what each looks like in the panel.
+ * Where a Monthly Progress month's two figures can come from, and what each looks like in the
+ * panel.
+ *
  * `sli_monthly` is the archive's own month table — one row per area with the figure and the
- * target together; the year tabs are the shared `YTD 2026` / `TARGET 2026` worksheets.
+ * target together; `record` is the live `MTD` tab, or the archive's `sli_mtd` rows for a closed
+ * month; and `plan` is the year's own target plan (`sli_targets`), which states the target under
+ * a month the record cannot. `uncovered` is not a source at all: no read carried that month, so
+ * the cell is a zero nothing measured.
  */
 const MONTHLY_SOURCE = {
   monthly: {
@@ -41,9 +46,13 @@ const MONTHLY_SOURCE = {
     label: 'record',
     cell: 'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300',
   },
-  worksheet: {
-    label: 'year tabs',
-    cell: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300',
+  plan: {
+    label: 'year plan',
+    cell: 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300',
+  },
+  uncovered: {
+    label: 'nothing read',
+    cell: 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300',
   },
 }
 
@@ -86,33 +95,6 @@ function loadedBundle() {
 
 const formatDay = (date) =>
   date.toLocaleDateString('en-PH', { day: 'numeric', month: 'short', year: 'numeric' })
-
-/**
- * Where one province-month's actual came from. `worksheet` is the one that matters: the
- * figure is someone else's cell in `YTD 2026`, not the tracker's own measurement.
- */
-const MONTH_SOURCE = {
-  worksheet: {
-    letter: 'W',
-    label: 'YTD 2026 worksheet',
-    cell: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
-  },
-  archive: {
-    letter: 'S',
-    label: 'Supabase archive',
-    cell: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
-  },
-  live: {
-    letter: 'L',
-    label: 'live sheet tab',
-    cell: 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300',
-  },
-  record: {
-    letter: 'R',
-    label: 'the tracker\u2019s record',
-    cell: 'bg-slate-100 text-slate-600 dark:bg-slate-700/40 dark:text-slate-300',
-  },
-}
 
 /**
  * How each trim verdict reads, and how it is coloured. `moved` is the only one that means
@@ -254,22 +236,12 @@ function ArchiveTrim({ status, loading }) {
 }
 
 /**
- * Which provinces and months still need the `YTD 2026` worksheet, and how that shrinks as
- * the archive fills.
- *
- * The split is decided by the app (`summarizeWorksheetDependency`), not here — this only
- * names the record side more precisely, using what the archive merge already reported:
- * a month the archive listed is Supabase, a month the sheet still exports is the live tab.
- */
-/**
- * Which side supplied each month of the Monthly Progress strip.
- *
  * One line per elapsed month of the strip, showing the strip's own two figures and the read
  * behind each: `sli_monthly` (the archive's month table, figure and target together), the
- * record (the live `MTD` tab's month, or the archive's `sli_mtd` rows for a closed one), or
- * the shared year tabs. The figures come straight out of the computed year, so this panel
- * cannot disagree with the strip — and since the archive fills up month by month, so does
- * the row of green.
+ * record (the live `MTD` tab's month, or the archive's `sli_mtd` rows for a closed one), the
+ * year's own target plan (`sli_targets`) for a target the record cannot state, or nothing at
+ * all. The figures come straight out of the computed year, so this panel cannot disagree with
+ * the strip — and since the archive fills up month by month, so does the row of green.
  *
  * A month reading `sli_monthly` says which read put it there. The archive job's own month is
  * the tracker's measurement; a month the backfill copied out of `YTD 2026` / `TARGET 2026`
@@ -295,7 +267,8 @@ export function MonthlyProgressSources({ report }) {
       <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
         {`The strip's own cells, month by month. ${formatCount(totals.monthly)} of ${formatCount(totals.months)} come from sli_monthly`}
         {totals.backfilled ? ` (${formatCount(totals.backfilled)} of them backfilled from the year tabs)` : ''}
-        {`, ${formatCount(totals.record)} from the record, ${formatCount(totals.worksheet)} still from the year tabs.`}
+        {`, ${formatCount(totals.record)} from the record`}
+        {totals.uncovered ? `, ${formatCount(totals.uncovered)} with nothing behind them at all.` : '.'}
       </p>
 
       <ul className="mt-1.5 space-y-0.5 text-[11px]">
@@ -331,282 +304,113 @@ export function MonthlyProgressSources({ report }) {
 
       <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1.5">
         A month is sourced once for its figure and once for the target under it, so a month can
-        show two badges — the archive states both, `TARGET 2026` states the target where no
-        archived row carries it. Nothing is read from the year tabs for a month the archive holds.
-        A month reading `sli_monthly` was written by the archive job where it has no second badge,
-        and copied out of the year tabs by the backfill where it has one.
+        show two badges — the archive states both, the year's own target plan states the target
+        wherever no archived row carries one. `nothing read` is the case worth chasing: no read
+        held that month, so the strip is showing a zero nobody measured. A month reading
+        `sli_monthly` was written by the archive job where it has no second badge, and copied out
+        of the year tabs by the backfill where it has one.
       </p>
     </div>
   )
 }
 
-function WorksheetDependency({ dependency, merge, clashes, now }) {
-  const { totals } = dependency
+/**
+ * The year's target plan (`sli_targets`) for one plan: what the Year-to-Date section measures
+ * against, and where its province list comes from.
+ *
+ * The shared `YTD 2026` / `TARGET 2026` worksheet used to supply both. It does not any more:
+ * this is a copy of the target plan in Supabase, made once by `scripts/targets-seed.cjs`, and
+ * the dashboard reads the copy. So this says what the copy holds — rows, provinces × months and
+ * the annual total it adds up to — where the read came from, and whether the rows are the
+ * archive job's own or a backfill out of the worksheet. The read failing is worth stating
+ * plainly, because that is the state in which the section loses its annual targets.
+ *
+ * The countdown underneath used to hang off the worksheet read; it only ever needed the year
+ * and the archive's own month list, so it stays here.
+ *
+ * `manual` is the manual **Sync Data** tally — when the button was last pressed in this tab,
+ * and how many target reads it forced past the TTL. It is the one thing on this panel that
+ * answers "did my press actually reach the database?": the rows may come back identical to
+ * the cached copy, but the count moves and the read above is marked forced.
+ */
+// Exported so a probe can render the block directly, like `MonthlyProgressSources`.
+export function YearPlan({ yearPlan, merge, manual, now }) {
   const archiveMonths = new Set(
     (merge?.supabaseMonths || []).map((label) => monthLabelParts(label)?.monthIndex).filter((v) => v != null),
   )
-  const sheetMonths = new Set(
-    (merge?.sheetMtdMonths || []).map((label) => monthLabelParts(label)?.monthIndex).filter((v) => v != null),
-  )
-
-  const sourceFor = (area, index) => {
-    if (!area.recordMonths.includes(index)) return 'worksheet'
-    if (archiveMonths.has(index)) return 'archive'
-    if (sheetMonths.has(index)) return 'live'
-    return 'record'
-  }
-
-  const elapsed = dependency.monthDetail
-  const permanent = totals.permanentWorksheetMonths || []
+  const due = []
   const upcoming = []
   for (let index = 0; index < 12; index++) {
-    const date = archiveDate(dependency.year, index)
-    if (date.getTime() > now) upcoming.push({ index, date })
-  }
-
-  // Which closed months are already past their cutoff, and which of those the archive
-  // actually holds. A plan with due months and nothing archived is the plan whose
-  // countdown is not going to move, and that is worth saying out loud rather than
-  // showing a date that will pass silently.
-  const due = []
-  for (let index = 0; index < 12; index++) {
-    if (archiveDate(dependency.year, index).getTime() <= now) due.push(index)
+    const date = archiveDate(YTD_YEAR, index)
+    if (date.getTime() <= now) due.push(index)
+    else upcoming.push({ index, date })
   }
   const dueArchived = due.filter((index) => archiveMonths.has(index)).length
-
-  const recordMonths = elapsed.filter((month) => month.record > 0)
-  const worksheetPct = Math.round((totals.fromWorksheet / Math.max(totals.provinceMonths, 1)) * 100)
-  const yearEndPct = Math.round((permanent.length / 12) * 100)
+  const copied = (yearPlan.sources || []).join(', ')
 
   return (
-    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/20 p-3">
-      <div className="flex items-baseline justify-between gap-3 mb-2">
-        <h5 className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-          Worksheet dependency
-        </h5>
+    <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700/60 px-2.5 py-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+          Year target plan — sli_targets
+        </p>
         <span className="text-[10px] text-slate-400 dark:text-slate-500">
-          {`${dependency.year} \u00b7 through ${elapsed[elapsed.length - 1]?.label}`}
+          {yearPlan.fetchedAt ? formatAge(yearPlan.fetchedAt) : 'not loaded in this tab yet'}
         </span>
       </div>
 
-      <div className="space-y-1.5 text-[11px] text-slate-700 dark:text-slate-200">
-        <p>
-          <span className="font-semibold text-amber-700 dark:text-amber-300">{totals.fromWorksheet}</span>
-          {' of '}
-          {formatCount(totals.provinceMonths)} province-months are the worksheet’s
-          {` \u00b7 ${worksheetPct}%`}
-          {' \u2014 the other '}
-          {formatCount(totals.fromRecord)}
-          {' come from the tracker\u2019s own record.'}
+      {yearPlan.error ? (
+        <p role="alert" className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">
+          {`Read failed (${yearPlan.error}), so the Year-to-Date section is built from the tracker's own record: no annual targets, no months still to come, and no province list beyond the ones the record names.`}
         </p>
-
-        {/* Both sides carry the same month and say different things about it. The record wins
-            wherever it holds a month, so the worksheet's figure never reaches the screen —
-            which is exactly why it is said here. A uniform 12% gap usually means the two are
-            on different VAT bases, because SME's GROSS is NET × 1.12 exactly. */}
-        {clashes && clashes.clashes.length > 0 && (
-          <div role="alert" className="rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-2.5 py-2">
-            <p className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
-              {`Record and worksheet disagree on ${clashes.clashCells} of ${formatCount(clashes.comparedCells)} province-months they both carry.`}
-            </p>
-            <p className="text-[11px] text-amber-700 dark:text-amber-300/90 mt-0.5">
-              {`On those cells the worksheet totals ${formatValue(clashes.clashWorksheetTotal)} against the record\u2019s ${formatValue(clashes.clashRecordTotal)} (${(clashes.clashRelative * 100).toFixed(1)}% apart). The record is what is shown.`}
-            </p>
-            <ul className="mt-1.5 space-y-0.5 text-[11px] text-amber-800 dark:text-amber-200">
-              {clashes.clashes.slice(0, 6).map((clash) => (
-                <li key={`${clash.key}-${clash.monthIndex}`}>
-                  <span className="font-semibold">{clash.name}</span>
-                  {` ${clash.monthName}: worksheet `}
-                  <span className="font-semibold">{formatValue(clash.worksheet)}</span>
-                  {' vs record '}
-                  <span className="font-semibold">{formatValue(clash.record)}</span>
-                  {` — ${(clash.relative * 100).toFixed(1)}% apart`}
-                </li>
-              ))}
-            </ul>
-            {clashes.clashes.length > 6 && (
-              <p className="text-[10px] text-amber-700 dark:text-amber-300/80 mt-1">
-                {`…and ${clashes.clashes.length - 6} more.`}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Neither a disagreement nor agreement: the record covers the month in part, so the
-            month stands as the record has it and the provinces it does not list are zero in it.
-            Worth saying because those cells look like data and are not counted. */}
-        {clashes && clashes.partialMonths.length > 0 && (
-          <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/5 px-2.5 py-2">
-            {clashes.partialMonths.map((month) => (
-              <p key={month.monthIndex} className="text-[11px] text-amber-800 dark:text-amber-200">
-                {`The record defines ${month.monthName} for ${month.covered} of ${month.total} provinces, and `}
-                {`${month.missing.map((entry) => `${entry.name} ${formatValue(entry.worksheet)}`).join(' \u00b7 ')} `}
-                {`${month.missing.length > 1 ? 'are' : 'is'} not counted: `}
-                {`${formatValue(month.withheld)} withheld, since the record\u2019s own figure for the month stands.`}
-              </p>
-            ))}
-          </div>
-        )}
-
-        {clashes && clashes.clashes.length === 0 && clashes.comparedCells > 0 && (
-          <p className="text-emerald-600 dark:text-emerald-400">
-            {`Record and worksheet agree on all ${formatCount(clashes.comparedCells)} province-months they both carry.`}
-          </p>
-        )}
-
-        {/* Not a disagreement: the record holds the month in units this plan cannot use, so it
-            says nothing and the worksheet is the only voice. SME's 2026-08 is exactly this —
-            archived as ticket counts, with no NET to put beside a peso worksheet. Named as the
-            units it lacks, because "no NET" is meaningless on a plan measured in counts. */}
-        {clashes && clashes.unusableCells > 0 && (
-          <p className="text-slate-500 dark:text-slate-400">
-            {`The record holds ${clashes.unusableMonths.map((index) => monthNameOf(index)).join(', ')} but not in this plan\u2019s units (${formatCount(clashes.unusableCells)} province-months, `}
-            {`no ${clashes.collectionBased ? 'NET' : 'LAST MTD'}), so that record is skipped and `}
-            {`${clashes.unusableMonths.length > 1 ? 'those months fall' : 'that month falls'} to the worksheet, with nothing to compare against.`}
-          </p>
-        )}
-
-        {recordMonths.length > 0 && (
-          <p>
-            <span className="text-slate-400 dark:text-slate-500">Record months: </span>
-            {recordMonths.map((month, index) => (
-              <span key={month.index}>
-                {index > 0 ? ' \u00b7 ' : ''}
-                <span className="font-semibold">{month.label}</span>
-                {month.record < totals.areaCount ? ` (${month.record} of ${totals.areaCount} provinces)` : ''}
-                {` \u2014 ${monthSourceName(month, archiveMonths, sheetMonths, merge)}`}
-              </span>
-            ))}
-          </p>
-        )}
-
-        <p>
-          <span className="text-slate-400 dark:text-slate-500">Worksheet only: </span>
-          {totals.areasWithNoRecord.length ? (
-            <>
-              <span className="font-semibold text-amber-700 dark:text-amber-300">{totals.areasWithNoRecord.length}</span>
-              {` of ${totals.areaCount} provinces have never appeared in the record \u2014 `}
-              {dependency.areas
-                .filter((area) => area.noRecordAtAll)
-                .map((area) => area.name)
-                .join(', ')}
-              {'. Their months come from the worksheet and nothing can correct them.'}
-            </>
-          ) : (
-            'every province appears in the record for at least one month.'
-          )}
+      ) : (
+        <p className="text-[11px] text-slate-700 dark:text-slate-200 mt-0.5">
+          {`${formatCount(yearPlan.rows)} rows · ${formatCount(yearPlan.provinces)} provinces × ${formatCount(yearPlan.months)} months · annual target `}
+          <span className="font-semibold">{formatValue(yearPlan.annualTarget)}</span>
+          {yearPlan.fromCache
+            ? ' · cached copy'
+            : yearPlan.forced ? ' · read from Supabase, forced by Sync Data' : ' · read from Supabase'}
+          {copied ? ` · source: ${copied}` : ''}
         </p>
+      )}
 
-        <p>
-          <span className="text-slate-400 dark:text-slate-500">Targets: </span>
-          {`${formatCount(dependency.target.cells)} cells \u2014 ${dependency.target.areaCount} provinces \u00d7 ${dependency.target.months} months. `}
-          {dependency.target.fromRecordMonths?.length
-            ? `${dependency.target.fromRecordMonths.map((index) => monthNameOf(index)).join(', ')} came from the record (sli_monthly) beside their figures; the rest, and the annual totals, still come from TARGET 2026.`
-            : 'All of them come from TARGET 2026 \u2014 no closed month is archived yet.'}
+      {manual && (manual.at || manual.targetReadsForced > 0) && (
+        <p className="text-[11px] text-slate-700 dark:text-slate-200 mt-1">
+          <span className="text-slate-400 dark:text-slate-500">Manual Sync Data: </span>
+          {manual.at ? formatAge(manual.at) : 'not in this tab yet'}
+          {` · ${formatCount(manual.targetReadsForced)} target read${manual.targetReadsForced === 1 ? '' : 's'} forced`}
         </p>
-      </div>
+      )}
 
-      {/* Province \u00d7 month. Elapsed months only, so the grid stays the width of the year so far. */}
-      <div className="mt-3 overflow-x-auto">
-        <div
-          className="grid gap-0.5 min-w-max text-[10px]"
-          style={{ gridTemplateColumns: `minmax(8rem, 14rem) repeat(${elapsed.length}, 1.15rem)` }}
-        >
-          <span className="text-slate-400 dark:text-slate-500" />
-          {elapsed.map((month) => (
-            <span key={month.index} className="text-center text-slate-400 dark:text-slate-500 font-semibold">
-              {month.label.slice(0, 1)}
-            </span>
-          ))}
-
-          {dependency.areas.map((area) => (
-            <Fragment key={area.key}>
-              <span className="truncate pr-2 text-slate-600 dark:text-slate-300" title={area.name}>
-                {area.name}
-              </span>
-              {elapsed.map((month) => {
-                const source = MONTH_SOURCE[sourceFor(area, month.index)]
-                return (
-                  <span
-                    key={month.index}
-                    title={`${area.name} \u00b7 ${month.label} \u2014 ${source.label}`}
-                    className={`text-center font-bold rounded-sm py-0.5 ${source.cell}`}
-                  >
-                    {source.letter}
-                  </span>
-                )
-              })}
-            </Fragment>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500 dark:text-slate-400">
-        {Object.entries(MONTH_SOURCE).map(([key, source]) => (
-          <span key={key} className="flex items-center gap-1">
-            <span className={`inline-block w-3.5 text-center font-bold rounded-sm ${source.cell}`}>{source.letter}</span>
-            {source.label}
-          </span>
-        ))}
-      </div>
-
-      {/* The countdown: the archive only reaches months the plan's own tabs still carry, so a
-          month from before the first record is stuck on the worksheet for good. */}
-      <div className="mt-3 pt-2 border-t border-slate-200 dark:border-slate-800 text-[11px] space-y-1">
-        {merge && due.length > 0 && (
-          <p className={dueArchived === 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200'}>
-            {`${due.length} closed month${due.length === 1 ? '' : 's'} passed the cutoff`}
-            {dueArchived === 0
-              ? ' \u2014 none is archived, so either ARCHIVE_ENABLED is off in CONFIG or the archive has not run yet. The countdown below will not move until it does.'
-              : ` \u2014 ${dueArchived} archived in Supabase.`}
-          </p>
+      <p className="text-[11px] text-slate-700 dark:text-slate-200 mt-1">
+        <span className="text-slate-400 dark:text-slate-500">Next conversion: </span>
+        {upcoming.length ? (
+          <>
+            <span className="font-semibold">{monthNameOf(upcoming[0].index)}</span>
+            {` becomes eligible ${formatDay(upcoming[0].date)}`}
+          </>
+        ) : (
+          'none left this year.'
         )}
-        <p className="text-slate-700 dark:text-slate-200">
-          <span className="text-slate-400 dark:text-slate-500">Next conversion: </span>
-          {upcoming.length ? (
-            <>
-              <span className="font-semibold">{monthNameOf(upcoming[0].index)}</span>
-              {` becomes eligible ${formatDay(upcoming[0].date)} `}
-              {`(in ${Math.max(Math.ceil((upcoming[0].date.getTime() - now) / 86400000), 0)} days, `}
-              {`CONFIG ARCHIVE_AFTER_DAYS = ${ARCHIVE_AFTER_DAYS}).`}
-            </>
-          ) : (
-            'none left this year.'
-          )}
+      </p>
+
+      {due.length > 0 && (
+        <p className={`text-[11px] mt-1 ${dueArchived === 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200'}`}>
+          {`${due.length} closed month${due.length === 1 ? '' : 's'} passed the cutoff`}
+          {dueArchived === 0
+            ? ' — none is archived, so either ARCHIVE_ENABLED is off in CONFIG or the archive has not run yet. The countdown will not move until it does.'
+            : ` — ${dueArchived} archived in Supabase.`}
         </p>
+      )}
 
-        {upcoming.length > 1 && (
-          <p className="text-slate-500 dark:text-slate-400">
-            Then{' '}
-            {upcoming.slice(1, 4).map((entry, index) => (
-              <span key={entry.index}>
-                {index > 0 ? ' \u00b7 ' : ''}
-                {`${monthNameOf(entry.index)} \u2192 ${formatDay(entry.date)}`}
-              </span>
-            ))}
-            {upcoming.length > 4 ? ` \u00b7 \u2026` : ''}
-          </p>
-        )}
-
-        {permanent.length > 0 && (
-          <p className="text-slate-500 dark:text-slate-400">
-            {permanent.map((index) => dependency.months[index]).join(', ')}
-            {` will not convert \u2014 they fall before the earliest month the tracker holds `}
-            {`(${monthNameOf(totals.earliestRecordMonth)} ${dependency.year}), and the archive only takes a month the sheet still carries. `}
-            {`So at year end the worksheet holds ${permanent.length} of 12 actual months (${yearEndPct}%), not fewer.`}
-          </p>
-        )}
-      </div>
+      <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1.5">
+        The annual targets, the months still to come and the province list all come from this
+        table; the figures come from the record — `sli_monthly` for a closed month and the live
+        `MTD` tab for the running one. The shared `YTD 2026` / `TARGET 2026` worksheet is no
+        longer read by the app at all.
+      </p>
     </div>
   )
-}
-
-/** Which tab supplied a month's record rows, as reported by the archive merge. */
-function monthSourceName(month, archiveMonths, sheetMonths, merge) {
-  if (!merge) return 'record'
-  if (archiveMonths.has(month.index)) return 'Supabase archive'
-  if (sheetMonths.has(month.index)) return 'live sheet tab'
-  return 'record'
 }
 
 const FULL_MONTHS = [
@@ -908,47 +712,6 @@ export default function DeveloperPanel({
               Data source diagnostics
             </h3>
 
-            {/* The shared year tabs. Read once for every plan, on a 24h cache, so this
-                is the one row that does not repeat per plan. */}
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 mb-2">
-              <div className="flex items-baseline justify-between gap-3">
-                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">YTD 2026 / TARGET 2026</h4>
-                <span className="text-[10px] text-slate-400 dark:text-slate-500">
-                  {diag.year?.at ? formatAge(diag.year.at) : 'not loaded in this tab yet'}
-                </span>
-              </div>
-              {diag.year ? (
-                <dl className="grid gap-x-4 gap-y-1.5 sm:grid-cols-[9rem_1fr] text-[11px] mt-2">
-                  <dt className="text-slate-400 dark:text-slate-500">Source</dt>
-                  <dd className="text-slate-700 dark:text-slate-200">
-                    <span className="font-semibold">{SOURCE_LABELS[diag.year.source] || 'Unknown'}</span>
-                    {diag.year.cacheAgeMs != null ? ` · cached ${formatDuration(diag.year.cacheAgeMs / 1000)} ago` : ''}
-                    {` · TTL 24h`}
-                  </dd>
-                  <dt className="text-slate-400 dark:text-slate-500">Payload</dt>
-                  <dd className="text-slate-700 dark:text-slate-200">
-                    {formatBytes(diag.year.actualBytes)} YTD · {formatBytes(diag.year.targetBytes)} target
-                  </dd>
-                  {diag.year.liveError && (
-                    <>
-                      <dt className="text-slate-400 dark:text-slate-500">Error</dt>
-                      <dd className="text-rose-600 dark:text-rose-400">{diag.year.liveError}</dd>
-                    </>
-                  )}
-                </dl>
-              ) : (
-                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
-                  Open the dashboard, then reopen this console.
-                </p>
-              )}
-              <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-2">
-                Shared by all three plans, so it is read once per 24 hours rather than per plan.
-                The tracker\u2019s own record wins for every month it holds — archived first, then
-                the live tab; the worksheet fills only what the record does not. Where the two
-                disagree, the record is what is shown, and each plan\u2019s entry says so.
-              </p>
-            </div>
-
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
               {Object.values(PLANS).map((plan) => {
                 const entry = diag.plans[plan.id]
@@ -1035,11 +798,11 @@ export default function DeveloperPanel({
                       </dl>
                     )}
 
-                    {entry?.dependency && (
-                      <WorksheetDependency
-                        dependency={entry.dependency}
+                    {entry?.yearPlan && (
+                      <YearPlan
+                        yearPlan={entry.yearPlan}
                         merge={entry.merge}
-                        clashes={entry.clashes}
+                        manual={entry.manual}
                         now={now}
                       />
                     )}

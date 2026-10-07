@@ -213,9 +213,9 @@ export default function YtdReport({ ytd, plan, planName }) {
         </div>
         <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 p-6 text-center">
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            No year-to-date figures for {planName || 'this plan'} — no 2026 block for it came back from the
-            <span className="font-semibold"> YTD 2026</span> and <span className="font-semibold">TARGET 2026</span> tabs,
-            and the tracker's own record holds no month of 2026 for this plan yet.
+            No year-to-date figures for {planName || 'this plan'} — the year's target plan
+            (<span className="font-semibold">sli_targets</span>) holds no 2026 row for it, and the tracker's own
+            record holds no month of 2026 for this plan yet.
           </p>
         </div>
       </section>
@@ -223,10 +223,10 @@ export default function YtdReport({ ytd, plan, planName }) {
   }
 
   const { overall, monthIndex, months, year } = ytd
-  // The year tabs could not be read, so this section was built from the tracker's own record:
-  // every month it holds is here, the annual targets are not. Anything measured against the
-  // year is absent rather than partial (`annualTargetsKnown` in computeYtd) — the plan-to-date
-  // yardstick, which is the headline, needs only the months that have happened.
+  // The year's target plan could not be read, so this section was built from the tracker's own
+  // record: every month it holds is here, the annual targets are not. Anything measured against
+  // the year is absent rather than partial (`annualTargetsKnown` in computeYtd) — the
+  // plan-to-date yardstick, which is the headline, needs only the months that have happened.
   const annualTargetKnown = overall.annualTargetKnown !== false
   const planBadge = overall.pctOfPlan != null ? getBadgeStyle(overall.pctOfPlan) : null
   const paceBadge = overall.pace ? getPaceBadgeStyle(overall.pace) : null
@@ -257,10 +257,10 @@ export default function YtdReport({ ytd, plan, planName }) {
       {!annualTargetKnown && (
         <div className="rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/70 dark:bg-amber-950/20 px-3 py-2 mb-3">
           <p className="text-[11px] text-amber-800 dark:text-amber-200">
-            The <span className="font-semibold">YTD 2026</span> and <span className="font-semibold">TARGET 2026</span> tabs
-            could not be read, so this section is built from the tracker's own record — every month it holds, plus the
-            live month's own target off the <span className="font-semibold">MTD</span> tab. The annual targets and the
-            months still to come are not known, so what depends on them reads as a dash instead of a guess.
+            The year's target plan (<span className="font-semibold">sli_targets</span>) could not be read, so this
+            section is built from the tracker's own record — every month it holds, plus the live month's own target off
+            the <span className="font-semibold">MTD</span> tab. The annual targets and the months still to come are not
+            known, so what depends on them reads as a dash instead of a guess.
           </p>
         </div>
       )}
@@ -361,7 +361,7 @@ export default function YtdReport({ ytd, plan, planName }) {
           <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
             {annualTargetKnown
               ? `${formatNumber(overall.planToDate)} planned through ${MONTH_LABELS[monthIndex]}`
-              : 'the two year tabs could not be read'}
+              : `the year's target plan could not be read`}
           </p>
         </div>
 

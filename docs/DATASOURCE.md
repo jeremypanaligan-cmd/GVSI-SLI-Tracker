@@ -13,14 +13,20 @@ There are **two** kinds of source:
    must be readable via "Publish to web" / link sharing.
 2. **Supabase** (project `GVSI NetPulse`, ref `fsebdacptgoknbjqdlor`), called over PostgREST with
    the public anon key from `src/config/supabase.js`. It holds the **cold archive** (closed
-   months, see [ARCHIVE.md](./ARCHIVE.md)) and **accounts / sessions / presence / maintenance**
-   (see [DEVELOPER.md](./DEVELOPER.md)). Only two tables are readable by that key, and both are
-   archive data; everything account-related is reachable only through RPCs.
+   months, see [ARCHIVE.md](./ARCHIVE.md)), the **year's target plan** (`sli_targets`) and
+   **accounts / sessions / presence / maintenance** (see [DEVELOPER.md](./DEVELOPER.md)). Four
+   tables are readable by that key — `sli_raw_daily`, `sli_mtd`, `sli_monthly`, `sli_targets` —
+   and they are all dashboard data; everything account-related is reachable only through RPCs.
 
 Since the archiving job exists, the rule for a dashboard figure is:
 
 > **Current month → Google Sheet. Previous months → Supabase.** The app fetches both and merges
 them before parsing, so no view has to know which side a month came from.
+
+And since the year's targets moved into the project, the rule for the Year-to-Date section is:
+
+> **Figures → the record (`sli_monthly`, then the live `MTD` tab). Targets and the province list
+> → `sli_targets`.** The shared `YTD 2026` / `TARGET 2026` worksheet is not read at all.
 
 ## The spreadsheets
 
@@ -38,21 +44,41 @@ plan-specific trend tabs.
 | `FIBERX DATA` | `0` | Executive Overview 30-day trend (FIBERX) | `PLANS.fiberx.trendUrl` |
 | `BIDA DATA` | `721299435` | Executive Overview 30-day trend (BIDA) | `PLANS.bida.trendUrl` |
 | `SME DATA` | `1854320942` | Executive Overview 30-day trend (SME) | `PLANS.sme.trendUrl` |
-| `YTD 2026` | `1253792447` | Executive Overview Year-to-Date · Provincial YTD table | `YTD_URL` (all three plans) |
-| `TARGET 2026` | `1221052795` | Same, target side — monthly and annual targets | `TARGET_URL` (all three plans) |
+| `YTD 2026` | `1253792447` | **Nothing.** Retired from the app; the figures come from the archive now | — |
+| `TARGET 2026` | `1221052795` | **Nothing.** Retired; the plan is copied into `sli_targets` | — |
 
-`YTD 2026` and `TARGET 2026` hold a block per plan (13 provinces × `JAN…DEC` + `TOTAL`),
-so they are read **once** for every plan and cached for 24 hours rather than five minutes —
-an annual table cannot change between two loads. All three plans have a block, including
-`SME`'s, so the Year-to-Date sections render for each of them.
+`YTD 2026` and `TARGET 2026` hold a block per plan (13 provinces × `JAN…DEC` + `TOTAL`). They
+were the Year-to-Date section's source for everything — figures, monthly targets, annual
+targets and the province list — and **the app no longer reads either of them.**
 
-For those two tabs only, the rule above is refined: the app's own record supersedes the
-worksheet for **any month it holds** — the archived month first, then the live `MTD` tab
-(`buildOverrides` in `src/utils/yearTables.js`). The record is the app's own
-measurement, taken at trim time and immutable afterwards; the worksheet is a cell somebody
-maintains. One guard applies: a collection-based plan (SME) may only contribute its `NET`,
-so a record row written before the MRC columns existed carries no weight at all and leaves
-its month to the worksheet. See [YTD_SCOPING.md](./YTD_SCOPING.md) for that case in full.
+What replaced them, in the same order:
+
+* the **figures** are the app's own record (see below);
+* the **monthly targets, annual targets and the province list** are `sli_targets`, a copy of the
+  `TARGET 2026` plan taken once by `scripts/targets-seed.cjs` (the SQL it printed is
+  `supabase/seed-year-targets.sql`). One row per plan × month × area, so the table states the
+  year's plan rather than a single annual figure per province, and the province list — thirteen
+  of them, three more than the archive ever sees — is just the plan's own `row_order`.
+
+`src/utils/yearTables.js` builds the two blocks the section is computed from, and does not need
+either half to be complete (`buildYearTables`):
+
+| Half | Comes from |
+|------|------------|
+| Figures | `sli_monthly` for a closed month, the live `MTD` tab for the running one |
+| Targets | `sli_targets`, except for a month the record holds — a closed month's target was archived beside its figure, and a month is sourced once |
+| Provinces | `sli_targets`' own order, then any province only the record names |
+
+The two guards that only apply to figures still apply, and both come from `buildOverrides`:
+
+* a **collection-based plan** (SME) may only contribute its `NET`, so a record row written
+  before the MRC columns existed carries no weight at all. See [YTD_SCOPING.md](./YTD_SCOPING.md)
+  for that case in full.
+* a month the record holds is sourced **whole**: a province the record does not list counts as
+  zero for that month, and nothing is read beside it. That is why the annual target is taken
+  from `sli_targets`' own twelve months rather than added up after the overrides — FIBERX's
+  `Aurora` is 95 in `AUG`, a month the archive covers from a twelve-province list without it, so
+  the effective series sums to 334 while the plan's year is 429.
 
 `sli_monthly` is the app's **priority source**, and it is meant to hold every elapsed month.
 It is one row per area per closed month with the month's **figure and target together**: the
@@ -61,11 +87,9 @@ the archive were backfilled out of the two year tabs (`supabase/seed-monthly-pro
 2026 `JAN–JUL` for all three plans, and SME's `AUG` because its archived rows hold ticket
 counts where the plan is measured in pesos. Both the Year-to-Date month strip and the
 provincial grid read a month from there (`buildMonthlyOverrides` in
-`src/utils/yearTables.js`), so the two year tabs are left holding only the **live month**, the
-months still to come, the annual targets and the province list. A row is read only when its
-`measure` matches the plan (`net` for SME's collections, `count` otherwise), which is what keeps
-a month archived before the MRC columns existed — SME's `2026-08`, a count with no NET — from
-being measured against its worksheet.
+`src/utils/yearTables.js`). A row is read only when its `measure` matches the plan (`net` for
+SME's collections, `count` otherwise), which is what keeps a month archived before the MRC
+columns existed — SME's `2026-08`, a count with no NET — from being measured in the wrong units.
 
 Each row also says which read wrote it (`source`): `archive` for the months the archive job
 measured itself, `worksheet` for the months the backfill copied out of the year tabs. A month
@@ -73,41 +97,30 @@ is written whole by one side or the other, so the label is trustworthy month by 
 Developer console names the backfilled ones rather than counting somebody's worksheet cell as
 the tracker's own measurement.
 
-When both year tabs are unavailable at once — offline with no cache, or a 404 — the section is
-rebuilt from the record instead of disappearing (`buildYearTablesFromRecord` in the same
-module): `sli_monthly` supplies the months and the province list, its rows carrying an area and
-the plan's own order, and the live `MTD` tab supplies the running month's figure and target. The
-annual targets and the months still to come exist only in those two tabs, so a rebuilt section
-reports everything measured against the year as absent rather than partial
-(`annualTargetsKnown`), and says so on screen — the plan-to-date headline needs only the months
-that have happened. One number can legitimately differ from the tabs: the running month's
-target, which `TARGET 2026` and the `MTD` tab state separately (FIBERX's Isabela reads 229 in
-`MTD` and 224 in the year tab today). The record's own answer is used, so the section agrees
-with the Month-to-Date card beside it.
+When the plan table cannot be read — offline with no cache, a 404, a fresh project — the section
+is still built, from the record alone (`buildYearTables` with no `targetRows`): `sli_monthly`
+supplies the months and the provinces it names, and the live `MTD` tab supplies the running
+month's figure and target. There is no year to measure against, so everything that depends on
+one is reported absent rather than partial (`annualTargetsKnown`), and the section says so on
+screen — the plan-to-date headline needs only the months that have happened. The running
+month's target is a second place the two could differ, and the record wins there too: `TARGET
+2026` and the `MTD` tab state it separately (FIBERX's Isabela reads 229 in `MTD` and 224 in the
+tab), and the record's own answer keeps the section agreeing with the Month-to-Date card beside
+it.
 
-Which side each month of the strip came from is reported month by month in the
+Where each month of the strip came from is reported month by month in the
 **Developer console → Data source diagnostics → Monthly Progress**
 (`summarizeMonthlyProgressSources` in `src/utils/yearTables.js`): the strip's own two figures
-and the read behind each, so a month reading `sli_monthly` needs no year tab at all and a month
-reading `year tabs` is the one to watch as the archive fills.
+and the read behind each, so a month reading `sli_monthly` or `record` is accounted for and a
+month reading `nothing read` is the one to chase — no read held it, so the cell is a zero
+nobody measured.
 
-Which side supplied each figure is reported, per province and per month, in the
-**Developer console → Data source diagnostics → Worksheet dependency**
-(`summarizeWorksheetDependency` in the same module). It exists because nothing on the
-dashboard can show the difference — an actual reads the same whichever tab it came from —
-while the dependency itself shrinks every month as the archive fills. `JAN–JUL` 2026 can never
-be archived by the job itself — they fall before the first month the tracker held — so they
-come from the table's backfill instead, and read as the record side from the month they cover.
-The target side is
-reported the same way: `fromRecordMonths` names the months whose target came from
-`sli_monthly` beside its figure, and everything else still comes from `TARGET 2026`.
-
-Two disagreements are reported beside it, because precedence makes both invisible
-(`summarizeSourceClashes`). **Cells both sides hold and disagree about** are listed with
-both figures — the record is what is shown, so the worksheet's version would otherwise go
-unseen. **Months the record covers only in part** are listed too, with the worksheet cells
-that stand beside it, since those are the only way a month's own total can come out larger
-than either source's. See [YTD_SCOPING.md](./YTD_SCOPING.md) for what each finds today.
+Which year the province list and the targets came from is reported by the
+**Developer console → Data source diagnostics → Year target plan** block, which is fed by the
+`sli_targets` read itself (`fetchYearTargets` in `src/utils/archiveFetcher.js`): rows,
+provinces × months, the annual total they add up to, whether the read came from Supabase or the
+cache, whether the rows are the archive job's own or a backfill out of the worksheet, and the
+same 'next conversion' countdown the archive schedule uses.
 
 A closed month converts `ARCHIVE_AFTER_DAYS` days into the following month — the
 `CONFIG` key the Apps Script reads (`ARCHIVE_AFTER_DAYS_KEY`, default `7`). The app never
@@ -158,9 +171,12 @@ own — they were created independently. Check the gid before assuming it matche
 |-------|---------|-------|
 | `sli_raw_daily` | Daily / Provincial / Compare / Export, for **archived** months | one row per day × area, `is_overall_total` flagged |
 | `sli_mtd` | Achievement, target, month picker, MoM delta, for **archived** months | one row per month × area, plus the month's overall total; `gross` / `net` hold SME's collections |
+| `sli_monthly` | Year-to-Date strip and provincial grid, for **closed** months | one row per closed month × area with the figure and its target together; `measure` says `net` or `count`, `source` says who wrote it |
+| `sli_targets` | Year-to-Date targets, province list and annual totals | one row per plan × month × area: the year's plan, copied once out of `TARGET 2026` |
 
-Both are public-readable through the anon key; **writes need the service_role key**, which
-lives only in the Apps Script's Script Properties.
+All four are public-readable through the anon key; **writes need the service_role key**, which
+lives only in the Apps Script's Script Properties — except `sli_targets`, whose only writer is
+the seed above.
 
 | RPC | Read by | Public? |
 |-----|---------|---------|
@@ -206,8 +222,9 @@ lives only in the Apps Script's Script Properties.
 
 | File | Responsibility |
 |------|----------------|
-| `src/config/plans.js` | Every URL: `AUTH_URL`, and per-plan `mtdUrl`, `rawUrl`, `agingUrl`, `trendUrl`, `sheetId`, `accentClasses`. **This is the only place a sheet URL should live.** |
+| `src/config/plans.js` | Every URL: `AUTH_URL`, and per-plan `mtdUrl`, `rawUrl`, `agingUrl`, `trendUrl`, `sheetId`, `accentClasses`, plus `YTD_YEAR`. **This is the only place a sheet URL should live.** The two retired year tabs are absent on purpose |
 | `src/utils/dataFetcher.js` | `fetchAllData` (live), `getCachedData` (cache-first), `prefetchAllPlans`, cache read/write |
+| `scripts/targets-seed.cjs` | Prints `supabase/seed-year-targets.sql` from a `TARGET` CSV export — how a new year's plan is loaded, and how a corrected one is re-loaded |
 | `src/utils/csvParser.js` | `parseCSV` — handles quoted fields and CRLF from Google's export |
 | `src/utils/dataProcessor.js` | `parseMTDData`, `parseRawDailyData`, `parseAgingReport`, `extractExecutiveMetrics`, `buildDailyTrend`, `findLatestDataDate` |
 | `src/config/supabase.js` | Supabase URL + the public anon key. **The only place a Supabase endpoint should live.** |
@@ -233,10 +250,11 @@ A failed MTD or RAW fetch fails the whole sync; a failed aging or trend fetch on
 |--------|-----------|
 | Storage | `localStorage`, with an IndexedDB fallback on quota errors |
 | Keys | `gvsi_<mtd\|raw\|aging\|trend\|time>_<plan>_v<appVersion>` (e.g. `gvsi_trend_fiberx_v1.12.0`) |
-| Archive keys | `gvsi_arch_idx_<plan>_v…` (month list, 5-minute TTL) and `gvsi_arch_<mtd\|raw>_<plan>_<month>_v…` (**no TTL** — an archived month never changes, so it is fetched once per browser) |
+| Archive keys | `gvsi_arch_idx_<plan>_v…` (month list, 5-minute TTL), `gvsi_arch_mon_<plan>_v…` (the Monthly Progress rows, 5-minute TTL — never remembered when empty) and `gvsi_arch_<mtd\|raw>_<plan>_<month>_v…` (**no TTL** — an archived month never changes, so it is fetched once per browser) |
+| Year plan key | `gvsi_arch_tgt_<plan>_v…` — `sli_targets` rows for one plan, 5-minute TTL, likewise never remembered when empty |
 | Versioning | The key embeds `APP_VERSION`, so a release retires the whole previous cache set and orphaned records are purged on version change |
 | TTL | `CACHE_MAX_AGE` = **5 minutes**; older than that is treated as `stale-cache` |
-| Refresh | The **Sync Data** button, the auto-refresh timer, or a hard reload |
+| Refresh | The **Sync Data** button, the auto-refresh timer, or a hard reload. A manual sync forces the archive month list *and* the year plan, so a month archived or a target corrected server-side (see [`supabase/seed-year-targets.sql`](../supabase/seed-year-targets.sql)) appears at once instead of up to five minutes later |
 | Prefetch | `prefetchAllPlans` warms the other two plans so Compare and plan switching render instantly |
 
 > Because `trend` is a **separate cache key**, a client whose cache is still fresh (`< 5 min`) will

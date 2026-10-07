@@ -11,15 +11,15 @@
 
 const SHEET_BASE = 'https://docs.google.com/spreadsheets/d/'
 
-// Year-to-date actuals and the year's monthly target plan, from the same shared
-// workbook as the aging report. One tab each, with a block per plan inside it, so the
-// URLs are plan-agnostic and every plan reads the same two payloads.
+// The year the app's year-to-date section covers. It is the year stored in `sli_targets`'
+// `month_key` and in the live month labels, and the app has to know which one it is holding:
+// a year with no rows in the plan table has no section to show. See docs/YTD_SCOPING.md.
 //
-//   YTD 2026     → gid 1253792447 — completed installations, one column per month
-//   TARGET 2026  → gid 1221052795 — the monthly target plan, same shape
-//
-// Both are year-specific, in the tab name and in the title cell, so the app has to
-// know which year it is holding. See docs/YTD_SCOPING.md.
+// The two tabs that used to feed this section — `YTD 2026` (gid 1253792447) and `TARGET 2026`
+// (gid 1221052795) of the same shared workbook — are no longer read by the app at all. The
+// year's targets and province list are served from Supabase (`sli_targets`) and the figures
+// from the record, so there is no URL for either tab here. `scripts/targets-seed.cjs` is what
+// copies a year's plan out of the sheet, when a new year's plan is loaded.
 export const YTD_YEAR = 2026
 
 // A closed month becomes eligible for archiving this many days into the following month
@@ -28,9 +28,9 @@ export const YTD_YEAR = 2026
 // next conversion in the Developer console, so if the CONFIG value is changed the panel's
 // countdown is the one place that has to be told.
 export const ARCHIVE_AFTER_DAYS = 7
+// The shared workbook (aging report, login credentials, the trend tabs — and the two year
+// tabs the app no longer reads).
 const SHARED_SHEET = `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs`
-export const YTD_URL = `${SHARED_SHEET}/export?format=csv&gid=1253792447`
-export const TARGET_URL = `${SHARED_SHEET}/export?format=csv&gid=1221052795`
 
 // Login credentials live in a dedicated sheet, shared by every plan.
 // Tab: "Login Credentials" — Username | PasswordHash | FullName | Role
