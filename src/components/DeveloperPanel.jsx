@@ -37,6 +37,10 @@ const SOURCE_LABELS = {
  * a month the record cannot. `uncovered` is not a source at all: no read carried that month, so
  * the cell is a zero nothing measured.
  *
+ * A month's *target* has one source the figures do not: the running month's own `DATA` tab,
+ * which is edited daily while the year's plan is a copy made once. That is a badge of its own
+ * (`live`), not a fifth vocabulary word — it answers the same question the others do.
+ *
  * `short` is the same name in the three-to-four characters the province x month grid can hold,
  * so the grid's legend spells the vocabulary out rather than inventing a second one.
  */
@@ -246,9 +250,11 @@ function ArchiveTrim({ status, loading }) {
  * One line per elapsed month of the strip, showing the strip's own two figures and the read
  * behind each: `sli_monthly` (the archive's month table, figure and target together), the
  * record (the live `MTD` tab's month, or the archive's `sli_mtd` rows for a closed one), the
- * year's own target plan (`sli_targets`) for a target the record cannot state, or nothing at
- * all. The figures come straight out of the computed year, so this panel cannot disagree with
- * the strip — and since the archive fills up month by month, so does the row of green.
+ * year's own target plan (`sli_targets`) for a target the record cannot state — the plan's own
+ * `DATA` tab instead for the month still running, which is the one month the year's plan can be
+ * behind on — or nothing at all. The figures come straight out of the computed year, so this
+ * panel cannot disagree with the strip — and since the archive fills up month by month, so does
+ * the row of green.
  *
  * A month reading `sli_monthly` says which read put it there. The archive job's own month is
  * the tracker's measurement; a month the backfill copied out of `YTD 2026` / `TARGET 2026`
@@ -302,7 +308,14 @@ export function MonthlyProgressSources({ report }) {
                 backfilled from the year tabs
               </span>
             )}
-            {month.targetSource !== month.source && (
+            {month.targetSource === 'live' ? (
+              <span
+                className="px-1.5 rounded bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300"
+                title={report.liveTargetDate ? `read at ${report.liveTargetDate}` : undefined}
+              >
+                target: the plan's own DATA tab
+              </span>
+            ) : month.targetSource !== month.source && (
               <span className={`px-1.5 rounded ${MONTHLY_SOURCE[month.targetSource]?.cell}`}>
                 {`target: ${label(month.targetSource, month.recordVia)}`}
               </span>
@@ -390,11 +403,13 @@ export function MonthlyProgressSources({ report }) {
 
       <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1.5">
         A month is sourced once for its figure and once for the target under it, so a month can
-        show two badges — the archive states both, the year's own target plan states the target
-        wherever no archived row carries one. `nothing read` is the case worth chasing: no read
-        held that month, so the strip is showing a zero nobody measured. A month reading
-        `sli_monthly` was written by the archive job where it has no second badge, and copied out
-        of the year tabs by the backfill where it has one.
+        show two badges — the archive states both, and the year's own target plan states the
+        target wherever no archived row carries one. The running month is the exception: its
+        targets are read off the plan's own `DATA` tab, which is edited daily where the plan is a
+        copy edited by hand, and that is what the `DATA` tab badge says. `nothing read` is the
+        case worth chasing: no read held that month, so the strip is showing a zero nobody
+        measured. A month reading `sli_monthly` was written by the archive job where it has no
+        second badge, and copied out of the year tabs by the backfill where it has one.
       </p>
     </div>
   )

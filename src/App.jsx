@@ -18,7 +18,7 @@ import SyncIcon from './components/SyncIcon'
 import ThemeToggle from './components/ThemeToggle'
 import PlanSelector from './components/PlanSelector'
 import { PLANS, PLAN_ORDER, DEFAULT_PLAN, YTD_YEAR } from './config/plans'
-import { computeYtd, buildOverrides, buildMonthlyOverrides, buildYearTables, monthLabelParts, monthProgress, summarizeMonthlyProgressSources } from './utils/yearTables'
+import { computeYtd, buildOverrides, buildMonthlyOverrides, buildYearTables, liveMonthTargets, monthLabelParts, monthProgress, summarizeMonthlyProgressSources } from './utils/yearTables'
 import YtdTable from './components/YtdTable'
 import PWAInstallBanner from './components/PWAInstallBanner'
 
@@ -470,6 +470,23 @@ export default function App() {
     collectionBased: Boolean(currentPlan.collectionBased),
   }), [activePlan, monthlyRecord, yearTargets, mtdData, currentPlan])
 
+  // The running month's targets, read off the plan's own `DATA` tab rather than the year's
+  // plan. `sli_targets` is a statement about the year, seeded once and edited by hand, while
+  // the month still being worked lives on the `DATA` tab — so where the two disagree, the tab
+  // is the one that is right. SME's `OCT` is the case in point: the tab was raised from
+  // 262,984 to 307,529 on `Oct 7` and the plan was not, which left the Monthly Progress strip
+  // contradicting the `MONTHLY TARGET` card beside it. Read at the latest date the tab carries
+  // (a pre-entered row of zeroes does not speak), and only for the plan's own year.
+  const liveTargets = useMemo(() => {
+    const monthYear = getCurrentMonthYear()
+    const parts = monthLabelParts(monthYear)
+    if (!parts || parts.year !== YTD_YEAR) return null
+    const parsed = parseRawDailyData(trendData)
+    const dateLabel = findLatestDateInMonth(parsed, monthYear)
+    if (!dateLabel) return null
+    return liveMonthTargets(parsed.blocks?.[dateLabel], { monthIndex: parts.monthIndex, dateLabel })
+  }, [trendData])
+
   const ytdMetrics = useMemo(() => {
     if (!ytdTables) return null
     const parts = monthLabelParts(selectedMonthYear)
@@ -483,10 +500,11 @@ export default function App() {
       monthIndex: parts.monthIndex,
       overrides: ytdOverrides,
       targetOverrides: monthlyOverrides.targets,
+      liveTargets,
       progress: monthProgressValue,
       annualTargetsKnown: ytdTables.annualTargetsKnown,
     })
-  }, [ytdTables, activePlan, selectedMonthYear, ytdOverrides, monthProgressValue])
+  }, [ytdTables, activePlan, selectedMonthYear, ytdOverrides, monthlyOverrides, liveTargets, monthProgressValue])
 
   // Which side supplied each month of the Monthly Progress strip — `sli_monthly`, the record,
   // or nothing at all. Observation only; the Developer console renders it.
@@ -500,8 +518,9 @@ export default function App() {
     overrides: recordOverrides,
     monthly: monthlyOverrides,
     liveMonthIndex,
+    liveTargets,
     year: YTD_YEAR,
-  }), [ytdMetrics, recordOverrides, monthlyOverrides, liveMonthIndex])
+  }), [ytdMetrics, recordOverrides, monthlyOverrides, liveMonthIndex, liveTargets])
 
   useEffect(() => {
     recordMonthlyProgress(activePlan, monthlySources)

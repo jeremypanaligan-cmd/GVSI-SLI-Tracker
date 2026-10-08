@@ -118,6 +118,11 @@ so the same script serves both — a header a sheet does not have simply reads a
 > `GROSS`, and not the counts on the left. A month whose target is not filled yet reads `0`,
 > and its `%` is `#DIV/0!`; the app shows those as `—` rather than `0%`.
 >
+> The app also reads this column **directly**, for the month still running: the year's plan
+> (`sli_targets`, a copy of `TARGET 2026`) can be behind a month that is still being edited on
+> this tab, so the running month's targets are taken from here at the latest date the tab
+> carries rather than from the plan — see [DATASOURCE.md](./DATASOURCE.md).
+>
 > Column `O` (`NET`) carries the format `#,##0.00` where the rest of the figure row is `#,##0`.
 > A number format decides what a cell *shows*, and the CSV export writes what a cell shows — the
 > app reads that export, so a whole-peso format here would round the collection before the app

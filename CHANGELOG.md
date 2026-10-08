@@ -6,6 +6,31 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 🎯 The running month's target comes off the plan's own DATA tab
+
+The Executive Overview showed two different figures for the current month's target: the
+`MONTHLY TARGET` card read it off the `MTD` tab, while the Monthly Progress strip read it off
+the year's plan (`sli_targets`) — the plan copied out of `TARGET 2026`. The plan is a statement
+about the year, seeded once and edited by hand, so a month still being worked outgrows it. SME's
+October made that visible: the plan still said ₱262,984 while the sheet's own `DATA` tab had
+been raised to ₱307,529, and FIBERX's October was the same defect one province wide (`Isabela`
+229 on the tab, 224 in the plan) — so the strip kept printing a figure the sheet had already
+left behind.
+
+The running month's targets are now read from the plan's own `DATA` tab — FIBERX DATA,
+BIDA DATA and SME DATA, the tab the velocity chart already reads — at the latest date it
+carries, in its own `TARGET` column (`N` on FIBERX and BIDA, `P` on SME). The strip, the
+province grid's current-month column and the plan-to-date headline all agree with the
+Month-to-Date card from now on. Every other month is untouched: the year's plan still states
+them, the annual target is still the plan's own, and a closed month still takes its target from
+the archived row beside its figure. Only the provinces the `DATA` tab names are replaced — it
+lists ten of the plan's thirteen — so a province it does not track keeps the plan's figure
+rather than a zero nobody stated.
+
+The Developer console says which of the two spoke: the running month's target is badged
+`target: the plan's own DATA tab` (with the day the row was read on hover) instead of the
+year's plan.
+
 ### 🔍 The Developer console shows where each province-month came from
 
 The console has said, month by month, which read supplied the Monthly Progress strip —

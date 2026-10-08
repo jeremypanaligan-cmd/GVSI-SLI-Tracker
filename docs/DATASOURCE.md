@@ -66,7 +66,7 @@ either half to be complete (`buildYearTables`):
 | Half | Comes from |
 |------|------------|
 | Figures | `sli_monthly` for a closed month, the live `MTD` tab for the running one |
-| Targets | `sli_targets`, except for a month the record holds — a closed month's target was archived beside its figure, and a month is sourced once |
+| Targets | `sli_targets`, except for a month the record holds — a closed month's target was archived beside its figure, and a month is sourced once — and except for the month still running, whose targets come off the plan's own `DATA` tab (see below) |
 | Provinces | `sli_targets`' own order, then any province only the record names |
 
 The two guards that only apply to figures still apply, and both come from `buildOverrides`:
@@ -102,11 +102,27 @@ is still built, from the record alone (`buildYearTables` with no `targetRows`): 
 supplies the months and the provinces it names, and the live `MTD` tab supplies the running
 month's figure and target. There is no year to measure against, so everything that depends on
 one is reported absent rather than partial (`annualTargetsKnown`), and the section says so on
-screen — the plan-to-date headline needs only the months that have happened. The running
-month's target is a second place the two could differ, and the record wins there too: `TARGET
-2026` and the `MTD` tab state it separately (FIBERX's Isabela reads 229 in `MTD` and 224 in the
-tab), and the record's own answer keeps the section agreeing with the Month-to-Date card beside
-it.
+screen — the plan-to-date headline needs only the months that have happened.
+
+**The running month's targets are the one thing the year's plan does not state.** `sli_targets`
+is a statement about the year: it was copied once out of `TARGET 2026` and is edited by hand,
+so a month still being worked can outgrow it. That month lives on the plan's own `DATA` tab
+(FIBERX DATA / BIDA DATA / SME DATA — the tab the velocity chart already reads), one row per
+province per date, with the month's `TARGET` in its own column: `N` on FIBERX and BIDA, `P` on
+SME, because the MRC columns push it two cells right. The app reads it at the latest date the
+tab carries and uses those figures for the running month (`liveMonthTargets` in
+`src/utils/yearTables.js`), which is what keeps the Monthly Progress strip agreeing with the
+Month-to-Date card beside it.
+
+SME's `OCT` is the case that made this necessary. Plan and tab agreed on 262,984 while the tab
+held the old figure; the tab was raised to 307,529 on `Oct 7` and the plan was not, so the
+strip read 262,984 for the rest of the month under a `MONTHLY TARGET` card reading 307,529.
+FIBERX's `OCT` is the same defect one province wide — `Isabela` is 229 on the tab and 224 in
+the plan. Only the provinces the tab names are replaced: it lists ten of the plan's thirteen
+(`Cagayan`, `Kalinga` and `Apayao` have no rows there), and a province the tab does not track
+keeps the plan's own figure rather than a zero nobody stated. From `SEP` on the plan itself
+holds those three at zero, so the month totals as the tab states it. A month the archived
+record already speaks for is left alone — a closed month is still sourced once, whole.
 
 Where each month of the strip came from is reported month by month in the
 **Developer console → Data source diagnostics → Monthly Progress**

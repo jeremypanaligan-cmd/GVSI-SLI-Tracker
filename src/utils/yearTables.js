@@ -274,6 +274,51 @@ export function buildMonthlyOverrides(rows, { year = null, collectionBased = fal
 }
 
 /**
+ * The running month's targets, read off the plan's own `DATA` tab.
+ *
+ * The year's plan (`sli_targets`) is a statement about the year. It was copied once out of
+ * `TARGET 2026` and is edited by hand, so a month still being worked can outgrow it — and the
+ * plan's own `DATA` tab (FIBERX DATA / BIDA DATA / SME DATA, the same tab the velocity chart
+ * reads) is where that month actually lives: one row per province per date, with the month's
+ * `TARGET` in its own column (`N` on FIBERX and BIDA, `P` on SME, because the MRC columns push
+ * it two cells right). So the running month's targets are read from there, at the latest date
+ * the tab carries, and the plan states every other month.
+ *
+ * SME's `OCT` is the case that made this necessary. The plan and the tab agreed on 262,984
+ * while the tab still held the old figure; the tab was raised to 307,529 on `Oct 7` and the
+ * plan was not, so the Monthly Progress strip read 262,984 for the rest of the month under a
+ * `MONTHLY TARGET` card reading 307,529. FIBERX's `OCT` is the same defect one province wide —
+ * `Isabela` is 229 on the tab and 224 in the plan.
+ *
+ * Only the provinces the tab names are replaced. It lists ten of the plan's thirteen —
+ * `Cagayan`, `Kalinga` and `Apayao` have no rows there — and a province the tab does not track
+ * keeps the plan's own figure rather than a zero nobody stated. From `SEP` on the plan itself
+ * holds those three at zero, so the month totals as the tab states it.
+ *
+ * `dateLabel` is the day the caller read the block at, carried through so the Developer console
+ * can say which row spoke, and so a probe can tell two reads apart.
+ *
+ * @param {object} block  one date's block of `parseRawDailyData` output — `{ areas, overallTotal }`
+ * @param {object} options
+ * @param {number} options.monthIndex   the month the block belongs to, 0-based
+ * @param {string} [options.dateLabel]  the date read, e.g. `"October 7, 2026"`
+ * @returns {null|{index: number, date: string|null, areas: object}} null when the block states
+ *          no province target at all
+ */
+export function liveMonthTargets(block, { monthIndex, dateLabel = null } = {}) {
+  if (!block || !Number.isInteger(monthIndex)) return null
+  const areas = {}
+  for (const area of block.areas || []) {
+    const key = normalizeAreaKey(area?.area)
+    const target = Number(area?.target)
+    if (!key || !Number.isFinite(target)) continue
+    areas[key] = target
+  }
+  if (Object.keys(areas).length === 0) return null
+  return { index: monthIndex, date: dateLabel, areas }
+}
+
+/**
  * The year's target plan, read out of `sli_targets`, in the block shape `computeYtd` takes.
  *
  * One row per plan x month x area. The province list and its order come out of the rows
@@ -508,8 +553,8 @@ export function buildYearTables({
  *
  *   figure   the archived month in `sli_monthly`, else the record (the live `MTD` tab, or the
  *            archive's `sli_mtd` rows), else nothing at all
- *   target   the archived month in `sli_monthly` beside that figure, else the year's plan
- *            (`sli_targets`)
+ *   target   the archived month in `sli_monthly` beside that figure, else the running month's
+ *            own `DATA` tab (`liveTargets`), else the year's plan (`sli_targets`)
  *
  * The third figure state is not a source: it means no read carried the month, so the strip is
  * showing a zero nothing measured. It is named rather than folded in for that reason.
@@ -535,11 +580,14 @@ export function buildYearTables({
  * @param {object} [args.overrides]     the record's figures, what `computeYtd` was given
  * @param {object} [args.monthly]       `buildMonthlyOverrides` output — the `sli_monthly` side
  * @param {number} [args.liveMonthIndex] the month the sheet is still serving, if known
+ * @param {object} [args.liveTargets]   `liveMonthTargets` output for the running month, when
+ *                                      its targets came off the plan's `DATA` tab rather than
+ *                                      the year's plan
  * @param {number} [args.year]
  * @returns {null|object} null when there is no year to report on
  */
 export function summarizeMonthlyProgressSources({
-  ytd, overrides = {}, monthly = {}, liveMonthIndex = null, year = null,
+  ytd, overrides = {}, monthly = {}, liveMonthIndex = null, liveTargets = null, year = null,
 }) {
   if (!ytd?.overall?.series) return null
 
@@ -566,8 +614,11 @@ export function summarizeMonthlyProgressSources({
       // Where the record's month came from: only the live month is still on the sheet's
       // `MTD` tab, so any other month it holds is the archive's `sli_mtd` rows.
       recordVia: source === 'record' ? (index === liveMonthIndex ? 'live' : 'archive') : null,
-      // The target under the cell: the archived one beside the figure, or the year's plan.
-      targetSource: holds(tableTargets, index) ? 'monthly' : 'plan',
+      // The target under the cell: the archived one beside the figure, the running month's own
+      // `DATA` tab, or the year's plan.
+      targetSource: (liveTargets && index === liveTargets.index && !holds(tableTargets, index))
+        ? 'live'
+        : holds(tableTargets, index) ? 'monthly' : 'plan',
       live: index === liveMonthIndex,
     })
   }
@@ -605,6 +656,9 @@ export function summarizeMonthlyProgressSources({
     months,
     // One cell per province per elapsed month, in the plan's own province order.
     provinces,
+    // The day the running month's targets were read at, when they came off the plan's `DATA`
+    // tab — `null` when the year's plan stated them.
+    liveTargetDate: liveTargets ? liveTargets.date ?? null : null,
     totals: {
       months: months.length,
       monthly: count('monthly'),
@@ -649,6 +703,11 @@ export function summarizeMonthlyProgressSources({
  *                                      archived Monthly Progress record (`sli_monthly`), so a
  *                                      closed month's target comes from the same source as
  *                                      its figure instead of the year's plan
+ * @param {object}   [args.liveTargets] `liveMonthTargets` output for the running month — the
+ *                                      plan's own `DATA` tab at the latest date it carries. A
+ *                                      month the archived record already speaks for keeps the
+ *                                      record's own target, and a province the `DATA` tab does
+ *                                      not name keeps the year's plan's.
  * @param {number}   [args.progress]    fraction of the selected month elapsed, 0–1
  * @param {boolean}  [args.annualTargetsKnown] false when the annual targets are not available
  *                                      — the year's plan (`sli_targets`) could not be read, so
@@ -659,7 +718,7 @@ export function summarizeMonthlyProgressSources({
  *                                      unaffected and still shown.
  * @returns {null|object} null when the plan has no block in either source
  */
-export function computeYtd({ actual, target, planId, monthIndex, overrides = {}, targetOverrides = {}, progress = null, annualTargetsKnown = true }) {
+export function computeYtd({ actual, target, planId, monthIndex, overrides = {}, targetOverrides = {}, liveTargets = null, progress = null, annualTargetsKnown = true }) {
   const actualBlock = actual?.plans?.[planId]
   const targetBlock = target?.plans?.[planId]
   if (!actualBlock || !targetBlock) return null
@@ -770,6 +829,14 @@ export function computeYtd({ actual, target, planId, monthIndex, overrides = {},
       if (actualFor(key, index).fromRecord) closedRecordMonths.add(index)
     }
     const seriesTarget = MONTHS.map((_, index) => targetFor(key, index))
+    // The running month comes off the plan's own `DATA` tab where it has a row for this
+    // province (`liveMonthTargets`) — the month is still being worked there, and the year's
+    // plan is a copy edited by hand. A month the archived record speaks for is left alone: a
+    // closed month is sourced once, whole.
+    if (liveTargets && !targetCovered.has(liveTargets.index)
+      && Object.prototype.hasOwnProperty.call(liveTargets.areas, key)) {
+      seriesTarget[liveTargets.index] = liveTargets.areas[key]
+    }
     const annualTarget = targetBlock.areas[key]?.total ?? sum(seriesTarget)
     return buildRow(key, name, seriesActual, seriesTarget, annualTarget)
   })
