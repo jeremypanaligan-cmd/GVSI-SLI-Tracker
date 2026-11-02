@@ -4,7 +4,7 @@ import { fetchArchivedMonths, fetchMonthlyProgress, fetchYearTargets } from './u
 import { recordManualSync, recordMonthlyProgress } from './utils/dataSourceDiagnostics'
 import {
   parseMTDData, extractExecutiveMetrics,
-  parseRawDailyData, parseAgingReport, parseRjoReport, getTodayStr, findClosestDate,
+  parseRawDailyData, parseAgingReport, parseRjoReport, parseRjoBreakdown, getTodayStr, findClosestDate,
   getCurrentMonthYear, findLatestDataDate, findLatestDateInMonth, monthYearOfDateLabel,
   buildDailyTrend, buildSeriesFromBlocks, summarizeSeries, buildCollectionSeries,
   buildAreaDayBreakdown, computeMoMDelta,
@@ -93,6 +93,7 @@ export default function App() {
   const [rawDaily, setRawDaily] = useState(null)
   const [agingData, setAgingData] = useState(null)
   const [rjoData, setRjoData] = useState(null)
+  const [rjoPlanData, setRjoPlanData] = useState(null)
   const [trendData, setTrendData] = useState(null)
   // The year's target plan (`sli_targets`) — the annual targets, the months still to come and
   // the province list, all of them per plan. Tagged with the plan it was read for, for the same
@@ -160,6 +161,7 @@ export default function App() {
 
       setAgingData(parseAgingReport(result.aging))
       setRjoData(parseRjoReport(result.rjo))
+      setRjoPlanData(parseRjoBreakdown(result.rjoByPlan))
       setTrendData(result.trend)
 
       setSource(result.source)
@@ -193,6 +195,7 @@ export default function App() {
         setRawDaily(parseRawDailyData(cached.raw))
         setAgingData(parseAgingReport(cached.aging))
         setRjoData(parseRjoReport(cached.rjo))
+        setRjoPlanData(parseRjoBreakdown(cached.rjoByPlan))
         setTrendData(cached.trend)
         setSource(cached.source)
         setLastSync(cached.timestamp)
@@ -219,6 +222,7 @@ export default function App() {
     setRawDaily(planDaily)
     setAgingData(parseAgingReport(result.aging))
     setRjoData(parseRjoReport(result.rjo))
+    setRjoPlanData(parseRjoBreakdown(result.rjoByPlan))
     setTrendData(result.trend)
     setSource(result.source)
     setLastSync(result.timestamp)
@@ -1103,6 +1107,7 @@ export default function App() {
         ) : view === 'rjo' ? (
           <RjoReport
             data={rjoData}
+            planData={rjoPlanData}
           />
         ) : view === 'executive' ? (
           <ExecutiveOverview

@@ -21,6 +21,9 @@ the aging report, so an unpublished tab omits the screen instead of failing the 
   bar; `?view=rjo` opens it directly, like `?view=aging`.
 - **Cached with the rest** (`gvsi_rjo_<plan>_v<version>`), so a plan switch renders it at once
   and it survives an offline reload.
+- **Per-plan breakdown**: the module switches between `All Plans` and the workbook's
+  `RJO-FIBERX`, `RJO-BIDA` and `RJO-SME` tabs, each drawn in the plan's own colour
+  (#5423C7 / #D32F2F / #008B74).
 
 ### 🎯 The running month's target comes off the plan's own DATA tab
 

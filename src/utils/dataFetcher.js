@@ -19,6 +19,7 @@ function cacheKeys(planId) {
     raw: `gvsi_raw_${planId}_${CACHE_VERSION}`,
     aging: `gvsi_aging_${planId}_${CACHE_VERSION}`,
     rjo: `gvsi_rjo_${planId}_${CACHE_VERSION}`,
+    rjoPlans: `gvsi_rjo_plans_${planId}_${CACHE_VERSION}`,
     trend: `gvsi_trend_${planId}_${CACHE_VERSION}`,
     time: `gvsi_time_${planId}_${CACHE_VERSION}`,
   }
@@ -73,7 +74,7 @@ try {
  * Save to localStorage; if quota exceeded, fall back to IndexedDB.
  * Cache keys are scoped by planId.
  */
-async function saveCache(planId, mtd, raw, aging, trend, rjo) {
+async function saveCache(planId, mtd, raw, aging, trend, rjo, rjoByPlan) {
   const keys = cacheKeys(planId)
   try {
     localStorage.setItem(keys.mtd, JSON.stringify(mtd))
@@ -81,6 +82,7 @@ async function saveCache(planId, mtd, raw, aging, trend, rjo) {
     localStorage.setItem(keys.aging, JSON.stringify(aging || { headers: [], rows: [], objects: [] }))
     localStorage.setItem(keys.trend, JSON.stringify(trend || { headers: [], rows: [], objects: [] }))
     localStorage.setItem(keys.rjo, JSON.stringify(rjo || { headers: [], rows: [], objects: [] }))
+    localStorage.setItem(keys.rjoPlans, JSON.stringify(rjoByPlan || {}))
     localStorage.setItem(keys.time, Date.now().toString())
   } catch {
     console.warn(`[Cache] localStorage full for ${planId}, saving to IndexedDB`)
@@ -90,6 +92,7 @@ async function saveCache(planId, mtd, raw, aging, trend, rjo) {
       idbSet(keys.aging, aging || { headers: [], rows: [], objects: [] }),
       idbSet(keys.trend, trend || { headers: [], rows: [], objects: [] }),
       idbSet(keys.rjo, rjo || { headers: [], rows: [], objects: [] }),
+      idbSet(keys.rjoPlans, rjoByPlan || {}),
       idbSet(keys.time, Date.now()),
     ])
   }
@@ -106,6 +109,7 @@ async function readCache(planId) {
   let agingRaw = null
   let trendRaw = null
   let rjoRaw = null
+  let rjoPlansRaw = null
   let timeStr = null
 
   // 1) Try localStorage first
@@ -115,17 +119,19 @@ async function readCache(planId) {
     agingRaw = localStorage.getItem(keys.aging)
     trendRaw = localStorage.getItem(keys.trend)
     rjoRaw = localStorage.getItem(keys.rjo)
+    rjoPlansRaw = localStorage.getItem(keys.rjoPlans)
     timeStr = localStorage.getItem(keys.time)
   } catch { /* ignore */ }
 
   // 2) If localStorage is empty, try IndexedDB
   if (!mtdRaw && !rawRaw) {
-    const [idbMtd, idbRaw, idbAging, idbTrend, idbRjo, idbTime] = await Promise.all([
+    const [idbMtd, idbRaw, idbAging, idbTrend, idbRjo, idbRjoPlans, idbTime] = await Promise.all([
       idbGet(keys.mtd),
       idbGet(keys.raw),
       idbGet(keys.aging),
       idbGet(keys.trend),
       idbGet(keys.rjo),
+      idbGet(keys.rjoPlans),
       idbGet(keys.time),
     ])
     if (idbMtd && idbRaw) {
@@ -134,11 +140,12 @@ async function readCache(planId) {
       agingRaw = idbAging ? JSON.stringify(idbAging) : null
       trendRaw = idbTrend ? JSON.stringify(idbTrend) : null
       rjoRaw = idbRjo ? JSON.stringify(idbRjo) : null
+      rjoPlansRaw = idbRjoPlans ? JSON.stringify(idbRjoPlans) : null
       timeStr = idbTime ? String(idbTime) : null
     }
   }
 
-  return { mtdRaw, rawRaw, agingRaw, trendRaw, rjoRaw, timeStr }
+  return { mtdRaw, rawRaw, agingRaw, trendRaw, rjoRaw, rjoPlansRaw, timeStr }
 }
 
 const EMPTY = {
@@ -147,6 +154,7 @@ const EMPTY = {
   aging: { headers: [], rows: [], objects: [] },
   trend: { headers: [], rows: [], objects: [] },
   rjo: { headers: [], rows: [], objects: [] },
+  rjoByPlan: {},
 }
 
 /**
@@ -157,7 +165,7 @@ const EMPTY = {
  */
 export async function getCachedData(planId = DEFAULT_PLAN, selectedMonthYear) {
   try {
-    const { mtdRaw, rawRaw, agingRaw, trendRaw, rjoRaw, timeStr } = await readCache(planId)
+    const { mtdRaw, rawRaw, agingRaw, trendRaw, rjoRaw, rjoPlansRaw, timeStr } = await readCache(planId)
 
     if (!mtdRaw && !rawRaw) {
       recordSheetRead(planId, { source: 'none', mtdBytes: 0, rawBytes: 0, mtdRows: 0, rawRows: 0 })
@@ -169,6 +177,7 @@ export async function getCachedData(planId = DEFAULT_PLAN, selectedMonthYear) {
     const aging = agingRaw ? JSON.parse(agingRaw) : { headers: [], rows: [], objects: [] }
     const trend = trendRaw ? JSON.parse(trendRaw) : { headers: [], rows: [], objects: [] }
     const rjo = rjoRaw ? JSON.parse(rjoRaw) : { headers: [], rows: [], objects: [] }
+    const rjoByPlan = rjoPlansRaw ? JSON.parse(rjoPlansRaw) : {}
     const timestamp = timeStr ? new Date(Number(timeStr)) : null
 
     const age = timestamp ? Date.now() - timestamp.getTime() : Infinity
@@ -190,7 +199,7 @@ export async function getCachedData(planId = DEFAULT_PLAN, selectedMonthYear) {
     // sheet cache holds one copy of the data and never grows with the archive.
     const merged = await mergeArchiveIntoCsv(planId, { mtd, raw }, selectedMonthYear)
 
-    return { mtd: merged.mtd, raw: merged.raw, aging, rjo, trend, source, timestamp }
+    return { mtd: merged.mtd, raw: merged.raw, aging, rjo, rjoByPlan, trend, source, timestamp }
   } catch {
     return { ...EMPTY, source: 'none', timestamp: null }
   }
@@ -259,6 +268,15 @@ export async function fetchAllData(planId = DEFAULT_PLAN, selectedMonthYear) {
         }
       } catch { /* rjo is optional */ }
 
+      // Best-effort: the per-plan RJO breakdown tabs (RJO-FIBERX / RJO-BIDA / RJO-SME).
+      let rjoByPlan = {}
+      await Promise.all(['fiberx', 'bida', 'sme'].map(async (id) => {
+        try {
+          const res = await fetch(PLANS[id].rjoDetailUrl + bust, { cache: 'no-store' })
+          if (res.ok) rjoByPlan[id] = parseCSV(await res.text())
+        } catch { /* a missing plan tab only omits that scope */ }
+      }))
+
       // Best-effort: 30-day trend data from dedicated sheet — plan-specific.
       let trend = { headers: [], rows: [], objects: [] }
       try {
@@ -270,11 +288,11 @@ export async function fetchAllData(planId = DEFAULT_PLAN, selectedMonthYear) {
 
       // Cache the sheet data only — archived rows live in their own forever-cache, so
       // only one copy of any month is ever stored.
-      await saveCache(planId, mtd, raw, aging, trend, rjo)
+      await saveCache(planId, mtd, raw, aging, trend, rjo, rjoByPlan)
 
       const merged = await mergeArchiveIntoCsv(planId, { mtd, raw }, selectedMonthYear)
 
-      return { mtd: merged.mtd, raw: merged.raw, aging, rjo, trend, source: 'live', timestamp: new Date() }
+      return { mtd: merged.mtd, raw: merged.raw, aging, rjo, rjoByPlan, trend, source: 'live', timestamp: new Date() }
     } catch (err) {
       const hint = err.message.includes('401') 
         ? ` — Sheet may not be published. Open the Google Sheet → File → Share → Publish to web.`

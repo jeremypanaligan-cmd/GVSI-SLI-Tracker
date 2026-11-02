@@ -42,6 +42,9 @@ plan-specific trend tabs.
 | `Login Credentials` | `1425491426` | **Nothing** — superseded by `sli_users`; kept only as a private working copy | — |
 | `COMPLETED AGING REPORT` | `766491804` | Installation SLA Breakdown | `PLANS[*].agingUrl` (all three plans) |
 | `RJO Report` | `198146385` | RJO Report | `PLANS[*].rjoUrl` (all three plans) |
+| `RJO-FIBERX` | `775212867` | RJO Report — FIBERX scope | `PLANS.fiberx.rjoDetailUrl` |
+| `RJO-BIDA` | `1156630028` | RJO Report — BIDA scope | `PLANS.bida.rjoDetailUrl` |
+| `RJO-SME` | `811608265` | RJO Report — SME scope | `PLANS.sme.rjoDetailUrl` |
 | `FIBERX DATA` | `0` | Executive Overview 30-day trend (FIBERX) | `PLANS.fiberx.trendUrl` |
 | `BIDA DATA` | `721299435` | Executive Overview 30-day trend (BIDA) | `PLANS.bida.trendUrl` |
 | `SME DATA` | `1854320942` | Executive Overview 30-day trend (SME) | `PLANS.sme.trendUrl` |
@@ -240,7 +243,7 @@ the seed above.
 
 | File | Responsibility |
 |------|----------------|
-| `src/config/plans.js` | Every URL: `AUTH_URL`, and per-plan `mtdUrl`, `rawUrl`, `agingUrl`, `rjoUrl`, `trendUrl`, `sheetId`, `accentClasses`, plus `YTD_YEAR`. **This is the only place a sheet URL should live.** The two retired year tabs are absent on purpose |
+| `src/config/plans.js` | Every URL: `AUTH_URL`, and per-plan `mtdUrl`, `rawUrl`, `agingUrl`, `rjoUrl`, `rjoDetailUrl`, `trendUrl`, `sheetId`, `accentClasses`, plus `YTD_YEAR`. **This is the only place a sheet URL should live.** The two retired year tabs are absent on purpose |
 | `src/utils/dataFetcher.js` | `fetchAllData` (live), `getCachedData` (cache-first), `prefetchAllPlans`, cache read/write |
 | `scripts/targets-seed.cjs` | Prints `supabase/seed-year-targets.sql` from a `TARGET` CSV export — how a new year's plan is loaded, and how a corrected one is re-loaded |
 | `src/utils/csvParser.js` | `parseCSV` — handles quoted fields and CRLF from Google's export |
@@ -258,7 +261,7 @@ the seed above.
 1. `plan.mtdUrl`
 2. `plan.rawUrl`
 3. `plan.agingUrl` — **best effort**, failure is ignored (aging is optional)
-4. `plan.rjoUrl` — **best effort**, failure is ignored (RJO is optional)
+4. `plan.rjoUrl` plus the three `rjoDetailUrl` tabs — **best effort**, failure is ignored (RJO is optional)
 5. `plan.trendUrl` — **best effort**, failure is ignored (trend is optional)
 
 A failed MTD or RAW fetch fails the whole sync; a failed aging, RJO or trend fetch only omits that view.

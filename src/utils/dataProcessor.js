@@ -655,6 +655,23 @@ export function parseRjoReport(rjoData) {
   return { headers: rjoData.headers || [], rows, overallTotal }
 }
 
+/**
+ * Parse the per-plan RJO tabs (RJO-FIBERX / RJO-BIDA / RJO-SME) into one map.
+ * Each tab has the same shape as the combined one; a missing or empty tab is simply absent.
+ *
+ * @param {Object} byPlan - { fiberx, bida, sme } of raw parseCSV results
+ * @returns {{ fiberx?: Object, bida?: Object, sme?: Object }}
+ */
+export function parseRjoBreakdown(byPlan) {
+  if (!byPlan || typeof byPlan !== 'object') return {}
+  const out = {}
+  for (const planId of ['fiberx', 'bida', 'sme']) {
+    const parsed = parseRjoReport(byPlan[planId])
+    if (parsed) out[planId] = parsed
+  }
+  return out
+}
+
 // ==================== DATE UTILITIES ====================
 
 /**
