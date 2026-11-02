@@ -6,6 +6,22 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 📋 New module — RJO Report
+
+The shared workbook's `RJO Report` tab (`gid=198146385`) is now its own screen, beside the
+Installation SLA Breakdown: province × `DOABLE` / `NOT DOABLE` / `FULL NAP`, the sheet's own
+`total` row as `OVERALL TOTAL`, and a summary card for each of the four figures. It is
+plan-agnostic — FIBERX, BIDA and SME read the same tab — and it is fetched best-effort beside
+the aging report, so an unpublished tab omits the screen instead of failing the sync.
+
+- **Webview**: a sortable, searchable table with a proportional `MIX` bar per province.
+- **Mobile**: one card per province with the same bar and a three-up legend, then the pinned
+  total card — a different layout, the same figures.
+- **Placement**: after SLA Breakdown in the webview utility menu and in the mobile navigation
+  bar; `?view=rjo` opens it directly, like `?view=aging`.
+- **Cached with the rest** (`gvsi_rjo_<plan>_v<version>`), so a plan switch renders it at once
+  and it survives an offline reload.
+
 ### 🎯 The running month's target comes off the plan's own DATA tab
 
 The Executive Overview showed two different figures for the current month's target: the

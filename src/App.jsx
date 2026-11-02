@@ -4,7 +4,7 @@ import { fetchArchivedMonths, fetchMonthlyProgress, fetchYearTargets } from './u
 import { recordManualSync, recordMonthlyProgress } from './utils/dataSourceDiagnostics'
 import {
   parseMTDData, extractExecutiveMetrics,
-  parseRawDailyData, parseAgingReport, getTodayStr, findClosestDate,
+  parseRawDailyData, parseAgingReport, parseRjoReport, getTodayStr, findClosestDate,
   getCurrentMonthYear, findLatestDataDate, findLatestDateInMonth, monthYearOfDateLabel,
   buildDailyTrend, buildSeriesFromBlocks, summarizeSeries, buildCollectionSeries,
   buildAreaDayBreakdown, computeMoMDelta,
@@ -13,6 +13,7 @@ import ExecutiveOverview from './components/ExecutiveOverview'
 import DailyTable from './components/DailyTable'
 import CompareView from './components/CompareView'
 import AgingReport from './components/AgingReport'
+import RjoReport from './components/RjoReport'
 import DatePicker from './components/DatePicker'
 import SyncIcon from './components/SyncIcon'
 import ThemeToggle from './components/ThemeToggle'
@@ -70,7 +71,7 @@ const initialUrlState = readUrlState()
 
 function initialView() {
   const v = initialUrlState.view || storageGet(STATE_STORAGE_KEYS.view)
-  return v === 'daily' || v === 'compare' || v === 'aging' ? v : 'executive'
+  return v === 'daily' || v === 'compare' || v === 'aging' || v === 'rjo' ? v : 'executive'
 }
 
 function initialDate() {
@@ -91,6 +92,7 @@ export default function App() {
   const [mtdData, setMtdData] = useState(null)
   const [rawDaily, setRawDaily] = useState(null)
   const [agingData, setAgingData] = useState(null)
+  const [rjoData, setRjoData] = useState(null)
   const [trendData, setTrendData] = useState(null)
   // The year's target plan (`sli_targets`) — the annual targets, the months still to come and
   // the province list, all of them per plan. Tagged with the plan it was read for, for the same
@@ -157,6 +159,7 @@ export default function App() {
       setRawDaily(daily)
 
       setAgingData(parseAgingReport(result.aging))
+      setRjoData(parseRjoReport(result.rjo))
       setTrendData(result.trend)
 
       setSource(result.source)
@@ -189,6 +192,7 @@ export default function App() {
         setMtdData(parseMTDData(cached.mtd, selectedMonthYear))
         setRawDaily(parseRawDailyData(cached.raw))
         setAgingData(parseAgingReport(cached.aging))
+        setRjoData(parseRjoReport(cached.rjo))
         setTrendData(cached.trend)
         setSource(cached.source)
         setLastSync(cached.timestamp)
@@ -214,6 +218,7 @@ export default function App() {
     const planDaily = parseRawDailyData(result.raw)
     setRawDaily(planDaily)
     setAgingData(parseAgingReport(result.aging))
+    setRjoData(parseRjoReport(result.rjo))
     setTrendData(result.trend)
     setSource(result.source)
     setLastSync(result.timestamp)
@@ -226,7 +231,7 @@ export default function App() {
   const handlePlanChange = useCallback(async (newPlan) => {
     // Single active selection: picking a plan exits SLA / Compare modes so the
     // plan filter becomes the only highlighted navigation item.
-    setView(v => (v === 'aging' || v === 'compare' ? 'executive' : v))
+    setView(v => (v === 'aging' || v === 'rjo' || v === 'compare' ? 'executive' : v))
     if (newPlan === activePlan) return
     planChangeRef.current = newPlan
     setActivePlan(newPlan)
@@ -739,6 +744,19 @@ export default function App() {
       ),
     },
     {
+      key: 'rjo',
+      active: view === 'rjo',
+      disabled: !rjoData,
+      title: 'View the RJO report (doable / not doable / full nap)',
+      onClick: () => setView(view === 'rjo' ? 'executive' : 'rjo'),
+      label: view === 'rjo' ? 'Back' : 'RJO',
+      icon: (
+        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+        </svg>
+      ),
+    },
+    {
       key: 'report',
       active: false,
       disabled: !executiveMetrics,
@@ -804,7 +822,7 @@ export default function App() {
       disabled: isSyncing,
     },
     // SLA is excluded — it already lives in the bottom navigation bar.
-    ...headerActions.filter(a => a.key !== 'aging').map(a => ({
+    ...headerActions.filter(a => a.key !== 'aging' && a.key !== 'rjo').map(a => ({
       key: a.key,
       label: a.label,
       icon: a.icon,
@@ -862,7 +880,7 @@ export default function App() {
                 <span className="text-teal-600 dark:text-teal-400">GVSI</span> SLI Tracker
               </h1>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:block tracking-wide truncate">
-                Gallopvision Services, Inc. — {view === 'executive' ? 'Executive Overview' : view === 'compare' ? 'Portfolio Compare' : view === 'aging' ? 'Installation SLA Breakdown' : `Daily Status — ${selectedDate || '…'}`}
+                Gallopvision Services, Inc. — {view === 'executive' ? 'Executive Overview' : view === 'compare' ? 'Portfolio Compare' : view === 'aging' ? 'Installation SLA Breakdown' : view === 'rjo' ? 'RJO Report' : `Daily Status — ${selectedDate || '…'}`}
               </p>
             </div>
           </div>
@@ -975,7 +993,7 @@ export default function App() {
               <div className="flex items-center justify-between lg:justify-end gap-2 lg:gap-3 shrink-0">
                 <PlanSelector
                   variant="navbar"
-                  activePlan={view === 'aging' || view === 'compare' ? null : activePlan}
+                  activePlan={view === 'aging' || view === 'rjo' || view === 'compare' ? null : activePlan}
                   onPlanChange={handlePlanChange}
                   isSyncing={isSyncing}
                 />
@@ -1082,6 +1100,10 @@ export default function App() {
           <AgingReport
             data={agingData}
           />
+        ) : view === 'rjo' ? (
+          <RjoReport
+            data={rjoData}
+          />
         ) : view === 'executive' ? (
           <ExecutiveOverview
             metrics={executiveMetrics}
@@ -1146,7 +1168,7 @@ export default function App() {
         <div className="flex items-stretch">
           {PLAN_ORDER.map((planId) => {
             const plan = PLANS[planId]
-            const isActive = activePlan === planId && view !== 'aging' && view !== 'compare'
+            const isActive = activePlan === planId && view !== 'aging' && view !== 'rjo' && view !== 'compare'
             return (
               <button
                 key={planId}
@@ -1175,6 +1197,19 @@ export default function App() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4l2.5 2.5M9 2h6" />
               </svg>
               <span className={`text-[10px] font-bold tracking-wide transition-colors duration-200 ${view === 'aging' ? slaAccent.text : 'text-slate-400 dark:text-slate-500'}`}>SLA</span>
+            </span>
+          </button>
+          <button
+            onClick={() => setView(view === 'rjo' ? 'executive' : 'rjo')}
+            className="relative flex-1 flex flex-col items-center justify-center py-2.5 active:bg-slate-100 dark:active:bg-slate-800/60 transition-colors"
+            aria-label="RJO report"
+          >
+            <span className={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-b-full transition-colors ${view === 'rjo' ? 'bg-sky-500' : 'bg-transparent'}`} />
+            <span className={`flex flex-col items-center justify-center gap-1 transition-all duration-200 ease-out ${view === 'rjo' ? 'scale-110 -translate-y-0.5' : 'scale-100'}`}>
+              <svg className={`w-5 h-5 transition-all duration-200 ease-out ${view === 'rjo' ? 'text-sky-500 drop-shadow-[0_0_6px_rgba(14,165,233,0.6)]' : 'text-slate-400 dark:text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              <span className={`text-[10px] font-bold tracking-wide transition-colors duration-200 ${view === 'rjo' ? 'text-sky-500' : 'text-slate-400 dark:text-slate-500'}`}>RJO</span>
             </span>
           </button>
           <button

@@ -603,6 +603,58 @@ export function parseAgingReport(agingData) {
   return { headers: agingData.headers || [], rows, overallTotal }
 }
 
+// ==================== RJO REPORT PARSING ====================
+
+/**
+ * Parse the RJO Report tab into structured rows.
+ * Sheet layout:
+ *   PROVINCE | DOABLE | NOT DOABLE | FULL NAP
+ *   (area rows...) + a final "total" row.
+ *
+ * The tab has only four columns, so parseCSV's five-cell header heuristic leaves the
+ * header inside `rows`; a first cell reading PROVINCE (or AREA) is skipped here as well.
+ *
+ * @param {Object} rjoData - { headers, rows, objects } from parseCSV
+ * @returns {null|{ headers, rows, overallTotal }}
+ */
+export function parseRjoReport(rjoData) {
+  if (!rjoData) return null
+  const rawArrays = rjoData.rows || []
+  if (rawArrays.length === 0) return null
+
+  const rows = []
+  let overallTotal = null
+
+  for (const arr of rawArrays) {
+    const province = String(arr[0] || '').trim()
+    if (!province) continue
+
+    const key = province.toLowerCase()
+    if (key === 'province' || key === 'area') continue
+
+    const doable = toNum(arr[1])
+    const notDoable = toNum(arr[2])
+    const fullNap = toNum(arr[3])
+    const entry = {
+      province,
+      doable,
+      notDoable,
+      fullNap,
+      total: doable + notDoable + fullNap,
+    }
+
+    if (key === 'total' || key === 'overall total') {
+      overallTotal = entry
+    } else {
+      rows.push(entry)
+    }
+  }
+
+  if (rows.length === 0 && !overallTotal) return null
+
+  return { headers: rjoData.headers || [], rows, overallTotal }
+}
+
 // ==================== DATE UTILITIES ====================
 
 /**

@@ -41,6 +41,7 @@ plan-specific trend tabs.
 |-----|-----|---------|------------|
 | `Login Credentials` | `1425491426` | **Nothing** — superseded by `sli_users`; kept only as a private working copy | — |
 | `COMPLETED AGING REPORT` | `766491804` | Installation SLA Breakdown | `PLANS[*].agingUrl` (all three plans) |
+| `RJO Report` | `198146385` | RJO Report | `PLANS[*].rjoUrl` (all three plans) |
 | `FIBERX DATA` | `0` | Executive Overview 30-day trend (FIBERX) | `PLANS.fiberx.trendUrl` |
 | `BIDA DATA` | `721299435` | Executive Overview 30-day trend (BIDA) | `PLANS.bida.trendUrl` |
 | `SME DATA` | `1854320942` | Executive Overview 30-day trend (SME) | `PLANS.sme.trendUrl` |
@@ -230,6 +231,7 @@ the seed above.
 | Date picker's list of available dates | `App` | Plan sheet → `RAW DATA` (`Date` column) | Yes |
 | Compare view (all three plans side by side) | `CompareView` | **All three** plan sheets → `MTD` + `RAW DATA`; a `collectionBased` plan (SME) shows Net Collection and is left out of the count-based totals, with a note saying why | Yes (×3) |
 | Installation SLA Breakdown (≤24h / ≤72h / >72h) | `AgingReport` | Shared → `COMPLETED AGING REPORT` | No (shared) |
+| RJO Report (DOABLE / NOT DOABLE / FULL NAP) | `RjoReport` | Shared → `RJO Report` | No (shared) |
 | Executive Report (print / PDF) | `ExecutiveReportModal` | Plan sheet → `MTD` (areas + metrics); `RAW DATA` for the reference date. Provincial Standing is ranked, printed and paced on NET on a `collectionBased` plan (SME), on ticket completions otherwise | Yes |
 | `Export` — "Export all RAW DATA as CSV" | `exportRawDataCSV` | Plan sheet → `RAW DATA` | Yes |
 | Prefetch (background warm-up for all plans) | `prefetchAllPlans` | All three plan sheets → `MTD` + `RAW DATA` + shared aging/trend | Yes (×3) |
@@ -238,11 +240,11 @@ the seed above.
 
 | File | Responsibility |
 |------|----------------|
-| `src/config/plans.js` | Every URL: `AUTH_URL`, and per-plan `mtdUrl`, `rawUrl`, `agingUrl`, `trendUrl`, `sheetId`, `accentClasses`, plus `YTD_YEAR`. **This is the only place a sheet URL should live.** The two retired year tabs are absent on purpose |
+| `src/config/plans.js` | Every URL: `AUTH_URL`, and per-plan `mtdUrl`, `rawUrl`, `agingUrl`, `rjoUrl`, `trendUrl`, `sheetId`, `accentClasses`, plus `YTD_YEAR`. **This is the only place a sheet URL should live.** The two retired year tabs are absent on purpose |
 | `src/utils/dataFetcher.js` | `fetchAllData` (live), `getCachedData` (cache-first), `prefetchAllPlans`, cache read/write |
 | `scripts/targets-seed.cjs` | Prints `supabase/seed-year-targets.sql` from a `TARGET` CSV export — how a new year's plan is loaded, and how a corrected one is re-loaded |
 | `src/utils/csvParser.js` | `parseCSV` — handles quoted fields and CRLF from Google's export |
-| `src/utils/dataProcessor.js` | `parseMTDData`, `parseRawDailyData`, `parseAgingReport`, `extractExecutiveMetrics`, `buildDailyTrend`, `findLatestDataDate` |
+| `src/utils/dataProcessor.js` | `parseMTDData`, `parseRawDailyData`, `parseAgingReport`, `parseRjoReport`, `extractExecutiveMetrics`, `buildDailyTrend`, `findLatestDataDate` |
 | `src/config/supabase.js` | Supabase URL + the public anon key. **The only place a Supabase endpoint should live.** |
 | `src/utils/archiveFetcher.js` | Reads archived months and rebuilds them as sheet-shaped CSV rows; merges them into the sheet data before parsing |
 | `src/utils/presence.js` | Presence / maintenance / roster RPC client |
@@ -251,21 +253,22 @@ the seed above.
 
 ### Fetched together, every sync
 
-`fetchAllData(planId)` pulls four endpoints in one pass and caches all of them:
+`fetchAllData(planId)` pulls five endpoints in one pass and caches all of them:
 
 1. `plan.mtdUrl`
 2. `plan.rawUrl`
 3. `plan.agingUrl` — **best effort**, failure is ignored (aging is optional)
-4. `plan.trendUrl` — **best effort**, failure is ignored (trend is optional)
+4. `plan.rjoUrl` — **best effort**, failure is ignored (RJO is optional)
+5. `plan.trendUrl` — **best effort**, failure is ignored (trend is optional)
 
-A failed MTD or RAW fetch fails the whole sync; a failed aging or trend fetch only omits that view.
+A failed MTD or RAW fetch fails the whole sync; a failed aging, RJO or trend fetch only omits that view.
 
 ## Cache and freshness
 
 | Aspect | Behaviour |
 |--------|-----------|
 | Storage | `localStorage`, with an IndexedDB fallback on quota errors |
-| Keys | `gvsi_<mtd\|raw\|aging\|trend\|time>_<plan>_v<appVersion>` (e.g. `gvsi_trend_fiberx_v1.12.0`) |
+| Keys | `gvsi_<mtd\|raw\|aging\|rjo\|trend\|time>_<plan>_v<appVersion>` (e.g. `gvsi_trend_fiberx_v1.12.0`) |
 | Archive keys | `gvsi_arch_idx_<plan>_v…` (month list, 5-minute TTL), `gvsi_arch_mon_<plan>_v…` (the Monthly Progress rows, 5-minute TTL — never remembered when empty) and `gvsi_arch_<mtd\|raw>_<plan>_<month>_v…` (**no TTL** — an archived month never changes, so it is fetched once per browser) |
 | Year plan key | `gvsi_arch_tgt_<plan>_v…` — `sli_targets` rows for one plan, 5-minute TTL, likewise never remembered when empty |
 | Versioning | The key embeds `APP_VERSION`, so a release retires the whole previous cache set and orphaned records are purged on version change |

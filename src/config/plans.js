@@ -32,6 +32,10 @@ export const ARCHIVE_AFTER_DAYS = 7
 // tabs the app no longer reads).
 const SHARED_SHEET = `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs`
 
+// RJO Report — the shared workbook's RJO Report tab (gid 198146385). Plan-agnostic, like the
+// aging report, so every plan carries the same URL and whichever plan is active fetches it.
+const RJO_URL = `${SHARED_SHEET}/export?format=csv&gid=198146385`
+
 // Login credentials live in a dedicated sheet, shared by every plan.
 // Tab: "Login Credentials" — Username | PasswordHash | FullName | Role
 // (PasswordHash = lowercase SHA-256 hex of the plain password)
@@ -72,6 +76,7 @@ export const PLANS = {
     mtdUrl: `${SHEET_BASE}1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=1061751267`,
     rawUrl: `${SHEET_BASE}1UUd8cpfKeOCBHANx9wmM7l1apFyDoZRv0dHZa2_bVr0/export?format=csv&gid=486719298`,
     agingUrl: `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=766491804`,
+    rjoUrl: RJO_URL,
     trendUrl: `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=0`,
     // The plan's own CONFIG tab — the archive switches and `LAST_ARCHIVE`, the one cell
     // that explains a trim refusal. Read only by the Developer console, never by the
@@ -106,6 +111,7 @@ export const PLANS = {
     mtdUrl: `${SHEET_BASE}1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M/export?format=csv&gid=1061751267`,
     rawUrl: `${SHEET_BASE}1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M/export?format=csv&gid=486719298`,
     agingUrl: `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=766491804`,
+    rjoUrl: RJO_URL,
     trendUrl: `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=721299435`,
     configUrl: `${SHEET_BASE}1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M/export?format=csv&gid=1143583309`,
     sheetId: '1FrEowZ9Zl0jMAyLDe4OZE2cQV04nIz-rjRkLi6uv99M',
@@ -143,6 +149,7 @@ export const PLANS = {
     mtdUrl: `${SHEET_BASE}10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY/export?format=csv&gid=1061751267`,
     rawUrl: `${SHEET_BASE}10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY/export?format=csv&gid=486719298`,
     agingUrl: `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=766491804`,
+    rjoUrl: RJO_URL,
     trendUrl: `${SHEET_BASE}1PGB2Mmo5Ka2NBfrlJWIF3V_X3Kxm6jepT5-eEYOC9bs/export?format=csv&gid=1854320942`,
     configUrl: `${SHEET_BASE}10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY/export?format=csv&gid=1236818076`,
     sheetId: '10P3GatvwC76IujPpjHtqgyNjE71ChAoP_8Ln7BDcvTY',
