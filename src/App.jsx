@@ -479,22 +479,24 @@ export default function App() {
     collectionBased: Boolean(currentPlan.collectionBased),
   }), [activePlan, monthlyRecord, yearTargets, mtdData, currentPlan])
 
-  // The running month's targets, read off the plan's own `DATA` tab rather than the year's
+  // The month on screen's targets, read off the plan's own `DATA` tab rather than the year's
   // plan. `sli_targets` is a statement about the year, seeded once and edited by hand, while
   // the month still being worked lives on the `DATA` tab — so where the two disagree, the tab
-  // is the one that is right. SME's `OCT` is the case in point: the tab was raised from
-  // 262,984 to 307,529 on `Oct 7` and the plan was not, which left the Monthly Progress strip
-  // contradicting the `MONTHLY TARGET` card beside it. Read at the latest date the tab carries
-  // (a pre-entered row of zeroes does not speak), and only for the plan's own year.
+  // is the one that is right. Following the month on screen, not the calendar month, is what
+  // keeps a month that has just closed but is not archived yet reading the tab: SME's
+  // `October 2026` read 262,984 in the plan against 290,741 on the tab. Read at the latest
+  // date the tab carries (a pre-entered row of zeroes does not speak), only for the plan's own
+  // year, and never for a month the archived record already covers — a closed month is sourced
+  // once, whole.
   const liveTargets = useMemo(() => {
-    const monthYear = getCurrentMonthYear()
+    const monthYear = selectedMonthYear
     const parts = monthLabelParts(monthYear)
     if (!parts || parts.year !== YTD_YEAR) return null
     const parsed = parseRawDailyData(trendData)
     const dateLabel = findLatestDateInMonth(parsed, monthYear)
     if (!dateLabel) return null
     return liveMonthTargets(parsed.blocks?.[dateLabel], { monthIndex: parts.monthIndex, dateLabel })
-  }, [trendData])
+  }, [trendData, selectedMonthYear])
 
   const ytdMetrics = useMemo(() => {
     if (!ytdTables) return null

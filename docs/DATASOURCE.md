@@ -108,19 +108,25 @@ month's figure and target. There is no year to measure against, so everything th
 one is reported absent rather than partial (`annualTargetsKnown`), and the section says so on
 screen — the plan-to-date headline needs only the months that have happened.
 
-**The running month's targets are the one thing the year's plan does not state.** `sli_targets`
+**The month on screen's targets are the one thing the year's plan can lag on.** `sli_targets`
 is a statement about the year: it was copied once out of `TARGET 2026` and is edited by hand,
-so a month still being worked can outgrow it. That month lives on the plan's own `DATA` tab
-(FIBERX DATA / BIDA DATA / SME DATA — the tab the velocity chart already reads), one row per
-province per date, with the month's `TARGET` in its own column: `N` on FIBERX and BIDA, `P` on
-SME, because the MRC columns push it two cells right. The app reads it at the latest date the
-tab carries and uses those figures for the running month (`liveMonthTargets` in
-`src/utils/yearTables.js`), which is what keeps the Monthly Progress strip agreeing with the
-Month-to-Date card beside it.
+so a month still being worked can outgrow it — and a month that has just closed keeps the
+plan's stale copy until the archive writes its own row. That month lives on the plan's own
+`DATA` tab (FIBERX DATA / BIDA DATA / SME DATA — the tab the velocity chart already reads),
+one row per province per date, with the month's `TARGET` in its own column: `N` on FIBERX and
+BIDA, `P` on SME, because the MRC columns push it two cells right. The app reads it at the
+latest date the tab carries and uses those figures for the month on screen
+(`liveMonthTargets` in `src/utils/yearTables.js`), which is what keeps the Monthly Progress
+strip agreeing with the Month-to-Date card beside it. A month the archived record already
+covers is left alone.
 
-SME's `OCT` is the case that made this necessary. Plan and tab agreed on 262,984 while the tab
-held the old figure; the tab was raised to 307,529 on `Oct 7` and the plan was not, so the
-strip read 262,984 for the rest of the month under a `MONTHLY TARGET` card reading 307,529.
+SME's `October 2026` is the case that made this necessary. The plan carried 262,984 — it was
+copied on `Oct 7`, with `Aurora` still at 0 — while the `MTD` and `DATA` tabs both stated
+290,741, and in the first days of November that left the strip reading 262,984 under a
+`MONTHLY TARGET` card reading 290,741. The override now follows the month on screen, and the
+plan's own `Aurora` row was corrected to 27,757 so the year and its annual target agree too.
+October becomes eligible for archiving `ARCHIVE_AFTER_DAYS` days into November, and the
+archived row states 290,741.
 FIBERX's `OCT` is the same defect one province wide — `Isabela` is 229 on the tab and 224 in
 the plan. Only the provinces the tab names are replaced: it lists ten of the plan's thirteen
 (`Cagayan`, `Kalinga` and `Apayao` have no rows there), and a province the tab does not track

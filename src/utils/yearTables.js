@@ -703,7 +703,7 @@ export function summarizeMonthlyProgressSources({
  *                                      archived Monthly Progress record (`sli_monthly`), so a
  *                                      closed month's target comes from the same source as
  *                                      its figure instead of the year's plan
- * @param {object}   [args.liveTargets] `liveMonthTargets` output for the running month — the
+ * @param {object}   [args.liveTargets] `liveMonthTargets` output for the month on screen — the
  *                                      plan's own `DATA` tab at the latest date it carries. A
  *                                      month the archived record already speaks for keeps the
  *                                      record's own target, and a province the `DATA` tab does

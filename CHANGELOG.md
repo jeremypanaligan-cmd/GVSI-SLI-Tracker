@@ -25,6 +25,17 @@ the aging report, so an unpublished tab omits the screen instead of failing the 
   `RJO-FIBERX`, `RJO-BIDA` and `RJO-SME` tabs, each drawn in the plan's own colour
   (#5423C7 / #D32F2F / #008B74).
 
+### 🗓️ A month that has just closed keeps reading its own DATA tab
+
+The Monthly Progress strip had gone back to ₱262,984 for SME's October while the Month-to-Date
+card beside it read ₱290,741: the live-target override was keyed to the *calendar* month, so
+the moment October closed the strip fell back to the year's plan (`sli_targets`), whose
+October was still the copy taken on `Oct 7`. The `DATA`-tab targets now follow the month on
+screen, and stay out of any month the archive already covers — so a month that has closed but
+is not archived yet reads the tab, and once archived it reads its own row. The plan was
+corrected to match: `Aurora`'s missing ₱27,757 is now in `sli_targets`, so the year's annual
+target carries the same October as the strip.
+
 ### 🎯 The running month's target comes off the plan's own DATA tab
 
 The Executive Overview showed two different figures for the current month's target: the
