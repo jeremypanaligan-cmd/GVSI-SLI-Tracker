@@ -602,7 +602,7 @@ function getMonthName(monthNum) {
 // stamp is the app version plus a short hash of the head and this template, so an edit to
 // either one changes it. Compare it with SCRIPT_BUILD in the .gs file you pasted.
 const SCRIPT_PLAN = 'FIBERX';
-const SCRIPT_BUILD = '1.29.0+4c7c42af';
+const SCRIPT_BUILD = '1.29.0+a1f0193c';
 
 const ARCHIVE_ENABLED_KEY = 'ARCHIVE_ENABLED';
 const ARCHIVE_AFTER_DAYS_KEY = 'ARCHIVE_AFTER_DAYS';
@@ -1275,6 +1275,18 @@ function sumCompleted_(rows) {
   return sum;
 }
 
+/** The value column of the monthly projection, overall total included. */
+function sumMonthlyValues_(rows) {
+  var sum = 0;
+  for (var i = 0; i < rows.length; i++) sum += Number(rows[i].value || 0);
+  return sum;
+}
+
+/** Two decimals, so a float sum read back off PostgREST compares cleanly. */
+function round2_(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
 // ==================== ARCHIVE: which month is due ====================
 
 /**
@@ -1745,10 +1757,10 @@ function archiveOneMonth_(month, dryRun, purge, trim) {
   // Computed from the rows just read, not read back off the MTD sheet — see
   // deriveMtdArchiveRows_ for why the sheet was the wrong source.
   var mtdRows = deriveMtdArchiveRows_(rawRows, month.key, month.label, planAreas);
-  // The same month, projected to what the year-to-date strip shows. Written best-effort:
-  // it is derived from rows sli_mtd already carries, so a failure here costs a projection
-  // and never the month itself — and it must not be able to block the purge of a month
-  // the gate has already verified.
+  // The same month, projected to what the year-to-date strip shows. It is derived from the
+  // MTD rows this run just wrote, and it is part of the same transfer: a month is not
+  // archived until its monthly projection is in Supabase too, so the app can read a past
+  // month whole from there.
   var monthlyRows = monthlyProgressRows_(mtdRows);
   var monthlyNote = '';
 
@@ -1758,6 +1770,7 @@ function archiveOneMonth_(month, dryRun, purge, trim) {
 
   var localRawSum = sumCompleted_(rawRows);
   var localMtdSum = sumCompleted_(mtdRows);
+  var localMonthlySum = sumMonthlyValues_(monthlyRows);
 
   // Which way this sheet shrinks. Purging needs the rows to be real cells; when the report
   // sheet is one spilled =IMPORTRANGE(...) its rows are an array formula's output, and
@@ -1803,14 +1816,21 @@ function archiveOneMonth_(month, dryRun, purge, trim) {
   supabaseUpsert_('sli_mtd', mtdRows, 'plan,month_key,area');
 
   // The Monthly Progress projection, so a past month is readable from Supabase without the
-  // YTD worksheet. Counted back so a partial write is visible in the run log.
+  // YTD worksheet. Not best-effort any more: it is counted and summed back below like the
+  // other two tables, and a month that fails here is not purged.
+  var remoteMonthlyCount = -1;
+  var remoteMonthlySum = 0;
+  var monthlyError = null;
   try {
     supabaseUpsert_('sli_monthly', monthlyRows, 'plan,month_key,area');
-    var remoteMonthlyCount = supabaseCount_('sli_monthly',
+    remoteMonthlyCount = supabaseCount_('sli_monthly',
       'plan=eq.' + PLAN_ID + '&month_key=eq.' + month.key);
+    remoteMonthlySum = supabaseSum_('sli_monthly',
+      'plan=eq.' + PLAN_ID + '&month_key=eq.' + month.key, 'value');
     monthlyNote = ' Monthly progress: ' + remoteMonthlyCount + '/' + monthlyRows.length +
-      ' rows' + (remoteMonthlyCount === monthlyRows.length ? '.' : ' — HINDI KUMPLETO.');
+      ' rows, sum ' + remoteMonthlySum + '/' + localMonthlySum + '.';
   } catch (error) {
+    monthlyError = error;
     monthlyNote = ' Monthly progress: HINDI NAISULAT (' + error.message + ').';
   }
 
@@ -1831,18 +1851,23 @@ function archiveOneMonth_(month, dryRun, purge, trim) {
     (remoteRawCount === rawRows.length) && (remoteRawSum === localRawSum);
   var mtdOk = mtdRows.length > 0 &&
     (remoteMtdCount === mtdRows.length) && (remoteMtdSum === localMtdSum);
+  var monthlyOk = !monthlyError && monthlyRows.length > 0 &&
+    (remoteMonthlyCount === monthlyRows.length) &&
+    (round2_(remoteMonthlySum) === round2_(localMonthlySum));
 
-  if (!rawOk || !mtdOk) {
+  if (!rawOk || !mtdOk || !monthlyOk) {
     var empty = [];
     if (rawRows.length === 0) empty.push('RAW DATA');
     if (mtdRows.length === 0) empty.push('MTD');
+    if (monthlyRows.length === 0) empty.push('Monthly progress');
     return {
       note: month.label + ': VERIFICATION FAILED — WALANG BINURA AT WALANG TRIM. ' +
         (empty.length ? 'Walang nabasang rows sa ' + empty.join(' at ') +
           ' — may ibang takbo na gumagawa ng sheet sa parehong oras. ' : '') +
         'RAW ' + remoteRawCount + '/' + rawRows.length + ' rows, sum ' + remoteRawSum + '/' +
         localRawSum + ' | ' + 'MTD ' + remoteMtdCount + '/' + mtdRows.length + ' rows, sum ' +
-        remoteMtdSum + '/' + localMtdSum,
+        remoteMtdSum + '/' + localMtdSum + ' | Monthly ' + remoteMonthlyCount + '/' +
+        monthlyRows.length + ' rows, sum ' + remoteMonthlySum + '/' + localMonthlySum,
       verified: false
     };
   }

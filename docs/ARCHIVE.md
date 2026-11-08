@@ -34,11 +34,12 @@ that is due, oldest first, so nothing is skipped.
    grid. The months this job never saw — 2026 `JAN–JUL` for all three plans, and SME's `AUG`,
    whose archived rows carry ticket counts where the plan is measured in pesos — were filled
    in once by `supabase/seed-monthly-progress.sql`, which writes `source = 'worksheet'` and
-   only touches a month the plan cannot already read. That third write is best-effort on
-   purpose — it is derived from rows the gate already verified, so a failure costs the
-   projection and never the month, and it can never block the purge. The run note counts the
-   rows it landed either way.
-3. **Verify** by reading the counts *and* a checksum back from Supabase.
+   only touches a month the plan cannot already read. That third write is part of the gate,
+   not beside it: its row count and `value` sum are read back with the other two, and a month
+   whose projection does not match is neither purged nor trimmed — the next run retries it.
+   The run note prints all three counts and sums.
+3. **Verify** by reading the counts *and* a checksum back from Supabase — for all three
+   tables, `sli_monthly` included.
 4. **Shrink — one switch per shape.** Two independent settings decide this, and step 3 has
    to have matched either way:
    * on a **hand-encoded** tab, `ARCHIVE_PURGE = TRUE` deletes the month's day blocks;

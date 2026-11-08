@@ -6,6 +6,17 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 🗄️ A closed month is archived with its Monthly Progress projection
+
+`sli_monthly` used to be written best-effort after `sli_raw_daily` and `sli_mtd`, and the
+archive gate only counted the first two — so a failed monthly write still let the month be
+purged. October 2026 landed that way: `sli_raw_daily` and `sli_mtd` held all 11 rows per plan,
+`sli_monthly` held none. The projection is now part of the same verified transfer: its row
+count and `value` sum are read back before anything is deleted, and a month that fails the
+check is neither purged nor trimmed and is retried on the next run. October 2026 was
+backfilled from `sli_mtd` (33 rows, 11 per plan), so the app can read the closed month from
+Supabase on its own.
+
 ### 📋 New module — RJO Report
 
 The shared workbook's `RJO Report` tab (`gid=198146385`) is now its own screen, beside the
