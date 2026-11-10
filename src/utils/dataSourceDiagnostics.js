@@ -22,6 +22,21 @@
 /** planId → { sheet, archive, merge, yearPlan, monthlyProgress, manual, at } */
 const planState = new Map()
 
+/** Panels that want to re-render the moment a read lands. Per tab, like the state. */
+const listeners = new Set()
+
+/** Subscribe to every recorded read. Returns the unsubscribe function. */
+export function subscribeDiagnostics(listener) {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+function notify() {
+  for (const listener of listeners) {
+    try { listener() } catch { /* a panel render must not break a read */ }
+  }
+}
+
 function entry(planId) {
   let value = planState.get(planId)
   if (!value) {
@@ -55,6 +70,7 @@ export function recordSheetRead(planId, patch) {
   const current = entry(planId)
   current.sheet = { ...(current.sheet || {}), ...patch }
   current.at = Date.now()
+  notify()
 }
 
 /** The archived month list (`sli_mtd` where is_overall_total) that drives the merge. */
@@ -64,6 +80,7 @@ export function recordArchiveIndex(planId, patch) {
   archive.index = { ...(archive.index || {}), ...patch }
   current.archive = archive
   current.at = Date.now()
+  notify()
 }
 
 /** One archived month's rows, merged into the archive record by month key. */
@@ -73,6 +90,7 @@ export function recordArchiveMonth(planId, monthKey, patch) {
   archive.months[monthKey] = { monthKey, ...(archive.months[monthKey] || {}), ...patch }
   current.archive = archive
   current.at = Date.now()
+  notify()
 }
 
 /** The merge: how many rows each side of the split ended up contributing. */
@@ -80,6 +98,7 @@ export function recordMerge(planId, patch) {
   const current = entry(planId)
   current.merge = { ...(current.merge || {}), ...patch }
   current.at = Date.now()
+  notify()
 }
 
 /**
@@ -100,6 +119,7 @@ export function recordYearPlan(planId, patch) {
     current.manual = manual
   }
   current.at = Date.now()
+  notify()
 }
 
 /**
@@ -112,6 +132,7 @@ export function recordManualSync(planId) {
   manual.at = Date.now()
   current.manual = manual
   current.at = Date.now()
+  notify()
 }
 
 /**
@@ -123,6 +144,7 @@ export function recordMonthlyProgress(planId, report) {
   const current = entry(planId)
   current.monthlyProgress = report || null
   current.at = Date.now()
+  notify()
 }
 
 export function clearDiagnostics() {

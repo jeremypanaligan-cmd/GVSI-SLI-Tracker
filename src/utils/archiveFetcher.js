@@ -21,7 +21,8 @@ import {
  * existing parsers cannot tell the difference.
  *
  * Caching is asymmetric on purpose:
- *   * the month index is cheap but can change (a new month gets archived) → 5 min TTL
+ *   * the month index is cheap but can change (a new month gets archived) → revalidated
+ *     every load, with the last answer kept only as the failed-read fallback
  *   * a month's rows are immutable once archived                       → cached forever
  *
  * So the app's Google Sheet payload stays flat as the archive grows: past months are
@@ -29,6 +30,8 @@ import {
  */
 
 const CACHE_VERSION = `v${APP_VERSION}`
+// Monthly Progress and year-plan rows are immutable once written, so their payloads keep the
+// short TTL. The month list itself is revalidated every load — it is what changes.
 const INDEX_TTL = 1000 * 60 * 5
 const CACHE_PREFIX = 'gvsi_arch_'
 
@@ -112,8 +115,6 @@ async function writeJson(key, value) {
  */
 const hasRows = (cached) => Array.isArray(cached?.rows) && cached.rows.length > 0
 
-/** The same rule for the month list: an empty index is a read that found nothing. */
-const hasMonths = (cached) => Array.isArray(cached?.months) && cached.months.length > 0
 
 /** Forget a cache entry in both stores. Used to retire a remembered empty read. */
 async function dropJson(key) {
@@ -141,16 +142,32 @@ export async function clearArchiveCache() {
 
 // ── PostgREST ────────────────────────────────────────────────────────────────
 
-async function supabaseGet(path) {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-    cache: 'no-store',
-  })
-  if (!response.ok) throw new Error(`Supabase ${response.status} on ${path}`)
-  return response.json()
+async function supabaseGet(path, attempts = 2) {
+  let lastError = null
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        cache: 'no-store',
+      })
+      if (!response.ok) {
+        const error = new Error(`Supabase ${response.status} on ${path}`)
+        error.status = response.status
+        throw error
+      }
+      return response.json()
+    } catch (error) {
+      lastError = error
+      // A transient read — a burst of parallel month fetches, a phone waking up — used to
+      // drop the month for the whole load. One retry rides that out; a real outage still
+      // fails, and the caller's fallback still applies.
+      if (attempt < attempts - 1) await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+  }
+  throw lastError
 }
 
 const selectList = (fields) => fields.join(',')
@@ -171,6 +188,11 @@ function monthLabelToKey(monthLabel) {
   const index = MONTH_NAMES.findIndex((name) => name.toLowerCase() === match[1].toLowerCase())
   if (index === -1) return null
   return `${match[2]}-${String(index + 1).padStart(2, '0')}`
+}
+
+/** The month the sheet is still serving: '2026-11'. Past months belong to the archive. */
+function currentMonthKey() {
+  return monthLabelToKey(getCurrentMonthYear())
 }
 
 const isMonthLabel = (text) => monthLabelToKey(text) !== null
@@ -218,6 +240,9 @@ function rawRowsAndObjects(rows) {
 /**
  * The archived month list, oldest first. Drives the month picker, the MoM delta and
  * the decision about which months the sheet no longer needs to supply.
+ *
+ * Revalidated on every load: it is one small request, and a stale list is the one thing
+ * that can make a month safely in Supabase read as missing.
  */
 export async function fetchArchivedMonths(planId, { force = false } = {}) {
   if (!SUPABASE_ENABLED) {
@@ -229,10 +254,10 @@ export async function fetchArchivedMonths(planId, { force = false } = {}) {
   const cached = await readJson(key)
   const cachedLabels = (cached?.months || []).map((month) => month.month_label)
 
-  if (!force && hasMonths(cached) && Date.now() - (cached.at || 0) < INDEX_TTL) {
-    recordArchiveIndex(planId, { fromCache: true, months: cachedLabels, fetchedAt: cached.at || null, error: null })
-    return cached.months || []
-  }
+  // The list is one small request. Caching it for five minutes meant a month archived just
+  // before a load could be absent from the merge for the rest of that window, and the month
+  // then read as missing even though Supabase held it. Ask every load; the cached copy is
+  // only the fallback when the read fails.
 
   try {
     const months = await supabaseGet(
@@ -445,23 +470,6 @@ async function fetchMonthRawRows(planId, monthKey) {
   return rows
 }
 
-/**
- * Which archived months of raw rows to pull in.
- *
- * The selected month plus the one before it: the 7-day trend window and the
- * provincial delta both reach back across a month boundary, so the neighbouring month
- * has to be present. When the selected month is still live (the usual case) the newest
- * archived month is used instead — that is the one the boundary reaches into.
- */
-function rawMonthsToLoad(monthKeys, selectedMonthYear) {
-  const selectedKey = monthLabelToKey(selectedMonthYear)
-  const at = monthKeys.indexOf(selectedKey)
-
-  if (at >= 0) {
-    return at - 1 >= 0 ? [monthKeys[at - 1], monthKeys[at]] : [monthKeys[at]]
-  }
-  return monthKeys.length ? [monthKeys[monthKeys.length - 1]] : []
-}
 
 // ── Sheet filters: an archived month never comes from both places ────────────
 
@@ -536,11 +544,16 @@ function dropArchivedRawRows(csv, archivedLabels) {
 export async function mergeArchiveIntoCsv(planId, csv, selectedMonthYear) {
   if (!SUPABASE_ENABLED || !csv?.mtd || !csv?.raw) return csv
 
-  const selectedMonth = selectedMonthYear || getCurrentMonthYear()
-
   try {
     const months = await fetchArchivedMonths(planId)
-    if (!months.length) {
+    // Source rule: every month before the running one comes from Supabase; the running
+    // month is the sheet's. An archive that ran early for the current month must not
+    // replace the live tab it is still being written from.
+    const currentKey = currentMonthKey()
+    const pastMonths = currentKey
+      ? months.filter((entry) => entry.month_key < currentKey)
+      : months
+    if (!pastMonths.length) {
       // Nothing archived: the sheet is the only source, which is worth showing.
       const sheetMtd = csv.mtd.allRows || csv.mtd.rows || []
       recordMerge(planId, {
@@ -559,7 +572,7 @@ export async function mergeArchiveIntoCsv(planId, csv, selectedMonthYear) {
     // transient fetch failure would look like "this month has no data".
     const loaded = []
     const mtdSections = []
-    for (const entry of months) {
+    for (const entry of pastMonths) {
       try {
         const rows = await fetchMonthMtdRows(planId, entry.month_key)
         if (!rows.length) continue
@@ -598,20 +611,28 @@ export async function mergeArchiveIntoCsv(planId, csv, selectedMonthYear) {
       rows: [...mtdSections, ...sheetMtdRows],
     }
 
-    // RAW: only what the current views can reach, so the payload does not grow with
-    // the archive. Prepending keeps `dates` ascending — findLatestDataDate walks it
-    // from the end.
+    // RAW: every archived month, not just the selected one and its neighbour. The month
+    // picker and the calendar both read this list, so leaving a month out here made its
+    // days disappear the moment the sheet copy was dropped below — which is why August and
+    // September came and went depending on which month was open. Prepending keeps `dates`
+    // ascending — findLatestDataDate walks it from the end.
     const rawRows = []
-    for (const monthKey of rawMonthsToLoad(loaded.map((entry) => entry.month_key), selectedMonth)) {
+    const rawLabels = new Set()
+    for (const entry of pastMonths) {
       try {
-        rawRows.push(...(await fetchMonthRawRows(planId, monthKey)))
+        const rows = await fetchMonthRawRows(planId, entry.month_key)
+        if (!rows.length) continue
+        rawRows.push(...rows)
+        rawLabels.add(entry.month_label)
       } catch (error) {
-        console.warn(`[Archive] ${planId} ${monthKey} RAW unavailable:`, error.message)
+        console.warn(`[Archive] ${planId} ${entry.month_key} RAW unavailable:`, error.message)
       }
     }
 
     const archivedRaw = rawRowsAndObjects(rawRows)
-    const sheetRaw = dropArchivedRawRows(csv.raw, archivedLabels)
+    // Only a month whose RAW rows actually arrived may have its sheet rows dropped. A
+    // failed read leaves the sheet's copy in place rather than blanking the month.
+    const sheetRaw = dropArchivedRawRows(csv.raw, rawLabels)
     const raw = {
       ...sheetRaw,
       rows: [...archivedRaw.rows, ...(sheetRaw.rows || [])],

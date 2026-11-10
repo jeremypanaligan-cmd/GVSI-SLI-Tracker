@@ -278,7 +278,7 @@ A failed MTD or RAW fetch fails the whole sync; a failed aging, RJO or trend fet
 |--------|-----------|
 | Storage | `localStorage`, with an IndexedDB fallback on quota errors |
 | Keys | `gvsi_<mtd\|raw\|aging\|rjo\|trend\|time>_<plan>_v<appVersion>` (e.g. `gvsi_trend_fiberx_v1.12.0`) |
-| Archive keys | `gvsi_arch_idx_<plan>_v…` (month list, 5-minute TTL), `gvsi_arch_mon_<plan>_v…` (the Monthly Progress rows, 5-minute TTL — never remembered when empty) and `gvsi_arch_<mtd\|raw>_<plan>_<month>_v…` (**no TTL** — an archived month never changes, so it is fetched once per browser) |
+| Archive keys | `gvsi_arch_idx_<plan>_v…` (month list, revalidated every load; the cached copy is the fallback when the read fails), `gvsi_arch_mon_<plan>_v…` (the Monthly Progress rows, 5-minute TTL — never remembered when empty) and `gvsi_arch_<mtd\|raw>_<plan>_<month>_v…` (**no TTL** — an archived month never changes, so it is fetched once per browser) |
 | Year plan key | `gvsi_arch_tgt_<plan>_v…` — `sli_targets` rows for one plan, 5-minute TTL, likewise never remembered when empty |
 | Versioning | The key embeds `APP_VERSION`, so a release retires the whole previous cache set and orphaned records are purged on version change |
 | TTL | `CACHE_MAX_AGE` = **5 minutes**; older than that is treated as `stale-cache` |
@@ -290,6 +290,12 @@ A failed MTD or RAW fetch fails the whole sync; a failed aging, RJO or trend fet
 
 ## Gotchas
 
+- **Past months come from Supabase; the running month comes from the sheet.** The merge
+  filters the archived list to months before `getCurrentMonthYear()`, so an archive that ran
+  early for the live month cannot replace the tab still being written. Every past month's RAW
+  rows are folded in, not just the selected month and its neighbour — the calendar and the
+  month picker read that list, and loading only part of it made the other months' days vanish
+  when their sheet rows were dropped.
 - **`NEW REPORT` is never read by the app.** It is the source of truth; Apps Script turns it
   into `RAW DATA` and `MTD`. Editing it changes nothing until **Full Sync** runs. It is
   currently a live `=IMPORTRANGE(…)` mirror of the plan's `… DAILY` sheet, so edit the source

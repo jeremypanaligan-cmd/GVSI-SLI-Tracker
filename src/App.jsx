@@ -78,8 +78,19 @@ function initialDate() {
   return initialUrlState.date || storageGet(STATE_STORAGE_KEYS.date) || ''
 }
 
+/** True for a month later than the running one — the sheet pre-creates those sections. */
+function isFutureMonth(label) {
+  const parts = monthLabelParts(label)
+  const current = monthLabelParts(getCurrentMonthYear())
+  if (!parts || !current) return false
+  return parts.year > current.year || (parts.year === current.year && parts.monthIndex > current.monthIndex)
+}
+
 function initialMonth() {
-  return initialUrlState.month || storageGet(STATE_STORAGE_KEYS.month) || getCurrentMonthYear()
+  const month = initialUrlState.month || storageGet(STATE_STORAGE_KEYS.month) || getCurrentMonthYear()
+  // A saved link or a previous session can point at a month the sheet has pre-created
+  // but that has not arrived yet. Open the running month instead.
+  return isFutureMonth(month) ? getCurrentMonthYear() : month
 }
 
 function initialPlan() {
@@ -400,6 +411,21 @@ export default function App() {
   const availableDates = rawDaily?.dates || []
   const latestDataDate = findLatestDataDate(rawDaily)
   const executiveMetrics = extractExecutiveMetrics(mtdData, dailyBlock)
+
+  // The MTD dropdown lists the months the sheet carries, including sections it has
+  // pre-created for months that have not arrived yet (e.g. December while November is
+  // running). Only the running month and the ones before it are selectable.
+  const selectableMonths = useMemo(() => {
+    const current = monthLabelParts(getCurrentMonthYear())
+    const months = mtdData?.availableMonths || []
+    if (!current) return months
+    return months.filter((label) => {
+      const parts = monthLabelParts(label)
+      if (!parts) return false
+      return parts.year < current.year ||
+        (parts.year === current.year && parts.monthIndex <= current.monthIndex)
+    })
+  }, [mtdData])
 
   // ---- Year-to-date, from the year's target plan and the app's own record ----
 
@@ -1120,7 +1146,7 @@ export default function App() {
             onDateSelect={setSelectedDate}
             onMonthSelect={handleMonthChange}
             selectedMonthYear={selectedMonthYear}
-            availableMonths={mtdData?.availableMonths || []}
+            availableMonths={selectableMonths}
             onGoToDetail={() => setView('daily')}
             plan={currentPlan}
             momDelta={momDelta}

@@ -6,6 +6,22 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+### 🗂️ Past months come from Supabase, the running month from the sheet
+
+The Provincial calendar and the Executive month picker could lose months depending on when
+the page was opened. The merge loaded archived RAW rows only for the selected month and its
+neighbour, then dropped **every** archived month from the sheet — so August and September
+vanished as soon as a load merged October, and a month archived just before a load could stay
+missing for the five-minute index TTL. Two changes: the archive month list is now revalidated
+on every load (the cached copy is only the failed-read fallback), and every archived RAW
+month is folded in, not just the selected one. A month is only dropped from the sheet when its
+Supabase rows actually arrived, so a failed read falls back to the sheet instead of blanking
+the month. The merge also stops at the running month: past months are Supabase's, the current
+month stays the sheet's. The Developer console's Data source diagnostics now updates on each
+read instead of waiting for its ten-second tick. The Executive MTD picker likewise stops at
+the running month, so a December section the sheet has pre-created no longer appears while
+November is still being worked.
+
 ### 🗄️ A closed month is archived with its Monthly Progress projection
 
 `sli_monthly` used to be written best-effort after `sli_raw_daily` and `sli_mtd`, and the

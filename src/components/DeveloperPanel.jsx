@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { setMaintenance, forceSignOutAll, formatDuration } from '../utils/presence'
 import { fetchArchivedMonths } from '../utils/archiveFetcher'
-import { getDiagnostics } from '../utils/dataSourceDiagnostics'
+import { getDiagnostics, subscribeDiagnostics } from '../utils/dataSourceDiagnostics'
 import { fetchArchiveStatus } from '../utils/archiveStatus'
 import { monthLabelParts, archiveDate } from '../utils/yearTables'
 import { ARCHIVE_AFTER_DAYS, YTD_YEAR } from '../config/plans'
@@ -608,11 +608,14 @@ export default function DeveloperPanel({
   }, [open, loadArchiveStatus])
 
   // Snapshot of the reads this tab has made. Refreshed on open, on the header button and
-  // on the same 10-second tick the durations use, so it keeps up without polling on its own.
+  // by every read as it lands, so a load is visible while it happens rather than on the next
+  // duration tick.
   const [diag, setDiag] = useState(() => getDiagnostics())
   useEffect(() => {
-    if (open) setDiag(getDiagnostics())
-  }, [open, now])
+    if (!open) return
+    setDiag(getDiagnostics())
+    return subscribeDiagnostics(() => setDiag(getDiagnostics()))
+  }, [open])
 
   if (!open) return null
 
