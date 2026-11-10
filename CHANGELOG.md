@@ -6,6 +6,8 @@ All notable changes to the **GVSI SLI Tracker** Progressive Web App are document
 
 ## [Unreleased]
 
+## [1.30.0] — 2026-11-10
+
 ### 🗂️ Past months come from Supabase, the running month from the sheet
 
 The Provincial calendar and the Executive month picker could lose months depending on when
